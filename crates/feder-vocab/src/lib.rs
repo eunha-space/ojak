@@ -8,8 +8,13 @@
 extern crate alloc;
 
 use alloc::{boxed::Box, string::String, vec::Vec};
+use core::fmt;
 use iri_string::types::IriString;
-use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeSeq};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::{IgnoredAny, SeqAccess, Visitor},
+    ser::{SerializeMap, SerializeSeq},
+};
 
 /// The canonical Activity Streams JSON-LD context URL.
 pub const ACTIVITYSTREAMS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
@@ -25,6 +30,180 @@ fn default_context() -> Iri {
     ACTIVITYSTREAMS_CONTEXT
         .parse()
         .expect("valid ActivityStreams IRI")
+}
+
+/// A consent-vocabulary term map appended to the base ActivityStreams context.
+///
+/// The FEP-044f quote and FEP-7aa9 feature handshakes introduce type IRIs
+/// (`QuoteRequest`, `QuoteAuthorization`, …) and properties that the
+/// ActivityStreams context does not define. A strict JSON-LD consumer (e.g.
+/// Fedify, which backs hackers.pub / GoToSocial) expands `type: "QuoteRequest"`
+/// against `@context`; without these definitions the term is dropped and the
+/// activity is silently unrecognised. The term maps mirror Mastodon's
+/// `context_helper` so quote requests are understood across implementations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ContextExtension {
+    QuoteRequest,
+    FeatureRequest,
+    QuoteAuthorization,
+    FeatureAuthorization,
+}
+
+/// A top-level `@context` value. Serializes as the bare ActivityStreams IRI
+/// string when there is no extension, or as `[as2_iri, { terms… }]` when a
+/// consent vocabulary is attached.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Context {
+    extension: Option<ContextExtension>,
+}
+
+impl Context {
+    fn for_request(kind: RequestType) -> Self {
+        Self {
+            extension: Some(match kind {
+                RequestType::QuoteRequest => ContextExtension::QuoteRequest,
+                RequestType::FeatureRequest => ContextExtension::FeatureRequest,
+            }),
+        }
+    }
+
+    fn for_authorization(kind: AuthorizationType) -> Self {
+        Self {
+            extension: Some(match kind {
+                AuthorizationType::QuoteAuthorization => ContextExtension::QuoteAuthorization,
+                AuthorizationType::FeatureAuthorization => ContextExtension::FeatureAuthorization,
+            }),
+        }
+    }
+}
+
+impl Serialize for Context {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.extension {
+            None => serializer.serialize_str(ACTIVITYSTREAMS_CONTEXT),
+            Some(extension) => {
+                let mut seq = serializer.serialize_seq(Some(2))?;
+                seq.serialize_element(ACTIVITYSTREAMS_CONTEXT)?;
+                seq.serialize_element(&ExtensionTerms(extension))?;
+                seq.end()
+            }
+        }
+    }
+}
+
+/// Serializes a [`ContextExtension`]'s term definitions as a JSON-LD map.
+struct ExtensionTerms(ContextExtension);
+
+impl Serialize for ExtensionTerms {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            ContextExtension::QuoteRequest => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("QuoteRequest", "https://w3id.org/fep/044f#QuoteRequest")?;
+                map.end()
+            }
+            ContextExtension::FeatureRequest => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("FeatureRequest", "https://w3id.org/fep/7aa9#FeatureRequest")?;
+                map.end()
+            }
+            ContextExtension::QuoteAuthorization => {
+                let mut map = serializer.serialize_map(Some(4))?;
+                map.serialize_entry("gts", "https://gotosocial.org/ns#")?;
+                map.serialize_entry(
+                    "QuoteAuthorization",
+                    "https://w3id.org/fep/044f#QuoteAuthorization",
+                )?;
+                map.serialize_entry("interactingObject", &IdTyped("gts:interactingObject"))?;
+                map.serialize_entry("interactionTarget", &IdTyped("gts:interactionTarget"))?;
+                map.end()
+            }
+            ContextExtension::FeatureAuthorization => {
+                let mut map = serializer.serialize_map(Some(4))?;
+                map.serialize_entry("gts", "https://gotosocial.org/ns#")?;
+                map.serialize_entry(
+                    "FeatureAuthorization",
+                    "https://w3id.org/fep/7aa9#FeatureAuthorization",
+                )?;
+                map.serialize_entry("interactingObject", &IdTyped("gts:interactingObject"))?;
+                map.serialize_entry("interactionTarget", &IdTyped("gts:interactionTarget"))?;
+                map.end()
+            }
+        }
+    }
+}
+
+/// Serializes an IRI-typed JSON-LD term as `{ "@id": iri, "@type": "@id" }`.
+struct IdTyped(&'static str);
+
+impl Serialize for IdTyped {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("@id", self.0)?;
+        map.serialize_entry("@type", "@id")?;
+        map.end()
+    }
+}
+
+/// Presence of the distinguishing type keys in a deserialized term map, used to
+/// recover which [`ContextExtension`] an incoming `@context` array carried.
+#[derive(Deserialize)]
+struct TermSignature {
+    #[serde(rename = "QuoteRequest", default)]
+    quote_request: Option<IgnoredAny>,
+    #[serde(rename = "FeatureRequest", default)]
+    feature_request: Option<IgnoredAny>,
+    #[serde(rename = "QuoteAuthorization", default)]
+    quote_authorization: Option<IgnoredAny>,
+    #[serde(rename = "FeatureAuthorization", default)]
+    feature_authorization: Option<IgnoredAny>,
+}
+
+impl TermSignature {
+    fn extension(&self) -> Option<ContextExtension> {
+        if self.quote_request.is_some() {
+            Some(ContextExtension::QuoteRequest)
+        } else if self.feature_request.is_some() {
+            Some(ContextExtension::FeatureRequest)
+        } else if self.quote_authorization.is_some() {
+            Some(ContextExtension::QuoteAuthorization)
+        } else if self.feature_authorization.is_some() {
+            Some(ContextExtension::FeatureAuthorization)
+        } else {
+            None
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Context {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ContextVisitor;
+
+        impl<'de> Visitor<'de> for ContextVisitor {
+            type Value = Context;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("an @context IRI string or [iri, terms] array")
+            }
+
+            fn visit_str<E>(self, _value: &str) -> Result<Context, E> {
+                Ok(Context { extension: None })
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Context, A::Error> {
+                // First element is the base ActivityStreams IRI; the term map (if
+                // any) follows. Identify the extension by the type key it defines.
+                let _base: Option<IgnoredAny> = seq.next_element()?;
+                let signature: Option<TermSignature> = seq.next_element()?;
+                while seq.next_element::<IgnoredAny>()?.is_some() {}
+                Ok(Context {
+                    extension: signature.and_then(|s| s.extension()),
+                })
+            }
+        }
+
+        deserializer.deserialize_any(ContextVisitor)
+    }
 }
 
 /// A non-scalar ActivityStreams property value.
@@ -606,7 +785,7 @@ pub enum AuthorizationType {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ConsentRequest {
     #[serde(rename = "@context", skip_serializing_if = "Option::is_none")]
-    pub context: Option<Iri>,
+    pub context: Option<Context>,
     #[serde(rename = "type")]
     pub kind: RequestType,
     pub id: Iri,
@@ -620,7 +799,7 @@ impl ConsentRequest {
     #[must_use]
     pub fn new(kind: RequestType, id: Iri, object: Iri, instrument: Iri) -> Self {
         Self {
-            context: Some(default_context()),
+            context: Some(Context::for_request(kind)),
             kind,
             id,
             actor: None,
@@ -696,7 +875,7 @@ impl ConsentReject {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Authorization {
     #[serde(rename = "@context", skip_serializing_if = "Option::is_none")]
-    pub context: Option<Iri>,
+    pub context: Option<Context>,
     #[serde(rename = "type")]
     pub kind: AuthorizationType,
     pub id: Iri,
@@ -717,7 +896,7 @@ impl Authorization {
         interaction_target: Iri,
     ) -> Self {
         Self {
-            context: Some(default_context()),
+            context: Some(Context::for_authorization(kind)),
             kind,
             id,
             attributed_to: None,
@@ -937,6 +1116,15 @@ mod tests {
         assert_eq!(v["object"], "https://b.test/notes/9");
         assert_eq!(v["instrument"], "https://a.test/notes/1");
         assert_eq!(v["actor"], "https://a.test/users/alice");
+        // The FEP-044f `QuoteRequest` type must be declared in `@context` or a
+        // strict JSON-LD consumer drops the activity as unrecognised.
+        assert_eq!(
+            v["@context"],
+            json!([
+                "https://www.w3.org/ns/activitystreams",
+                { "QuoteRequest": "https://w3id.org/fep/044f#QuoteRequest" }
+            ])
+        );
         assert_eq!(roundtrip(&req), req);
 
         let accept = ConsentAccept::new(
@@ -949,6 +1137,9 @@ mod tests {
         assert_eq!(av["type"], "Accept");
         assert_eq!(av["object"], "https://a.test/users/alice/quote_requests/1");
         assert_eq!(av["result"], "https://b.test/notes/9/approvals/1");
+        // `Accept` is a plain ActivityStreams type, so its context stays a bare
+        // IRI (matching Mastodon's AcceptQuoteRequestSerializer).
+        assert_eq!(av["@context"], "https://www.w3.org/ns/activitystreams");
         assert_eq!(roundtrip(&accept), accept);
 
         let mut stamp = Authorization::new(
@@ -963,6 +1154,18 @@ mod tests {
         assert_eq!(sv["attributedTo"], "https://b.test/users/bob");
         assert_eq!(sv["interactingObject"], "https://a.test/notes/1");
         assert_eq!(sv["interactionTarget"], "https://b.test/notes/9");
+        assert_eq!(
+            sv["@context"],
+            json!([
+                "https://www.w3.org/ns/activitystreams",
+                {
+                    "gts": "https://gotosocial.org/ns#",
+                    "QuoteAuthorization": "https://w3id.org/fep/044f#QuoteAuthorization",
+                    "interactingObject": { "@id": "gts:interactingObject", "@type": "@id" },
+                    "interactionTarget": { "@id": "gts:interactionTarget", "@type": "@id" }
+                }
+            ])
+        );
         assert_eq!(roundtrip(&stamp), stamp);
 
         // Feature request reuses the same types with different markers; the
@@ -973,10 +1176,16 @@ mod tests {
             iri("https://b.test/users/bob"),
             iri("https://a.test/collections/1"),
         );
+        let freq_v = serde_json::to_value(&freq).expect("serialize feature request");
+        assert_eq!(freq_v["type"], "FeatureRequest");
         assert_eq!(
-            serde_json::to_value(&freq).expect("serialize feature request")["type"],
-            "FeatureRequest"
+            freq_v["@context"],
+            json!([
+                "https://www.w3.org/ns/activitystreams",
+                { "FeatureRequest": "https://w3id.org/fep/7aa9#FeatureRequest" }
+            ])
         );
+        assert_eq!(roundtrip(&freq), freq);
         let fstamp = Authorization::new(
             AuthorizationType::FeatureAuthorization,
             iri("https://b.test/users/bob/feature_authorizations/1"),
