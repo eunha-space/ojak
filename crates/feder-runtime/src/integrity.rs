@@ -100,21 +100,8 @@ pub fn verify_object_integrity_proof(
         "created": created,
     });
 
-    // The document to hash is the activity with every proof form stripped.
-    let mut unsecured = document
-        .as_object()
-        .cloned()
-        .ok_or_else(|| anyhow!("document is not a JSON object"))?;
-    unsecured.remove("proof");
-    unsecured.remove("https://w3id.org/security#proof");
-    let unsecured = Value::Object(unsecured);
-
     let proof_canon = serde_jcs::to_string(&proof_config).context("canonicalize proof config")?;
-    let doc_canon = serde_jcs::to_string(&unsecured).context("canonicalize document")?;
-
-    let mut hash_data = [0u8; 64];
-    hash_data[..32].copy_from_slice(&Sha256::digest(proof_canon.as_bytes()));
-    hash_data[32..].copy_from_slice(&Sha256::digest(doc_canon.as_bytes()));
+    let proof_hash = Sha256::digest(proof_canon.as_bytes());
 
     let signature_bytes = decode_multibase_base58btc(proof_value).context("decode proofValue")?;
     let signature = ed25519_dalek::Signature::from_slice(&signature_bytes)
@@ -122,9 +109,39 @@ pub fn verify_object_integrity_proof(
     let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(public_key)
         .map_err(|e| anyhow!("invalid Ed25519 public key: {e}"))?;
 
-    verifying_key
-        .verify(&hash_data, &signature)
-        .map_err(|e| anyhow!("integrity proof verification failed: {e}"))
+    // The document to hash is the activity with every proof form stripped.
+    let mut unsecured = document
+        .as_object()
+        .cloned()
+        .ok_or_else(|| anyhow!("document is not a JSON object"))?;
+    unsecured.remove("proof");
+    unsecured.remove("https://w3id.org/security#proof");
+
+    // Candidate documents to hash. The on-wire form is tried first; if the
+    // activity also carries a legacy RsaSignature2017 `signature` (which servers
+    // add *after* the integrity proof, so it isn't covered), retry without it.
+    // Fedify reaches the same document via JSON-LD normalization; stripping the
+    // field directly avoids pulling in a full JSON-LD processor.
+    let mut candidates = vec![unsecured.clone()];
+    if unsecured.contains_key("signature") {
+        let mut without_sig = unsecured;
+        without_sig.remove("signature");
+        candidates.push(without_sig);
+    }
+
+    for candidate in candidates {
+        let doc_canon = match serde_jcs::to_string(&Value::Object(candidate)) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let mut hash_data = [0u8; 64];
+        hash_data[..32].copy_from_slice(&proof_hash);
+        hash_data[32..].copy_from_slice(&Sha256::digest(doc_canon.as_bytes()));
+        if verifying_key.verify(&hash_data, &signature).is_ok() {
+            return Ok(());
+        }
+    }
+    Err(anyhow!("integrity proof verification failed"))
 }
 
 /// Decode a Multikey `publicKeyMultibase` value into a raw 32-byte Ed25519 key.
