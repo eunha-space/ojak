@@ -4,7 +4,7 @@
 //! pairs, so it can be used with any HTTP framework.
 
 use anyhow::Context as _;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use sha2::{Digest as _, Sha256};
 
 /// Headers produced by [`sign_request`] that must be attached to the outgoing request.
@@ -53,7 +53,7 @@ pub fn sign_request(
         digest,
     );
 
-    let sig_b64 = rsa_sign(private_key_pem, signing_string.as_bytes())?;
+    let sig_b64 = rsa_sign_pkcs1v15(private_key_pem, signing_string.as_bytes())?;
     let signature = format!(
         r#"keyId="{}",algorithm="rsa-sha256",headers="(request-target) host date digest",signature="{}""#,
         key_id, sig_b64
@@ -98,11 +98,9 @@ pub fn sign_get(url: &str, key_id: &str, private_key_pem: &str) -> anyhow::Resul
         path.push_str(query);
     }
 
-    let signing_string = format!(
-        "(request-target): get {path}\nhost: {host}\ndate: {date}"
-    );
+    let signing_string = format!("(request-target): get {path}\nhost: {host}\ndate: {date}");
 
-    let sig_b64 = rsa_sign(private_key_pem, signing_string.as_bytes())?;
+    let sig_b64 = rsa_sign_pkcs1v15(private_key_pem, signing_string.as_bytes())?;
     let signature = format!(
         r#"keyId="{}",algorithm="rsa-sha256",headers="(request-target) host date",signature="{}""#,
         key_id, sig_b64
@@ -158,7 +156,7 @@ pub fn verify_request(
         .collect::<Vec<_>>()
         .join("\n");
 
-    rsa_verify(public_key_pem, signing_string.as_bytes(), sig_b64)
+    rsa_verify_pkcs1v15(public_key_pem, signing_string.as_bytes(), sig_b64)
 }
 
 /// Extract the `keyId` URI from a raw `Signature` header value.
@@ -175,7 +173,11 @@ pub fn key_id_from_header(sig_header: &str) -> Option<&str> {
 
 // ── RSA helpers ───────────────────────────────────────────────────────────────
 
-fn rsa_sign(private_key_pem: &str, message: &[u8]) -> anyhow::Result<String> {
+/// Sign `message` with RSASSA-PKCS1-v1_5 over SHA-256, base64-encoded.
+///
+/// Shared with [`crate::rfc9421`], which signs a different string with the same
+/// primitive.
+pub(crate) fn rsa_sign_pkcs1v15(private_key_pem: &str, message: &[u8]) -> anyhow::Result<String> {
     use rsa::pkcs1v15::SigningKey;
     use rsa::signature::{SignatureEncoding as _, Signer as _};
 
@@ -198,14 +200,22 @@ fn parse_private_key(pem: &str) -> anyhow::Result<rsa::RsaPrivateKey> {
     rsa::RsaPrivateKey::from_pkcs1_pem(pem).context("not valid PKCS#8 or PKCS#1 PEM")
 }
 
-fn rsa_verify(public_key_pem: &str, message: &[u8], sig_b64: &str) -> anyhow::Result<()> {
+/// Verify an RSASSA-PKCS1-v1_5 SHA-256 signature, base64-encoded.
+///
+/// Shared with [`crate::rfc9421`], which verifies a different string with the
+/// same primitive.
+pub(crate) fn rsa_verify_pkcs1v15(
+    public_key_pem: &str,
+    message: &[u8],
+    sig_b64: &str,
+) -> anyhow::Result<()> {
     use rsa::pkcs1v15::{Signature, VerifyingKey};
     use rsa::pkcs8::DecodePublicKey as _;
     use rsa::signature::Verifier as _;
 
     let sig_bytes = BASE64.decode(sig_b64).context("decode base64 signature")?;
-    let public_key = rsa::RsaPublicKey::from_public_key_pem(public_key_pem)
-        .context("parse RSA public key")?;
+    let public_key =
+        rsa::RsaPublicKey::from_public_key_pem(public_key_pem).context("parse RSA public key")?;
     let verifying_key = VerifyingKey::<Sha256>::new(public_key);
     let sig = Signature::try_from(sig_bytes.as_slice()).context("parse signature bytes")?;
     verifying_key
@@ -237,8 +247,13 @@ mod tests {
         let priv_key = rsa::RsaPrivateKey::new(&mut rng, 2048).unwrap();
         let pub_key = rsa::RsaPublicKey::from(&priv_key);
         (
-            priv_key.to_pkcs1_pem(rsa::pkcs1::LineEnding::LF).unwrap().to_string(),
-            pub_key.to_public_key_pem(rsa::pkcs8::LineEnding::LF).unwrap(),
+            priv_key
+                .to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
+                .unwrap()
+                .to_string(),
+            pub_key
+                .to_public_key_pem(rsa::pkcs8::LineEnding::LF)
+                .unwrap(),
         )
     }
 
@@ -255,7 +270,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(key_id_from_header(&signed.signature), Some("https://a.test/users/alice#main-key"));
+        assert_eq!(
+            key_id_from_header(&signed.signature),
+            Some("https://a.test/users/alice#main-key")
+        );
 
         let headers = [
             ("host", "remote.example"),
