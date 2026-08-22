@@ -4,7 +4,7 @@
 //! vector can't catch (e.g. a trailing RsaSignature2017 `signature` field).
 
 use feder_runtime::integrity::{
-    decode_ed25519_multikey, extract_integrity_proof, verify_object_integrity_proof,
+    decode_multikey, extract_integrity_proof, verify_object_integrity_proof,
 };
 use serde_json::Value;
 
@@ -15,8 +15,8 @@ const MULTIKEY_2: &str = "z6MkvSVjX3UcGAFFM1PeKFrxKbLU1JWrMDx1uTo5KXtThVDn";
 fn verifies_real_hackerspub_proof() {
     let doc: Value =
         serde_json::from_str(include_str!("fixtures/hackerspub_reject.json")).expect("parse");
-    let (proof, vm) = extract_integrity_proof(&doc).expect("proof present");
+    let (proof, _, vm) = extract_integrity_proof(&doc).expect("proof present");
     assert!(vm.ends_with("#multikey-2"));
-    let key = decode_ed25519_multikey(MULTIKEY_2).expect("decode key");
+    let key = decode_multikey(MULTIKEY_2).expect("decode key");
     verify_object_integrity_proof(&doc, &proof, &key).expect("real hackers.pub proof must verify");
 }

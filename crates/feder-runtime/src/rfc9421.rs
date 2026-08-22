@@ -15,7 +15,7 @@
 //!
 //! [RFC 9421]: https://www.rfc-editor.org/rfc/rfc9421.html
 
-use anyhow::Context as _;
+use anyhow::{Context as _, anyhow};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use sha2::{Digest as _, Sha256};
 
@@ -33,28 +33,125 @@ pub struct SignedHeaders {
     pub content_digest: Option<String>,
 }
 
+/// A signature algorithm this module can produce and check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Algorithm {
+    /// RSASSA-PKCS1-v1_5 over SHA-256. What Mastodon signs with today, because
+    /// it is what its RSA actor keys support.
+    RsaV1_5Sha256,
+    /// Ed25519, for actors whose keys are Ed25519.
+    Ed25519,
+}
+
+impl Algorithm {
+    /// The `alg` parameter value, as RFC 9421 registers it.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RsaV1_5Sha256 => "rsa-v1_5-sha256",
+            Self::Ed25519 => "ed25519",
+        }
+    }
+
+    fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "rsa-v1_5-sha256" => Some(Self::RsaV1_5Sha256),
+            "ed25519" => Some(Self::Ed25519),
+            _ => None,
+        }
+    }
+}
+
+/// The private key a signature is made with.
+pub enum SigningKey<'a> {
+    /// PKCS#8 or PKCS#1 PEM-encoded RSA private key.
+    RsaPem(&'a str),
+    /// A raw 32-byte Ed25519 seed.
+    Ed25519(&'a [u8; 32]),
+}
+
+impl SigningKey<'_> {
+    fn algorithm(&self) -> Algorithm {
+        match self {
+            Self::RsaPem(_) => Algorithm::RsaV1_5Sha256,
+            Self::Ed25519(_) => Algorithm::Ed25519,
+        }
+    }
+
+    fn sign(&self, message: &[u8]) -> anyhow::Result<String> {
+        match self {
+            Self::RsaPem(pem) => crate::signature::rsa_sign_pkcs1v15(pem, message),
+            Self::Ed25519(seed) => {
+                use ed25519_dalek::Signer as _;
+
+                let key = ed25519_dalek::SigningKey::from_bytes(seed);
+                Ok(BASE64.encode(key.sign(message).to_bytes()))
+            }
+        }
+    }
+}
+
+/// The public key a signature is checked against.
+pub enum VerifyingKey<'a> {
+    /// PEM-encoded RSA public key.
+    RsaPem(&'a str),
+    /// A raw 32-byte Ed25519 public key.
+    Ed25519(&'a [u8; 32]),
+}
+
+impl VerifyingKey<'_> {
+    fn algorithm(&self) -> Algorithm {
+        match self {
+            Self::RsaPem(_) => Algorithm::RsaV1_5Sha256,
+            Self::Ed25519(_) => Algorithm::Ed25519,
+        }
+    }
+
+    fn verify(&self, message: &[u8], signature_b64: &str) -> anyhow::Result<()> {
+        match self {
+            Self::RsaPem(pem) => crate::signature::rsa_verify_pkcs1v15(pem, message, signature_b64),
+            Self::Ed25519(key) => {
+                use ed25519_dalek::Verifier as _;
+
+                let bytes = BASE64
+                    .decode(signature_b64)
+                    .context("decode base64 signature")?;
+                let signature = ed25519_dalek::Signature::from_slice(&bytes)
+                    .map_err(|e| anyhow::anyhow!("invalid Ed25519 signature: {e}"))?;
+                ed25519_dalek::VerifyingKey::from_bytes(key)
+                    .map_err(|e| anyhow::anyhow!("invalid Ed25519 public key: {e}"))?
+                    .verify(message, &signature)
+                    .context("signature verification failed")
+            }
+        }
+    }
+}
+
 /// The label a signature is published under. Any label works; a message can
 /// carry several, which is how a proxy adds its own alongside the client's.
 const LABEL: &str = "sig1";
 
-/// Sign an outgoing request with `rsa-v1_5-sha256`.
+/// Sign an outgoing request.
 ///
 /// Covers `@method` and `@target-uri`, plus `content-digest` when there is a
 /// body — the components Mastodon covers, so that a Mastodon peer verifies
-/// what it expects to.
+/// what it expects to. The algorithm follows from the key.
 ///
 /// # Arguments
-/// * `method`          – HTTP method; canonicalised to uppercase for `@method`
-/// * `url`             – full request URL, which becomes `@target-uri`
-/// * `body`            – request body, or `None` for a bodyless request
-/// * `key_id`          – `keyid` parameter, the URI identifying the key
-/// * `private_key_pem` – PKCS#8 or PKCS#1 PEM-encoded RSA private key
+/// * `method` – HTTP method; canonicalised to uppercase for `@method`
+/// * `url`    – full request URL, which becomes `@target-uri`
+/// * `body`   – request body, or `None` for a bodyless request
+/// * `key_id` – `keyid` parameter, the URI identifying the key
+/// * `key`    – the private key to sign with
+///
+/// # Errors
+/// Returns an error if the key cannot be parsed or the signature cannot be made.
 pub fn sign_request(
     method: &str,
     url: &str,
     body: Option<&[u8]>,
     key_id: &str,
-    private_key_pem: &str,
+    key: &SigningKey<'_>,
 ) -> anyhow::Result<SignedHeaders> {
     let content_digest = body.map(content_digest);
 
@@ -74,9 +171,11 @@ pub fn sign_request(
             .collect::<Vec<_>>(),
         created,
         key_id,
+        key.algorithm(),
     );
     let base = signature_base(&components, &params);
-    let signature = crate::signature::rsa_sign_pkcs1v15(private_key_pem, base.as_bytes())
+    let signature = key
+        .sign(base.as_bytes())
         .context("signing the RFC 9421 signature base")?;
 
     Ok(SignedHeaders {
@@ -95,13 +194,19 @@ pub fn content_digest(body: &[u8]) -> String {
 /// The `@signature-params` value: the covered component list and its
 /// parameters, which is both sent as `Signature-Input` and signed as the last
 /// line of the base.
-fn signature_params(components: &[&str], created: i64, key_id: &str) -> String {
+fn signature_params(
+    components: &[&str],
+    created: i64,
+    key_id: &str,
+    algorithm: Algorithm,
+) -> String {
     let covered = components
         .iter()
         .map(|name| format!("\"{name}\""))
         .collect::<Vec<_>>()
         .join(" ");
-    format!("({covered});created={created};keyid=\"{key_id}\";alg=\"rsa-v1_5-sha256\"")
+    let alg = algorithm.as_str();
+    format!("({covered});created={created};keyid=\"{key_id}\";alg=\"{alg}\"")
 }
 
 /// Build the signature base (RFC 9421 §2.5).
@@ -138,15 +243,22 @@ pub fn verify_request(
     signature: &str,
     content_digest: Option<&str>,
     body: &[u8],
-    public_key_pem: &str,
+    key: &VerifyingKey<'_>,
 ) -> anyhow::Result<()> {
     let (label, covered, params) = parse_signature_input(signature_input)?;
     let sig_b64 = parse_signature(signature, &label)?;
 
+    // A stated algorithm must be one this module knows *and* the one the key
+    // can check: a signature claiming `ed25519` must not be waved through an
+    // RSA verification, or vice versa.
     if let Some(alg) = param(&params, "alg") {
+        let stated =
+            Algorithm::from_str(&alg).ok_or_else(|| anyhow!("unsupported algorithm {alg:?}"))?;
         anyhow::ensure!(
-            alg == "rsa-v1_5-sha256",
-            "unsupported signature algorithm {alg:?}"
+            stated == key.algorithm(),
+            "signature claims {} but the key is {}",
+            stated.as_str(),
+            key.algorithm().as_str()
         );
     }
 
@@ -176,7 +288,7 @@ pub fn verify_request(
     }
 
     let base = signature_base(&components, &params);
-    crate::signature::rsa_verify_pkcs1v15(public_key_pem, base.as_bytes(), &sig_b64)
+    key.verify(base.as_bytes(), &sig_b64)
 }
 
 /// The `keyid` parameter of a `Signature-Input`: the URI identifying the key
@@ -348,7 +460,7 @@ mod tests {
             "https://remote.example/inbox",
             Some(body),
             "https://local.example/users/alice#main-key",
-            TEST_KEY_RSA,
+            &SigningKey::RsaPem(TEST_KEY_RSA),
         )
         .unwrap();
 
@@ -375,7 +487,7 @@ mod tests {
             "https://remote.example/users/bob",
             None,
             "https://local.example/actor#main-key",
-            TEST_KEY_RSA,
+            &SigningKey::RsaPem(TEST_KEY_RSA),
         )
         .unwrap();
 
@@ -399,7 +511,7 @@ mod tests {
             "https://remote.example/inbox",
             Some(body),
             "https://local.example/users/alice#main-key",
-            TEST_KEY_RSA,
+            &SigningKey::RsaPem(TEST_KEY_RSA),
         )
         .unwrap();
 
@@ -410,7 +522,7 @@ mod tests {
             &signed.signature,
             signed.content_digest.as_deref(),
             body,
-            TEST_KEY_RSA_PUBLIC,
+            &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .expect("a signature this module produced should verify");
     }
@@ -422,7 +534,7 @@ mod tests {
             "https://remote.example/inbox",
             Some(b"original"),
             "https://local.example/users/alice#main-key",
-            TEST_KEY_RSA,
+            &SigningKey::RsaPem(TEST_KEY_RSA),
         )
         .unwrap();
 
@@ -433,7 +545,7 @@ mod tests {
             &signed.signature,
             signed.content_digest.as_deref(),
             b"swapped",
-            TEST_KEY_RSA_PUBLIC,
+            &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .unwrap_err();
         assert!(err.to_string().contains("content-digest"), "{err}");
@@ -447,7 +559,7 @@ mod tests {
             "https://remote.example/inbox",
             Some(body),
             "https://local.example/users/alice#main-key",
-            TEST_KEY_RSA,
+            &SigningKey::RsaPem(TEST_KEY_RSA),
         )
         .unwrap();
 
@@ -459,7 +571,7 @@ mod tests {
                 &signed.signature,
                 signed.content_digest.as_deref(),
                 body,
-                TEST_KEY_RSA_PUBLIC,
+                &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
             )
             .is_err()
         );
@@ -476,7 +588,7 @@ mod tests {
             "sig1=:AAAA:",
             None,
             b"",
-            TEST_KEY_RSA_PUBLIC,
+            &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .unwrap_err();
         assert!(err.to_string().contains("unsupported component"), "{err}");
@@ -489,6 +601,125 @@ mod tests {
             Some(1618884480)
         );
         assert_eq!(created_at("sig1=(\"@method\");keyid=\"k\""), None);
+    }
+
+    /// `test-key-ed25519` from RFC 9421 Appendix B.1.4, as raw bytes.
+    const TEST_KEY_ED25519_SEED: [u8; 32] = [
+        0x9f, 0x83, 0x62, 0xf8, 0x7a, 0x48, 0x4a, 0x95, 0x4e, 0x6e, 0x74, 0x0c, 0x5b, 0x4c, 0x0e,
+        0x84, 0x22, 0x91, 0x39, 0xa2, 0x0a, 0xa8, 0xab, 0x56, 0xff, 0x66, 0x58, 0x6f, 0x6a, 0x7d,
+        0x29, 0xc5,
+    ];
+    const TEST_KEY_ED25519_PUBLIC: [u8; 32] = [
+        0x26, 0xb4, 0x0b, 0x8f, 0x93, 0xff, 0xf3, 0xd8, 0x97, 0x11, 0x2f, 0x7e, 0xbc, 0x58, 0x2b,
+        0x23, 0x2d, 0xbd, 0x72, 0x51, 0x7d, 0x08, 0x2f, 0xe8, 0x3c, 0xfb, 0x30, 0xdd, 0xce, 0x43,
+        0xd1, 0xbb,
+    ];
+
+    /// RFC 9421 Appendix B.2.6, signed with `test-key-ed25519`. Ed25519 is
+    /// deterministic, so the signature must come out byte-identical to the
+    /// one the document publishes.
+    #[test]
+    fn reproduces_the_rfc_ed25519_signature() {
+        let base = concat!(
+            "\"date\": Tue, 20 Apr 2021 02:07:55 GMT\n",
+            "\"@method\": POST\n",
+            "\"@path\": /foo\n",
+            "\"@authority\": example.com\n",
+            "\"content-type\": application/json\n",
+            "\"content-length\": 18\n",
+            "\"@signature-params\": (\"date\" \"@method\" \"@path\" \"@authority\" \"content-type\" \"content-length\");created=1618884473;keyid=\"test-key-ed25519\"",
+        );
+
+        let signature = SigningKey::Ed25519(&TEST_KEY_ED25519_SEED)
+            .sign(base.as_bytes())
+            .unwrap();
+
+        assert_eq!(
+            signature,
+            concat!(
+                "wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1",
+                "u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==",
+            )
+        );
+
+        // And the published signature verifies against the published key.
+        VerifyingKey::Ed25519(&TEST_KEY_ED25519_PUBLIC)
+            .verify(base.as_bytes(), &signature)
+            .expect("the RFC's own signature must verify");
+    }
+
+    #[test]
+    fn signs_and_verifies_a_request_with_ed25519() {
+        let body = br#"{"type":"Create"}"#;
+        let signed = sign_request(
+            "post",
+            "https://remote.example/inbox",
+            Some(body),
+            "https://local.example/users/alice#ed25519-key",
+            &SigningKey::Ed25519(&TEST_KEY_ED25519_SEED),
+        )
+        .unwrap();
+
+        assert!(signed.signature_input.ends_with("alg=\"ed25519\""));
+
+        verify_request(
+            "POST",
+            "https://remote.example/inbox",
+            &signed.signature_input,
+            &signed.signature,
+            signed.content_digest.as_deref(),
+            body,
+            &VerifyingKey::Ed25519(&TEST_KEY_ED25519_PUBLIC),
+        )
+        .expect("an Ed25519 signature this module made should verify");
+    }
+
+    /// A signature naming one algorithm must not be checked with a key of
+    /// another, whichever way round.
+    #[test]
+    fn refuses_a_key_that_does_not_match_the_stated_algorithm() {
+        let body = b"body";
+        let ed25519 = sign_request(
+            "post",
+            "https://remote.example/inbox",
+            Some(body),
+            "https://local.example/users/alice#ed25519-key",
+            &SigningKey::Ed25519(&TEST_KEY_ED25519_SEED),
+        )
+        .unwrap();
+
+        let err = verify_request(
+            "POST",
+            "https://remote.example/inbox",
+            &ed25519.signature_input,
+            &ed25519.signature,
+            ed25519.content_digest.as_deref(),
+            body,
+            &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("claims ed25519"), "{err}");
+
+        let rsa = sign_request(
+            "post",
+            "https://remote.example/inbox",
+            Some(body),
+            "https://local.example/users/alice#main-key",
+            &SigningKey::RsaPem(TEST_KEY_RSA),
+        )
+        .unwrap();
+
+        let err = verify_request(
+            "POST",
+            "https://remote.example/inbox",
+            &rsa.signature_input,
+            &rsa.signature,
+            rsa.content_digest.as_deref(),
+            body,
+            &VerifyingKey::Ed25519(&TEST_KEY_ED25519_PUBLIC),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("claims rsa-v1_5-sha256"), "{err}");
     }
 
     #[test]

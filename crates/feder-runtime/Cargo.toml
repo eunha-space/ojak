@@ -14,6 +14,7 @@ url.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true
 ed25519-dalek.workspace = true
+ml-dsa = "0.1"
 serde_jcs.workspace = true
 bs58.workspace = true
 

@@ -66,7 +66,13 @@ pub async fn deliver_rfc9421(
     key_id: &str,
     private_key_pem: &str,
 ) -> anyhow::Result<()> {
-    let headers = rfc9421::sign_request("post", inbox_url, Some(body), key_id, private_key_pem)?;
+    let headers = rfc9421::sign_request(
+        "post",
+        inbox_url,
+        Some(body),
+        key_id,
+        &rfc9421::SigningKey::RsaPem(private_key_pem),
+    )?;
 
     let mut request = client
         .post(inbox_url)
