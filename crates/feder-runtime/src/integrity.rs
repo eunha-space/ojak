@@ -234,6 +234,125 @@ pub fn verify_object_integrity_proof(
     Err(anyhow!("integrity proof verification failed"))
 }
 
+/// Generate an Ed25519 signing key, returned as a PKCS#8 PEM.
+///
+/// PEM rather than raw bytes because that is what other implementations expect
+/// to find in a stored private key — Mastodon reads its `keypairs.private_key`
+/// with `OpenSSL::PKey.read` — so a key written here stays readable by a server
+/// pointed at the same database.
+///
+/// # Errors
+/// Returns an error if the key cannot be encoded.
+pub fn generate_ed25519_key() -> Result<String> {
+    use ed25519_dalek::pkcs8::EncodePrivateKey as _;
+
+    let key = ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng);
+    Ok(key
+        .to_pkcs8_pem(ed25519_dalek::pkcs8::spki::der::pem::LineEnding::LF)
+        .context("encode Ed25519 key as PKCS#8")?
+        .to_string())
+}
+
+/// The raw 32-byte seed and public key of a PKCS#8 PEM Ed25519 key.
+///
+/// # Errors
+/// Returns an error if the PEM is not a PKCS#8 Ed25519 private key.
+pub fn parse_ed25519_key(pem: &str) -> Result<([u8; 32], [u8; 32])> {
+    use ed25519_dalek::pkcs8::DecodePrivateKey as _;
+
+    let key = ed25519_dalek::SigningKey::from_pkcs8_pem(pem).context("parse Ed25519 PKCS#8 PEM")?;
+    Ok((key.to_bytes(), key.verifying_key().to_bytes()))
+}
+
+/// Attach an `eddsa-jcs-2022` integrity proof to `document`.
+///
+/// The inverse of [`verify_object_integrity_proof`], and deliberately written
+/// to be verified by it: the proof configuration is hashed, then the document
+/// without its proof, and the Ed25519 signature covers both hashes in that
+/// order.
+///
+/// A proof authenticates the activity rather than the transport that carried
+/// it, which is what lets a relayed or forwarded activity still be attributed.
+/// Mastodon 4.7 verifies these but does not produce them.
+///
+/// # Arguments
+/// * `document`            – the activity to sign; must be a JSON object
+/// * `verification_method` – the id of the key, as published in the actor's
+///   `assertionMethod`
+/// * `signing_key`         – the raw 32-byte Ed25519 seed
+///
+/// # Errors
+/// Returns an error if the document is not an object or cannot be canonicalized.
+pub fn sign_object_integrity_proof(
+    document: &Value,
+    verification_method: &str,
+    signing_key: &[u8; 32],
+) -> Result<Value> {
+    use ed25519_dalek::Signer as _;
+
+    let mut unsecured = document
+        .as_object()
+        .cloned()
+        .ok_or_else(|| anyhow!("document is not a JSON object"))?;
+    unsecured.remove("proof");
+    unsecured.remove("https://w3id.org/security#proof");
+
+    let created = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+
+    // The configuration carries the document's `@context`, as the verifier
+    // reconstructs it. Field order is irrelevant: JCS sorts keys.
+    let mut proof_config = Map::new();
+    proof_config.insert(
+        "@context".to_string(),
+        unsecured.get("@context").cloned().unwrap_or(Value::Null),
+    );
+    proof_config.insert("type".to_string(), Value::from("DataIntegrityProof"));
+    proof_config.insert(
+        "cryptosuite".to_string(),
+        Value::from(Cryptosuite::EddsaJcs2022.as_str()),
+    );
+    proof_config.insert(
+        "verificationMethod".to_string(),
+        Value::from(verification_method),
+    );
+    proof_config.insert("proofPurpose".to_string(), Value::from("assertionMethod"));
+    proof_config.insert("created".to_string(), Value::from(created));
+
+    let proof_canon = serde_jcs::to_string(&Value::Object(proof_config.clone()))
+        .context("canonicalize proof config")?;
+    let doc_canon =
+        serde_jcs::to_string(&Value::Object(unsecured.clone())).context("canonicalize document")?;
+
+    let mut hash_data = [0u8; 64];
+    hash_data[..32].copy_from_slice(&Sha256::digest(proof_canon.as_bytes()));
+    hash_data[32..].copy_from_slice(&Sha256::digest(doc_canon.as_bytes()));
+
+    let signature = ed25519_dalek::SigningKey::from_bytes(signing_key).sign(&hash_data);
+
+    let mut proof = proof_config;
+    proof.insert(
+        "proofValue".to_string(),
+        Value::from(encode_multibase_base58btc(&signature.to_bytes())),
+    );
+
+    let mut signed = unsecured;
+    signed.insert("proof".to_string(), Value::Object(proof));
+    Ok(Value::Object(signed))
+}
+
+/// The Multikey `publicKeyMultibase` for an Ed25519 public key: the
+/// `ed25519-pub` multicodec header, base58btc, with multibase's `z` prefix.
+#[must_use]
+pub fn encode_ed25519_multikey(public_key: &[u8; 32]) -> String {
+    let mut bytes = ED25519_PUB_MULTICODEC.to_vec();
+    bytes.extend_from_slice(public_key);
+    encode_multibase_base58btc(&bytes)
+}
+
+fn encode_multibase_base58btc(bytes: &[u8]) -> String {
+    format!("z{}", bs58::encode(bytes).into_string())
+}
+
 /// Check one signature, with the key the cryptosuite calls for.
 fn verify_signature(
     suite: Cryptosuite,
@@ -484,6 +603,106 @@ mod tests {
 
         doc["proof"]["expires"] = serde_json::json!("2999-01-01T00:00:00Z");
         assert!(extract_integrity_proof(&doc).is_some());
+    }
+
+    /// A proof this module produces is one it accepts. Round-tripping is weak
+    /// evidence on its own, but the verifier is itself pinned to the W3C
+    /// vector, so agreeing with it means agreeing with the specification.
+    #[test]
+    fn signs_a_proof_its_own_verifier_accepts() {
+        use ed25519_dalek::SigningKey;
+
+        let seed = [7u8; 32];
+        let public = SigningKey::from_bytes(&seed).verifying_key().to_bytes();
+        let multikey = encode_ed25519_multikey(&public);
+
+        let document = serde_json::json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": "https://local.example/activities/1",
+            "type": "Create",
+            "actor": "https://local.example/users/alice",
+            "object": {"id": "https://local.example/notes/1", "type": "Note", "content": "hi"},
+        });
+
+        let vm = "https://local.example/users/alice#ed25519-key";
+        let signed = sign_object_integrity_proof(&document, vm, &seed).unwrap();
+
+        let (proof, suite, found_vm) = extract_integrity_proof(&signed).expect("proof attached");
+        assert_eq!(suite, Cryptosuite::EddsaJcs2022);
+        assert_eq!(found_vm, vm);
+
+        let key = decode_multikey(&multikey).unwrap();
+        verify_object_integrity_proof(&signed, &proof, &key).expect("own proof must verify");
+    }
+
+    /// The proof covers the document: change anything under it and the proof
+    /// stops holding.
+    #[test]
+    fn a_signed_document_cannot_be_altered() {
+        use ed25519_dalek::SigningKey;
+
+        let seed = [9u8; 32];
+        let public = SigningKey::from_bytes(&seed).verifying_key().to_bytes();
+        let multikey = encode_ed25519_multikey(&public);
+
+        let document = serde_json::json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": "https://local.example/activities/2",
+            "type": "Create",
+            "actor": "https://local.example/users/alice",
+        });
+        let mut signed =
+            sign_object_integrity_proof(&document, "https://local.example/users/alice#k", &seed)
+                .unwrap();
+        signed["actor"] = serde_json::json!("https://local.example/users/mallory");
+
+        let (proof, _, _) = extract_integrity_proof(&signed).unwrap();
+        let key = decode_multikey(&multikey).unwrap();
+        assert!(verify_object_integrity_proof(&signed, &proof, &key).is_err());
+    }
+
+    /// The published key decodes back to the bytes it was made from, with the
+    /// multicodec header the W3C vector uses.
+    /// A generated key is a PKCS#8 PEM — the form other implementations read
+    /// a stored private key from — and parses back to the bytes that sign.
+    #[test]
+    fn generates_a_pem_key_that_parses_back() {
+        let pem = generate_ed25519_key().unwrap();
+        assert!(pem.starts_with("-----BEGIN PRIVATE KEY-----"));
+
+        let (seed, public) = parse_ed25519_key(&pem).unwrap();
+        assert_eq!(
+            ed25519_dalek::SigningKey::from_bytes(&seed)
+                .verifying_key()
+                .to_bytes(),
+            public,
+            "the public half must belong to the seed"
+        );
+
+        // And it is usable end to end.
+        let document = serde_json::json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "type": "Create",
+        });
+        let signed = sign_object_integrity_proof(&document, "https://x.test/a#k", &seed).unwrap();
+        let (proof, _, _) = extract_integrity_proof(&signed).unwrap();
+        let key = decode_multikey(&encode_ed25519_multikey(&public)).unwrap();
+        verify_object_integrity_proof(&signed, &proof, &key).unwrap();
+
+        assert_ne!(pem, generate_ed25519_key().unwrap(), "keys must differ");
+    }
+
+    #[test]
+    fn a_published_multikey_round_trips() {
+        let public = [3u8; 32];
+        let multikey = encode_ed25519_multikey(&public);
+        assert!(multikey.starts_with('z'));
+        assert_eq!(decode_ed25519_multikey(&multikey).unwrap(), public);
+
+        match decode_multikey(&multikey).unwrap() {
+            PublicKey::Ed25519(bytes) => assert_eq!(*bytes, public),
+            PublicKey::MlDsa44(_) => panic!("decoded as the wrong key type"),
+        }
     }
 
     #[test]
