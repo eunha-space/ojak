@@ -18,9 +18,51 @@ pub struct SignedHeaders {
     pub digest: String,
 }
 
+/// The `(request-target)` pseudo-header: the method and the path *including any
+/// query string*.
+///
+/// Mastodon's `HttpSignatureDraft#request_target` appends `?query` when there
+/// is one. Signing only the path would produce a signature no correct verifier
+/// could reproduce for such a URL, and would accept two different URLs as the
+/// same one.
+fn request_target(method: &str, url: &url::Url) -> String {
+    match url.query() {
+        Some(query) => format!("{} {}?{}", method.to_lowercase(), url.path(), query),
+        None => format!("{} {}", method.to_lowercase(), url.path()),
+    }
+}
+
+/// Build a signing string and the `headers` parameter naming its lines.
+///
+/// The covered set and its order follow Mastodon: the headers the request
+/// carries, in the order it carries them, with `(request-target)` appended
+/// last. Any verifier reconstructs from the `headers` parameter, so the order
+/// is not a correctness matter — but matching what the rest of the network
+/// emits keeps eunha out of the way of anything that verifies more strictly
+/// than it should.
+fn signing_string(covered: &[(&str, String)]) -> (String, String) {
+    let string = covered
+        .iter()
+        .map(|(name, value)| format!("{}: {value}", name.to_lowercase()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let names = covered
+        .iter()
+        .map(|(name, _)| name.to_lowercase())
+        .collect::<Vec<_>>()
+        .join(" ");
+    (string, names)
+}
+
 /// Sign an outgoing HTTP POST request body using RSA-SHA256.
 ///
 /// Returns [`SignedHeaders`] that the caller must attach to the request.
+///
+/// Covers `host`, `date`, any `extra_headers` given, `digest`, and
+/// `(request-target)` — in that order, as Mastodon does. `extra_headers` are
+/// headers the caller will send and wants covered, such as `Content-Type`;
+/// Mastodon covers every header on the request except `User-Agent`, `Accept`
+/// and `Accept-Encoding`.
 ///
 /// # Arguments
 /// * `method`          – HTTP method in any case (will be lowercased)
@@ -28,12 +70,17 @@ pub struct SignedHeaders {
 /// * `body`            – Serialized activity body (JSON bytes)
 /// * `key_id`          – `keyId` URI, typically `https://actor/url#main-key`
 /// * `private_key_pem` – PKCS#8 or PKCS#1 PEM-encoded RSA private key
+/// * `extra_headers`   – Additional headers to cover, in the order sent
+///
+/// # Errors
+/// Returns an error if the URL cannot be parsed or the key cannot sign.
 pub fn sign_request(
     method: &str,
     url: &str,
     body: &[u8],
     key_id: &str,
     private_key_pem: &str,
+    extra_headers: &[(&str, &str)],
 ) -> anyhow::Result<SignedHeaders> {
     let digest = format!("SHA-256={}", BASE64.encode(Sha256::digest(body)));
     let date = chrono::Utc::now()
@@ -42,21 +89,20 @@ pub fn sign_request(
 
     let parsed = url::Url::parse(url).context("invalid URL")?;
     let host = parsed.host_str().unwrap_or("").to_string();
-    let path = parsed.path().to_string();
 
-    let signing_string = format!(
-        "(request-target): {} {}\nhost: {}\ndate: {}\ndigest: {}",
-        method.to_lowercase(),
-        path,
-        host,
-        date,
-        digest,
+    let mut covered: Vec<(&str, String)> = vec![("host", host), ("date", date.clone())];
+    covered.extend(
+        extra_headers
+            .iter()
+            .map(|(name, value)| (*name, (*value).to_string())),
     );
+    covered.push(("digest", digest.clone()));
+    covered.push(("(request-target)", request_target(method, &parsed)));
 
+    let (signing_string, headers_param) = signing_string(&covered);
     let sig_b64 = rsa_sign_pkcs1v15(private_key_pem, signing_string.as_bytes())?;
     let signature = format!(
-        r#"keyId="{}",algorithm="rsa-sha256",headers="(request-target) host date digest",signature="{}""#,
-        key_id, sig_b64
+        r#"keyId="{key_id}",algorithm="rsa-sha256",headers="{headers_param}",signature="{sig_b64}""#
     );
 
     Ok(SignedHeaders {
@@ -92,18 +138,18 @@ pub fn sign_get(url: &str, key_id: &str, private_key_pem: &str) -> anyhow::Resul
 
     let parsed = url::Url::parse(url).context("invalid URL")?;
     let host = parsed.host_str().unwrap_or("").to_string();
-    let mut path = parsed.path().to_string();
-    if let Some(query) = parsed.query() {
-        path.push('?');
-        path.push_str(query);
-    }
 
-    let signing_string = format!("(request-target): get {path}\nhost: {host}\ndate: {date}");
+    // Same covered set and order as Mastodon: no body, so no digest.
+    let covered = [
+        ("host", host),
+        ("date", date.clone()),
+        ("(request-target)", request_target("get", &parsed)),
+    ];
+    let (signing_string, headers_param) = signing_string(&covered);
 
     let sig_b64 = rsa_sign_pkcs1v15(private_key_pem, signing_string.as_bytes())?;
     let signature = format!(
-        r#"keyId="{}",algorithm="rsa-sha256",headers="(request-target) host date",signature="{}""#,
-        key_id, sig_b64
+        r#"keyId="{key_id}",algorithm="rsa-sha256",headers="{headers_param}",signature="{sig_b64}""#
     );
 
     Ok(SignedGet { signature, date })
@@ -119,7 +165,7 @@ pub fn sign_get(url: &str, key_id: &str, private_key_pem: &str) -> anyhow::Resul
 /// * `public_key_pem` – SPKI PEM-encoded RSA public key of the signing actor
 pub fn verify_request(
     method: &str,
-    path: &str,
+    path_and_query: &str,
     headers: &[(&str, &str)],
     body: &[u8],
     public_key_pem: &str,
@@ -148,8 +194,15 @@ pub fn verify_request(
     let signing_string: String = headers_list
         .split_whitespace()
         .map(|h| match h {
+            // The signer covered the path *and* any query string, so the
+            // verifier has to reconstruct both or it rebuilds a different
+            // request than the one that was signed.
             "(request-target)" => {
-                format!("(request-target): {} {}", method.to_lowercase(), path)
+                format!(
+                    "(request-target): {} {}",
+                    method.to_lowercase(),
+                    path_and_query
+                )
             }
             other => format!("{other}: {}", get(other)),
         })
@@ -267,6 +320,7 @@ mod tests {
             body,
             "https://a.test/users/alice#main-key",
             &priv_pem,
+            &[],
         )
         .unwrap();
 
@@ -303,6 +357,90 @@ mod tests {
         verify_request("get", "/users/bob", &headers, b"", &pub_pem).unwrap();
     }
 
+    /// The covered set and its order, as Mastodon's `HttpSignatureDraft`
+    /// produces them: the headers the request carries, then `(request-target)`
+    /// last. Pinned so this cannot drift back apart without a test saying so.
+    #[test]
+    fn covers_what_mastodon_covers_in_the_order_mastodon_covers_it() {
+        let (priv_pem, _) = keypair();
+        let signed = sign_request(
+            "post",
+            "https://remote.example/inbox",
+            b"{}",
+            "https://a.test/users/alice#main-key",
+            &priv_pem,
+            &[("content-type", "application/activity+json")],
+        )
+        .unwrap();
+
+        assert!(
+            signed
+                .signature
+                .contains(r#"headers="host date content-type digest (request-target)""#),
+            "unexpected covered headers: {}",
+            signed.signature
+        );
+        assert!(signed.signature.contains(r#"algorithm="rsa-sha256""#));
+    }
+
+    /// A GET carries no body, so no digest — otherwise the same shape.
+    #[test]
+    fn a_signed_get_covers_host_date_and_the_request_target() {
+        let (priv_pem, _) = keypair();
+        let signed = sign_get(
+            "https://remote.example/users/bob",
+            "https://a.test/actor#main-key",
+            &priv_pem,
+        )
+        .unwrap();
+
+        assert!(
+            signed
+                .signature
+                .contains(r#"headers="host date (request-target)""#),
+            "unexpected covered headers: {}",
+            signed.signature
+        );
+    }
+
+    /// A URL with a query signs the query too, and verifies only against the
+    /// same query. Mastodon's `request_target` appends `?query`; covering only
+    /// the path would make two different URLs indistinguishable to a verifier.
+    #[test]
+    fn the_request_target_covers_the_query_string() {
+        let (priv_pem, pub_pem) = keypair();
+        let url = "https://remote.example/inbox?shared=true";
+        let body = b"{}";
+        let signed = sign_request(
+            "post",
+            url,
+            body,
+            "https://a.test/users/alice#main-key",
+            &priv_pem,
+            &[],
+        )
+        .unwrap();
+
+        let headers = [
+            ("host", "remote.example"),
+            ("date", signed.date.as_str()),
+            ("digest", signed.digest.as_str()),
+            ("signature", signed.signature.as_str()),
+        ];
+
+        verify_request("post", "/inbox?shared=true", &headers, body, &pub_pem)
+            .expect("the signed path and query must verify");
+
+        assert!(
+            verify_request("post", "/inbox", &headers, body, &pub_pem).is_err(),
+            "dropping the query must not still verify"
+        );
+        assert!(
+            verify_request("post", "/inbox?shared=false", &headers, body, &pub_pem).is_err(),
+            "a different query must not verify"
+        );
+    }
+
     #[test]
     fn verify_rejects_tampered_body() {
         let (priv_pem, pub_pem) = keypair();
@@ -312,6 +450,7 @@ mod tests {
             b"original",
             "https://a.test/users/alice#main-key",
             &priv_pem,
+            &[],
         )
         .unwrap();
         let headers = [

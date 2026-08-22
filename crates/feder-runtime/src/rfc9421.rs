@@ -205,8 +205,12 @@ fn signature_params(
         .map(|name| format!("\"{name}\""))
         .collect::<Vec<_>>()
         .join(" ");
-    let alg = algorithm.as_str();
-    format!("({covered});created={created};keyid=\"{key_id}\";alg=\"{alg}\"")
+    // No `alg`. RFC 9421 makes it optional, and Mastodon's signer (Linzer)
+    // emits only `created` and `keyid`; a verifier that knows the key knows the
+    // algorithm. It is still honoured on the way in, where a peer that does
+    // send it must not have it ignored.
+    let _ = algorithm;
+    format!("({covered});created={created};keyid=\"{key_id}\"")
 }
 
 /// Build the signature base (RFC 9421 §2.5).
@@ -474,7 +478,11 @@ mod tests {
                 .signature_input
                 .contains("keyid=\"https://local.example/users/alice#main-key\"")
         );
-        assert!(signed.signature_input.ends_with("alg=\"rsa-v1_5-sha256\""));
+        assert!(
+            signed
+                .signature_input
+                .ends_with("keyid=\"https://local.example/users/alice#main-key\"")
+        );
         assert!(signed.signature.starts_with("sig1=:"));
         assert!(signed.signature.ends_with(':'));
         assert_eq!(signed.content_digest, Some(content_digest(body)));
@@ -660,7 +668,10 @@ mod tests {
         )
         .unwrap();
 
-        assert!(signed.signature_input.ends_with("alg=\"ed25519\""));
+        assert!(
+            !signed.signature_input.contains("alg="),
+            "Mastodon's signer emits no alg parameter"
+        );
 
         verify_request(
             "POST",
@@ -674,12 +685,13 @@ mod tests {
         .expect("an Ed25519 signature this module made should verify");
     }
 
-    /// A signature naming one algorithm must not be checked with a key of
-    /// another, whichever way round.
+    /// A peer that does state an algorithm must not have it ignored: a
+    /// signature claiming one algorithm is refused against a key of another,
+    /// rather than checked anyway.
     #[test]
-    fn refuses_a_key_that_does_not_match_the_stated_algorithm() {
+    fn refuses_a_key_that_does_not_match_a_stated_algorithm() {
         let body = b"body";
-        let ed25519 = sign_request(
+        let signed = sign_request(
             "post",
             "https://remote.example/inbox",
             Some(body),
@@ -688,38 +700,37 @@ mod tests {
         )
         .unwrap();
 
+        // Eunha omits `alg`, as Mastodon does; state it the way a peer might.
+        let with_alg = format!("{};alg=\"ed25519\"", signed.signature_input);
+
         let err = verify_request(
             "POST",
             "https://remote.example/inbox",
-            &ed25519.signature_input,
-            &ed25519.signature,
-            ed25519.content_digest.as_deref(),
+            &with_alg,
+            &signed.signature,
+            signed.content_digest.as_deref(),
             body,
             &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .unwrap_err();
         assert!(err.to_string().contains("claims ed25519"), "{err}");
+    }
 
-        let rsa = sign_request(
-            "post",
-            "https://remote.example/inbox",
-            Some(body),
-            "https://local.example/users/alice#main-key",
-            &SigningKey::RsaPem(TEST_KEY_RSA),
-        )
-        .unwrap();
-
+    /// An algorithm nobody here implements is refused outright, rather than
+    /// verified with whatever key happens to be to hand.
+    #[test]
+    fn refuses_an_unknown_algorithm() {
         let err = verify_request(
             "POST",
             "https://remote.example/inbox",
-            &rsa.signature_input,
-            &rsa.signature,
-            rsa.content_digest.as_deref(),
-            body,
-            &VerifyingKey::Ed25519(&TEST_KEY_ED25519_PUBLIC),
+            "sig1=(\"@method\" \"@target-uri\");created=1;keyid=\"k\";alg=\"rsa-pss-sha512\"",
+            "sig1=:AAAA:",
+            None,
+            b"",
+            &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .unwrap_err();
-        assert!(err.to_string().contains("claims rsa-v1_5-sha256"), "{err}");
+        assert!(err.to_string().contains("unsupported algorithm"), "{err}");
     }
 
     #[test]

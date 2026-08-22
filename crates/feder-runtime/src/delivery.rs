@@ -20,11 +20,20 @@ pub async fn deliver(
     key_id: &str,
     private_key_pem: &str,
 ) -> anyhow::Result<()> {
-    let headers = signature::sign_request("post", inbox_url, body, key_id, private_key_pem)?;
+    // Mastodon covers Content-Type on deliveries, so it is sent and signed.
+    let content_type = "application/activity+json";
+    let headers = signature::sign_request(
+        "post",
+        inbox_url,
+        body,
+        key_id,
+        private_key_pem,
+        &[("content-type", content_type)],
+    )?;
 
     let resp = client
         .post(inbox_url)
-        .header("Content-Type", "application/activity+json")
+        .header("Content-Type", content_type)
         .header("Accept", "application/activity+json")
         .header("Date", headers.date)
         .header("Digest", headers.digest)
