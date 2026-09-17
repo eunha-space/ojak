@@ -1,0 +1,19 @@
+[package]
+name = "feder-jsonld"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+iri-string.workspace = true
+# Not inherited from the workspace: this crate is `no_std`, and an inherited
+# dependency cannot turn the workspace's default features back off.
+serde_json = { version = "1.0.140", default-features = false, features = ["alloc"] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# Tests are ordinary `std` code; `cargo check -p feder-jsonld` without them is
+# what shows the library itself still builds `no_std`.
+serde_json.workspace = true

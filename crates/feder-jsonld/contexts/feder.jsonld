@@ -1,0 +1,64 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    "https://purl.archive.org/socialweb/webfinger",
+    {
+      "toot": "http://joinmastodon.org/ns#",
+      "schema": "http://schema.org#",
+      "ostatus": "http://ostatus.org#",
+      "gts": "https://gotosocial.org/ns#",
+
+      "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+      "sensitive": "as:sensitive",
+      "Hashtag": "as:Hashtag",
+      "movedTo": { "@id": "as:movedTo", "@type": "@id" },
+      "alsoKnownAs": { "@id": "as:alsoKnownAs", "@type": "@id" },
+
+      "Emoji": "toot:Emoji",
+      "featured": { "@id": "toot:featured", "@type": "@id" },
+      "featuredTags": { "@id": "toot:featuredTags", "@type": "@id" },
+      "focalPoint": { "@container": "@list", "@id": "toot:focalPoint" },
+      "blurhash": "toot:blurhash",
+      "discoverable": "toot:discoverable",
+      "indexable": "toot:indexable",
+      "memorial": "toot:memorial",
+      "votersCount": "toot:votersCount",
+      "suspended": "toot:suspended",
+      "attributionDomains": { "@id": "toot:attributionDomains", "@container": "@set" },
+      "showFeatured": "toot:showFeatured",
+      "showMedia": "toot:showMedia",
+      "showRepliesInMedia": "toot:showRepliesInMedia",
+
+      "PropertyValue": "schema:PropertyValue",
+      "value": "schema:value",
+
+      "atomUri": "ostatus:atomUri",
+      "inReplyToAtomUri": "ostatus:inReplyToAtomUri",
+      "conversation": "ostatus:conversation",
+
+      "QuoteRequest": "https://w3id.org/fep/044f#QuoteRequest",
+      "QuoteAuthorization": "https://w3id.org/fep/044f#QuoteAuthorization",
+      "quote": { "@id": "https://w3id.org/fep/044f#quote", "@type": "@id" },
+      "quoteUri": "http://fedibird.com/ns#quoteUri",
+      "_misskey_quote": "https://misskey-hub.net/ns#_misskey_quote",
+      "quoteAuthorization": { "@id": "https://w3id.org/fep/044f#quoteAuthorization", "@type": "@id" },
+
+      "FeatureRequest": "https://w3id.org/fep/7aa9#FeatureRequest",
+      "FeatureAuthorization": "https://w3id.org/fep/7aa9#FeatureAuthorization",
+      "FeaturedCollection": "https://w3id.org/fep/7aa9#FeaturedCollection",
+      "FeaturedItem": "https://w3id.org/fep/7aa9#FeaturedItem",
+      "topic": { "@id": "https://w3id.org/fep/7aa9#topic", "@type": "@id" },
+      "featuredObject": { "@id": "https://w3id.org/fep/7aa9#featuredObject", "@type": "@id" },
+      "featureAuthorization": { "@id": "https://w3id.org/fep/7aa9#featureAuthorization", "@type": "@id" },
+
+      "interactingObject": { "@id": "gts:interactingObject", "@type": "@id" },
+      "interactionTarget": { "@id": "gts:interactionTarget", "@type": "@id" },
+      "interactionPolicy": { "@id": "gts:interactionPolicy", "@type": "@id" },
+      "canQuote": { "@id": "gts:canQuote", "@type": "@id" },
+      "canFeature": { "@id": "https://w3id.org/fep/7aa9#canFeature", "@type": "@id" },
+      "automaticApproval": { "@id": "gts:automaticApproval", "@type": "@id" },
+      "manualApproval": { "@id": "gts:manualApproval", "@type": "@id" }
+    }
+  ]
+}

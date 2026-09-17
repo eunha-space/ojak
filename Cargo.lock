@@ -296,6 +296,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "feder-jsonld"
+version = "0.1.0"
+dependencies = [
+ "iri-string",
+ "serde_json",
+]
+
+[[package]]
 name = "feder-runtime"
 version = "0.1.0"
 dependencies = [
