@@ -32,7 +32,7 @@
 //! request-forgery primitive; see `contexts/README.md`. A context it does not
 //! ship is read as ActivityStreams, which every context the fediverse serves
 //! extends, so its standard terms mean what they always do and only the
-//! sender's own additions go unread; [`Normalized::unresolved_contexts`] says
+//! sender's own additions go unread; [`Processed::unresolved_contexts`] says
 //! which contexts those were. It rejects `@graph`,
 //! `@included` and `@reverse` outright, for reasons recorded on
 //! [`Error::RestructuringKeyword`]. It has no flattening, no framing, no RDF

@@ -8,7 +8,7 @@
 //!
 //! A document is read by what it means: [`read`] normalises it over the
 //! contexts Feder ships and reads it into a type, and [`read_reporting`] says
-//! what the type did not keep. [`write`] writes a value in Feder's spelling,
+//! what the type did not keep. [`write()`] writes a value in Feder's spelling,
 //! under Feder's context.
 //!
 //! This crate models protocol data only. It does not fetch, store, deliver,

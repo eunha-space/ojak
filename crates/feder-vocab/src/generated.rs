@@ -1719,7 +1719,7 @@ pub struct Application {
     /// A public part of the key pair owned by this actor.
     pub public_keys: Vec<Reference<CryptographicKey>>,
     /// Represents this actor's public keys.  It serves as equivalent to
-    /// the `publicKeys` property, but is used for [FEP-521a] compliance.
+    /// the `publicKeys` property, but is used for [FEP-521a](https://w3id.org/fep/521a) compliance.
     pub assertion_methods: Vec<Reference<Multikey>>,
     /// When `true`, conveys that for this actor, follow requests are not usually
     /// automatically approved, but instead are examined by a person who may accept
@@ -4121,7 +4121,7 @@ pub struct DataIntegrityProof {
     /// The cryptographic suite used to create the proof.
     pub cryptosuite: Option<String>,
     /// A key owned by an actor according to [FEP-521a: Representing actor's public
-    /// keys][1].
+    /// keys](https://w3id.org/fep/521a).
     pub verification_method: Option<Reference<Multikey>>,
     /// The reason the proof was created.
     pub proof_purpose: Option<ProofPurpose>,
@@ -5352,13 +5352,13 @@ pub struct Endpoints {
     /// the client posts an `x-www-form-urlencoded` `id` parameter with the value
     /// being the `id` of the requested ActivityStreams object.
     pub proxy_url: Option<Iri>,
-    /// If OAuth 2.0 bearer tokens [RFC 6749] [RFC 6750] are being used for
+    /// If OAuth 2.0 bearer tokens \[RFC 6749\] \[RFC 6750\] are being used for
     /// authenticating [client to server
     /// interactions](https://www.w3.org/TR/activitypub/#client-to-server-interactions),
     /// this endpoint specifies a URI at which a browser-authenticated user may
     /// obtain a new authorization grant.
     pub oauth_authorization_endpoint: Option<Iri>,
-    /// If OAuth 2.0 bearer tokens [RFC 6749] [RFC 6750] are being used for
+    /// If OAuth 2.0 bearer tokens \[RFC 6749\] \[RFC 6750\] are being used for
     /// authenticating [client to server
     /// interactions](https://www.w3.org/TR/activitypub/#client-to-server-interactions),
     /// this endpoint specifies a URI at which a client may acquire an access token.
@@ -6690,7 +6690,7 @@ pub struct Group {
     /// A public part of the key pair owned by this actor.
     pub public_keys: Vec<Reference<CryptographicKey>>,
     /// Represents this actor's public keys.  It serves as equivalent to
-    /// the `publicKeys` property, but is used for [FEP-521a] compliance.
+    /// the `publicKeys` property, but is used for [FEP-521a](https://w3id.org/fep/521a) compliance.
     pub assertion_methods: Vec<Reference<Multikey>>,
     /// When `true`, conveys that for this actor, follow requests are not usually
     /// automatically approved, but instead are examined by a person who may accept
@@ -9956,7 +9956,7 @@ impl ToJson for Move {
 }
 
 /// Represents a key owned by an actor according to [FEP-521a: Representing
-/// actor's public keys.][1]
+/// actor's public keys.](https://w3id.org/fep/521a)
 ///
 /// The type `https://w3id.org/security#Multikey`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -9965,7 +9965,7 @@ pub struct Multikey {
     pub id: Option<Iri>,
     /// An actor who owns this key.
     pub controller: Option<AnyActor>,
-    /// A [Multibase]-encoded value of a [Multicodec] prefix and the key.
+    /// A [Multibase](https://www.w3.org/TR/vc-data-integrity/#multibase-0)-encoded value of a [Multicodec](https://github.com/multiformats/multicodec/) prefix and the key.
     pub public_key: Option<String>,
 }
 
@@ -10308,14 +10308,14 @@ pub struct Object {
     pub replies: Option<AnyCollection>,
     /// Every object *may* have a `shares` collection. This is a list of all
     /// {@link Announce} activities with this object as the `object` property,
-    /// added as a [side effect]. The `shares` collection *must* be either
+    /// added as a [side effect](https://www.w3.org/TR/activitypub/#announce-activity-inbox). The `shares` collection *must* be either
     /// an {@link OrderedCollection} or a {@link Collection} and *may* be filtered
     /// on privileges of an authenticated user or as appropriate
     /// when no authentication is given.
     pub shares: Option<AnyCollection>,
     /// Every object *may* have a `likes` collection. This is a list of all
     /// {@link Like} activities with this object as the `object` property,
-    /// added as a [side effect]. The `likes` collection *must* be either
+    /// added as a [side effect](https://www.w3.org/TR/activitypub/#announce-activity-inbox). The `likes` collection *must* be either
     /// an {@link OrderedCollection} or a {@link Collection} and *may* be filtered
     /// on privileges of an authenticated user or as appropriate
     /// when no authentication is given.
@@ -11431,7 +11431,7 @@ pub struct Organization {
     /// A public part of the key pair owned by this actor.
     pub public_keys: Vec<Reference<CryptographicKey>>,
     /// Represents this actor's public keys.  It serves as equivalent to
-    /// the `publicKeys` property, but is used for [FEP-521a] compliance.
+    /// the `publicKeys` property, but is used for [FEP-521a](https://w3id.org/fep/521a) compliance.
     pub assertion_methods: Vec<Reference<Multikey>>,
     /// When `true`, conveys that for this actor, follow requests are not usually
     /// automatically approved, but instead are examined by a person who may accept
@@ -12041,7 +12041,7 @@ pub struct Person {
     /// A public part of the key pair owned by this actor.
     pub public_keys: Vec<Reference<CryptographicKey>>,
     /// Represents this actor's public keys.  It serves as equivalent to
-    /// the `publicKeys` property, but is used for [FEP-521a] compliance.
+    /// the `publicKeys` property, but is used for [FEP-521a](https://w3id.org/fep/521a) compliance.
     pub assertion_methods: Vec<Reference<Multikey>>,
     /// When `true`, conveys that for this actor, follow requests are not usually
     /// automatically approved, but instead are examined by a person who may accept
@@ -15231,7 +15231,7 @@ pub struct Service {
     /// A public part of the key pair owned by this actor.
     pub public_keys: Vec<Reference<CryptographicKey>>,
     /// Represents this actor's public keys.  It serves as equivalent to
-    /// the `publicKeys` property, but is used for [FEP-521a] compliance.
+    /// the `publicKeys` property, but is used for [FEP-521a](https://w3id.org/fep/521a) compliance.
     pub assertion_methods: Vec<Reference<Multikey>>,
     /// When `true`, conveys that for this actor, follow requests are not usually
     /// automatically approved, but instead are examined by a person who may accept

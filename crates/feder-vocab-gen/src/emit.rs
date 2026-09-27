@@ -669,9 +669,11 @@ fn emit_enum(out: &mut String, vocabulary: &Vocabulary, name: &str, def: &EnumDe
     let _ = writeln!(out, "        }}\n    }}\n}}\n");
 }
 
-/// The first paragraph of a schema description.
+/// The first paragraph of a schema description, with its reference-style
+/// links made inline: their definitions are further down, and a link whose
+/// definition is left behind is a broken link to rustdoc.
 fn first_paragraph(description: &str) -> String {
-    description
+    let paragraph = description
         .trim()
         .split("\n\n")
         .next()
@@ -679,7 +681,67 @@ fn first_paragraph(description: &str) -> String {
         .lines()
         .map(str::trim)
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n");
+    inline_references(&paragraph, description)
+}
+
+/// `[text][label]` and `[label]` as `[text](url)`, from `[label]: url` in
+/// `description`. Without a definition, a full reference is its text and a
+/// shortcut is escaped, so that rustdoc does not read it as a path.
+fn inline_references(text: &str, description: &str) -> String {
+    let definition = |label: &str| {
+        description.lines().find_map(|line| {
+            let rest = line.trim().strip_prefix('[')?;
+            let (name, url) = rest.split_once("]:")?;
+            (name == label).then(|| url.trim().to_owned())
+        })
+    };
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('[') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        let Some(close) = after
+            .find(']')
+            .filter(|close| !after[..*close].contains('['))
+        else {
+            out.push('[');
+            rest = after;
+            continue;
+        };
+        let link_text = &after[..close];
+        let tail = &after[close + 1..];
+        if tail.starts_with('(') {
+            // Already inline.
+            out.push('[');
+            out.push_str(link_text);
+            out.push(']');
+            rest = tail;
+        } else if let Some(label) = tail
+            .strip_prefix('[')
+            .and_then(|label| label.find(']').map(|end| &label[..end]))
+        {
+            match definition(label) {
+                Some(url) => {
+                    let _ = write!(out, "[{link_text}]({url})");
+                }
+                None => out.push_str(link_text),
+            }
+            rest = &tail[label.len() + 2..];
+        } else {
+            match definition(link_text) {
+                Some(url) => {
+                    let _ = write!(out, "[{link_text}]({url})");
+                }
+                None => {
+                    let _ = write!(out, "\\[{link_text}\\]");
+                }
+            }
+            rest = tail;
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 fn doc(out: &mut String, indent: &str, text: &str) {
