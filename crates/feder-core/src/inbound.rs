@@ -93,7 +93,12 @@ mod tests {
     #[test]
     fn unlocked_follow_accepts_and_sends() {
         let me = iri("https://a.test/users/alice");
-        let actions = on_follow(follow_to("https://a.test/users/alice"), &me, false, iri("https://a.test/accepts/1"));
+        let actions = on_follow(
+            follow_to("https://a.test/users/alice"),
+            &me,
+            false,
+            iri("https://a.test/accepts/1"),
+        );
         assert_eq!(actions.len(), 2);
         assert_eq!(actions[0], Action::RecordFollow);
         match &actions[1] {
@@ -111,14 +116,24 @@ mod tests {
     #[test]
     fn locked_follow_is_pending() {
         let me = iri("https://a.test/users/alice");
-        let actions = on_follow(follow_to("https://a.test/users/alice"), &me, true, iri("https://a.test/accepts/1"));
+        let actions = on_follow(
+            follow_to("https://a.test/users/alice"),
+            &me,
+            true,
+            iri("https://a.test/accepts/1"),
+        );
         assert_eq!(actions, vec![Action::RecordFollowRequest]);
     }
 
     #[test]
     fn follow_for_someone_else_is_ignored() {
         let me = iri("https://a.test/users/alice");
-        let actions = on_follow(follow_to("https://a.test/users/carol"), &me, false, iri("https://a.test/accepts/1"));
+        let actions = on_follow(
+            follow_to("https://a.test/users/carol"),
+            &me,
+            false,
+            iri("https://a.test/accepts/1"),
+        );
         assert!(actions.is_empty());
     }
 }

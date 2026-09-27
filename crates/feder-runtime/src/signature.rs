@@ -82,6 +82,25 @@ pub fn sign_request(
     private_key_pem: &str,
     extra_headers: &[(&str, &str)],
 ) -> anyhow::Result<SignedHeaders> {
+    let key = PrivateKey::from_pem(private_key_pem)?;
+    sign_request_with_key(method, url, body, key_id, &key, extra_headers)
+}
+
+/// [`sign_request`] with a key parsed once by [`PrivateKey::from_pem`].
+///
+/// Parsing an RSA key costs more than signing with it, so a caller that signs
+/// often with the same key should parse it once and keep it.
+///
+/// # Errors
+/// Returns an error if the URL cannot be parsed.
+pub fn sign_request_with_key(
+    method: &str,
+    url: &str,
+    body: &[u8],
+    key_id: &str,
+    key: &PrivateKey,
+    extra_headers: &[(&str, &str)],
+) -> anyhow::Result<SignedHeaders> {
     let digest = format!("SHA-256={}", BASE64.encode(Sha256::digest(body)));
     let date = chrono::Utc::now()
         .format("%a, %d %b %Y %H:%M:%S GMT")
@@ -100,7 +119,7 @@ pub fn sign_request(
     covered.push(("(request-target)", request_target(method, &parsed)));
 
     let (signing_string, headers_param) = signing_string(&covered);
-    let sig_b64 = rsa_sign_pkcs1v15(private_key_pem, signing_string.as_bytes())?;
+    let sig_b64 = key.sign(signing_string.as_bytes());
     let signature = format!(
         r#"keyId="{key_id}",algorithm="rsa-sha256",headers="{headers_param}",signature="{sig_b64}""#
     );
@@ -132,6 +151,15 @@ pub struct SignedGet {
 /// * `key_id`          – `keyId` URI, typically `https://domain/actor#main-key`
 /// * `private_key_pem` – PKCS#8 or PKCS#1 PEM-encoded RSA private key
 pub fn sign_get(url: &str, key_id: &str, private_key_pem: &str) -> anyhow::Result<SignedGet> {
+    let key = PrivateKey::from_pem(private_key_pem)?;
+    sign_get_with_key(url, key_id, &key)
+}
+
+/// [`sign_get`] with a key parsed once by [`PrivateKey::from_pem`].
+///
+/// # Errors
+/// Returns an error if the URL cannot be parsed.
+pub fn sign_get_with_key(url: &str, key_id: &str, key: &PrivateKey) -> anyhow::Result<SignedGet> {
     let date = chrono::Utc::now()
         .format("%a, %d %b %Y %H:%M:%S GMT")
         .to_string();
@@ -147,7 +175,7 @@ pub fn sign_get(url: &str, key_id: &str, private_key_pem: &str) -> anyhow::Resul
     ];
     let (signing_string, headers_param) = signing_string(&covered);
 
-    let sig_b64 = rsa_sign_pkcs1v15(private_key_pem, signing_string.as_bytes())?;
+    let sig_b64 = key.sign(signing_string.as_bytes());
     let signature = format!(
         r#"keyId="{key_id}",algorithm="rsa-sha256",headers="{headers_param}",signature="{sig_b64}""#
     );
@@ -226,18 +254,46 @@ pub fn key_id_from_header(sig_header: &str) -> Option<&str> {
 
 // ── RSA helpers ───────────────────────────────────────────────────────────────
 
+/// An RSA private key, parsed and ready to sign with.
+///
+/// Parsing a PEM decodes the key and precomputes its CRT values, which costs
+/// more than a signature does. The `sign_*` functions that take a PEM parse it
+/// every call; keep one of these instead to sign many requests with one key.
+#[derive(Clone)]
+pub struct PrivateKey(rsa::pkcs1v15::SigningKey<Sha256>);
+
+impl PrivateKey {
+    /// Parse a PKCS#8 (`BEGIN PRIVATE KEY`) or PKCS#1 (`BEGIN RSA PRIVATE KEY`)
+    /// PEM-encoded RSA private key.
+    ///
+    /// # Errors
+    /// Returns an error if the PEM is neither.
+    pub fn from_pem(pem: &str) -> anyhow::Result<Self> {
+        let key = parse_private_key(pem).context("parse RSA private key")?;
+        Ok(Self(rsa::pkcs1v15::SigningKey::<Sha256>::new(key)))
+    }
+
+    /// RSASSA-PKCS1-v1_5 over SHA-256, base64-encoded.
+    fn sign(&self, message: &[u8]) -> String {
+        use rsa::signature::{SignatureEncoding as _, Signer as _};
+
+        let sig: rsa::pkcs1v15::Signature = self.0.sign(message);
+        BASE64.encode(sig.to_bytes())
+    }
+}
+
+impl std::fmt::Debug for PrivateKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PrivateKey(..)")
+    }
+}
+
 /// Sign `message` with RSASSA-PKCS1-v1_5 over SHA-256, base64-encoded.
 ///
 /// Shared with [`crate::rfc9421`], which signs a different string with the same
 /// primitive.
 pub(crate) fn rsa_sign_pkcs1v15(private_key_pem: &str, message: &[u8]) -> anyhow::Result<String> {
-    use rsa::pkcs1v15::SigningKey;
-    use rsa::signature::{SignatureEncoding as _, Signer as _};
-
-    let private_key = parse_private_key(private_key_pem).context("parse RSA private key")?;
-    let signing_key = SigningKey::<Sha256>::new(private_key);
-    let sig: rsa::pkcs1v15::Signature = signing_key.sign(message);
-    Ok(BASE64.encode(sig.to_bytes()))
+    Ok(PrivateKey::from_pem(private_key_pem)?.sign(message))
 }
 
 /// Parse an RSA private key from either PKCS#8 (`BEGIN PRIVATE KEY`) or
@@ -355,6 +411,47 @@ mod tests {
         ];
         // A GET has no body; verification must pass without a Digest header.
         verify_request("get", "/users/bob", &headers, b"", &pub_pem).unwrap();
+    }
+
+    /// A key parsed once signs exactly as its PEM does — PKCS#1 v1.5 is
+    /// deterministic — and keeps doing so when reused.
+    #[test]
+    fn a_parsed_key_signs_as_its_pem_does() {
+        let (priv_pem, pub_pem) = keypair();
+        let key = PrivateKey::from_pem(&priv_pem).unwrap();
+        assert_eq!(
+            key.sign(b"signing string"),
+            rsa_sign_pkcs1v15(&priv_pem, b"signing string").unwrap()
+        );
+
+        for target in ["/users/bob", "/users/carol"] {
+            let url = format!("https://remote.example{target}");
+            let signed = sign_get_with_key(&url, "https://a.test/actor#main-key", &key).unwrap();
+            let headers = [
+                ("host", "remote.example"),
+                ("date", signed.date.as_str()),
+                ("signature", signed.signature.as_str()),
+            ];
+            verify_request("get", target, &headers, b"", &pub_pem).unwrap();
+        }
+
+        let body = br#"{"type":"Like"}"#;
+        let signed = sign_request_with_key(
+            "post",
+            "https://remote.example/inbox",
+            body,
+            "https://a.test/actor#main-key",
+            &key,
+            &[],
+        )
+        .unwrap();
+        let headers = [
+            ("host", "remote.example"),
+            ("date", signed.date.as_str()),
+            ("digest", signed.digest.as_str()),
+            ("signature", signed.signature.as_str()),
+        ];
+        verify_request("post", "/inbox", &headers, body, &pub_pem).unwrap();
     }
 
     /// The covered set and its order, as Mastodon's `HttpSignatureDraft`

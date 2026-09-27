@@ -42,7 +42,9 @@ where
         Visibility::Public
     } else if cc.iter().any(|u| is_public(u.as_ref())) {
         Visibility::Unlisted
-    } else if to.iter().any(|u| is_followers(u.as_ref())) || cc.iter().any(|u| is_followers(u.as_ref())) {
+    } else if to.iter().any(|u| is_followers(u.as_ref()))
+        || cc.iter().any(|u| is_followers(u.as_ref()))
+    {
         Visibility::Private
     } else {
         Visibility::Direct
@@ -118,7 +120,11 @@ mod tests {
             Visibility::Direct,
         ] {
             let (to, cc) = audience_for(vis, FOLLOWERS, &mentions);
-            assert_eq!(visibility_from_audience(&to, &cc), vis, "round-trip {vis:?}");
+            assert_eq!(
+                visibility_from_audience(&to, &cc),
+                vis,
+                "round-trip {vis:?}"
+            );
         }
     }
 
@@ -127,11 +133,17 @@ mod tests {
         let mentions = vec!["https://b.test/users/bob".to_string()];
         assert_eq!(
             audience_for(Visibility::Public, FOLLOWERS, &mentions),
-            (vec![PUBLIC.to_string()], vec![FOLLOWERS.to_string(), mentions[0].clone()])
+            (
+                vec![PUBLIC.to_string()],
+                vec![FOLLOWERS.to_string(), mentions[0].clone()]
+            )
         );
         assert_eq!(
             audience_for(Visibility::Unlisted, FOLLOWERS, &mentions),
-            (vec![FOLLOWERS.to_string()], vec![PUBLIC.to_string(), mentions[0].clone()])
+            (
+                vec![FOLLOWERS.to_string()],
+                vec![PUBLIC.to_string(), mentions[0].clone()]
+            )
         );
         assert_eq!(
             audience_for(Visibility::Private, FOLLOWERS, &mentions),

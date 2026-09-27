@@ -4,11 +4,7 @@
 ///
 /// Performs a WebFinger lookup for `acct:{user}@{domain}` and returns the
 /// `href` of the `self` link whose type contains `activity+json` or `ld+json`.
-pub async fn resolve(
-    client: &reqwest::Client,
-    user: &str,
-    domain: &str,
-) -> anyhow::Result<String> {
+pub async fn resolve(client: &reqwest::Client, user: &str, domain: &str) -> anyhow::Result<String> {
     let url = format!(
         "https://{}/.well-known/webfinger?resource=acct:{}@{}",
         domain, user, domain
