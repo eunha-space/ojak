@@ -582,3 +582,79 @@ async fn an_integrity_proof_authenticates_an_unsigned_activity() {
     altered["id"] = json!(format!("{bob}/follows/2"));
     assert_eq!(deliver(&federation, &store, unsigned(&altered)).await, 401);
 }
+
+/// A key the application already holds is used without a fetch, and an
+/// activity with no typed listener reaches the catch-all, whose `vouched`
+/// document is reduced as the typed one is.
+#[tokio::test]
+async fn a_known_key_and_the_catch_all() {
+    let remote = Remote::default();
+    let bob = serve_remote(remote.clone()).await;
+    let key_id = format!("{bob}#main-key");
+    let caught: Arc<Mutex<Vec<(String, Value)>>> = Arc::default();
+    let catch = caught.clone();
+    let bob_url = Url::parse(&bob).unwrap();
+    let federation = federation(move |b| {
+        let catch = catch.clone();
+        let bob_url = bob_url.clone();
+        b.known_key(move |_, key: String| {
+            let bob_url = bob_url.clone();
+            async move {
+                Ok::<_, String>((key == format!("{bob_url}#main-key")).then(|| {
+                    feder::federation::KnownKey {
+                        pem: PUBLIC_KEY.to_owned(),
+                        actor: bob_url,
+                    }
+                }))
+            }
+        })
+        .on_any(
+            move |_, received: Received<feder_vocab::generated::AnyObject>| {
+                let catch = catch.clone();
+                async move {
+                    catch
+                        .lock()
+                        .unwrap()
+                        .push((received.sender.to_string(), received.vouched));
+                    Ok::<_, String>(())
+                }
+            },
+        )
+    });
+    let store = App::default();
+
+    let announce = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{bob}/announces/1"),
+        "type": "Announce",
+        "actor": bob,
+        "object": {
+            "id": "https://elsewhere.test/notes/1",
+            "type": "Note",
+            "attributedTo": "https://elsewhere.test/users/eve",
+            "content": "eve's words, as bob tells them"
+        },
+    });
+    assert_eq!(
+        deliver(
+            &federation,
+            &store,
+            post("/ap/inbox", &key_id, &announce, &announce)
+        )
+        .await,
+        202
+    );
+    assert_eq!(
+        remote.fetches.load(Ordering::SeqCst),
+        0,
+        "the known key was used"
+    );
+    let caught = caught.lock().unwrap();
+    assert_eq!(caught.len(), 1);
+    assert_eq!(caught[0].0, bob);
+    assert_eq!(caught[0].1["object"], "https://elsewhere.test/notes/1");
+    assert_eq!(
+        caught[0].1["type"], "Announce",
+        "in the sender's own spelling"
+    );
+}

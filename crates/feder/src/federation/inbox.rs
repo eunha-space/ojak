@@ -42,6 +42,10 @@ pub struct Received<T> {
     pub recipient: Option<ActorRef>,
     /// The activity as it arrived, for forwarding.
     pub document: Value,
+    /// The activity as it arrived, in its sender's spelling, with what the
+    /// sender could not vouch for reduced to references as in `activity`:
+    /// for an application whose handlers read JSON.
+    pub vouched: Value,
     /// What reading it into the listener's type did not keep.
     pub lost: Vec<Loss>,
 }
@@ -52,6 +56,7 @@ pub(super) struct Incoming {
     /// references.
     normalized: Value,
     document: Value,
+    vouched: Value,
     sender: Url,
     recipient: Option<ActorRef>,
 }
@@ -73,13 +78,25 @@ where
     Fut: Future<Output = Result<(), E>> + Send + 'static,
     E: Into<Error>,
 {
+    reading(T::TYPE, listen)
+}
+
+/// A listener reading its activity into `T`, named `name` when it cannot.
+fn reading<D, T, F, Fut, E>(name: &'static str, listen: F) -> ListenerFn<D>
+where
+    D: Clone + Send + Sync + 'static,
+    T: FromJson + ToJson + Send + 'static,
+    F: Fn(Context<D>, Received<T>) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<(), E>> + Send + 'static,
+    E: Into<Error>,
+{
     Arc::new(move |context: Context<D>, incoming: Incoming| {
         let activity = match T::from_json(&incoming.normalized) {
             Ok(activity) => activity,
             Err(error) => {
                 // Not an error to retry: the same document will read the
                 // same way next time.
-                let error: Error = format!("not a {}: {error}", T::TYPE).into();
+                let error: Error = format!("not a {name}: {error}").into();
                 context.report(&error);
                 return Box::pin(async { Ok(()) }) as BoxFuture<'static, _>;
             }
@@ -90,11 +107,23 @@ where
             sender: incoming.sender,
             recipient: incoming.recipient,
             document: incoming.document,
+            vouched: incoming.vouched,
             lost,
         };
         let future = listen(context, received);
         Box::pin(async move { future.await.map_err(Into::into) })
     })
+}
+
+/// Wrap a listener for every type no typed listener takes.
+pub(super) fn any_listener<D, F, Fut, E>(listen: F) -> ListenerFn<D>
+where
+    D: Clone + Send + Sync + 'static,
+    F: Fn(Context<D>, Received<feder_vocab::generated::AnyObject>) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<(), E>> + Send + 'static,
+    E: Into<Error>,
+{
+    reading("known activity", listen)
 }
 
 /// The `actor` of an activity: an IRI, or an object's `id`.
@@ -167,7 +196,10 @@ fn listener_for<'a, D>(inner: &'a Inner<D>, normalized: &Value) -> Option<&'a Li
         Value::Array(kinds) => kinds.iter().filter_map(Value::as_str).collect(),
         _ => return None,
     };
-    types.into_iter().find_map(|kind| inner.listeners.get(kind))
+    types
+        .into_iter()
+        .find_map(|kind| inner.listeners.get(kind))
+        .or(inner.fallback_listener.as_ref())
 }
 
 /// Normalise an activity and reduce it to what its sender vouches for.
@@ -278,6 +310,8 @@ pub(super) async fn receive<D: Clone + Send + Sync + 'static>(
         Ok(normalized) => normalized,
         Err(error) => return status(StatusCode::BAD_REQUEST, &error),
     };
+    let mut vouched = document.clone();
+    reduce(&mut vouched, &sender);
     if listener_for(&inner, &normalized).is_none() {
         return accepted();
     }
@@ -327,6 +361,7 @@ pub(super) async fn receive<D: Clone + Send + Sync + 'static>(
                 Incoming {
                     normalized,
                     document,
+                    vouched,
                     sender,
                     recipient,
                 },
@@ -479,6 +514,8 @@ impl<D: Clone + Send + Sync + 'static> InboxWorker<D> {
             ))
         });
         let normalized = prepare(&document, &sender)?;
+        let mut vouched = document.clone();
+        reduce(&mut vouched, &sender);
         let inner = &self.federation.inner;
         let Some(listener) = listener_for(inner, &normalized) else {
             return Ok(());
@@ -494,6 +531,7 @@ impl<D: Clone + Send + Sync + 'static> InboxWorker<D> {
             Incoming {
                 normalized,
                 document,
+                vouched,
                 sender,
                 recipient,
             },

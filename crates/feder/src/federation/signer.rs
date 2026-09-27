@@ -18,11 +18,36 @@ use url::Url;
 type KeyFn<D> =
     Arc<dyn Fn(Context<D>) -> BoxFuture<'static, Result<Option<SenderKey>, Error>> + Send + Sync>;
 
+pub(super) type FetcherFn<D> = Arc<dyn Fn(&D) -> Arc<Fetcher> + Send + Sync>;
+pub(super) type KnownKeyFn<D> = Arc<
+    dyn Fn(Context<D>, String) -> BoxFuture<'static, Result<Option<KnownKey>, Error>> + Send + Sync,
+>;
+
 pub(super) struct SignedFetch<D> {
     pub(super) fetcher: Arc<Fetcher>,
     pub(super) kv: Arc<dyn DynKv>,
     pub(super) key_ttl: Duration,
     pub(super) key: KeyFn<D>,
+    pub(super) fetcher_for: Option<FetcherFn<D>>,
+    pub(super) known_key: Option<KnownKeyFn<D>>,
+}
+
+impl<D> SignedFetch<D> {
+    /// The fetcher for a request's data.
+    fn fetcher(&self, data: &D) -> Arc<Fetcher> {
+        match &self.fetcher_for {
+            Some(fetcher) => fetcher(data),
+            None => self.fetcher.clone(),
+        }
+    }
+}
+
+/// A key the application already holds for a key ID: its PEM, and the actor
+/// that published it.
+#[derive(Clone, Debug)]
+pub struct KnownKey {
+    pub pem: String,
+    pub actor: Url,
 }
 
 /// A key, as it is cached: its PEM and the actor that publishes it.
@@ -84,6 +109,24 @@ pub(super) async fn authenticate<D: Clone + Send + Sync + 'static>(
     )
     .map_err(|error| error.to_string())?;
 
+    // A key the application holds, as eunha holds remote accounts' keys, is
+    // tried first; one that does not verify is fetched fresh below.
+    if let Some(known) = &settings.known_key {
+        match known(context.clone(), signature.key_id.clone()).await {
+            Ok(Some(known)) => {
+                let published = Published {
+                    pem: known.pem,
+                    actor: known.actor,
+                };
+                if check(&signature, &request, &published) {
+                    return Ok(published.actor);
+                }
+            }
+            Ok(None) => {}
+            Err(error) => context.report(&error),
+        }
+    }
+
     let cache_key = ["feder", "key", signature.key_id.as_str()];
     match settings.kv.get(&cache_key).await {
         Ok(Some(cached)) => {
@@ -144,7 +187,7 @@ pub(super) async fn prove<D: Clone + Send + Sync + 'static>(
         }
     };
     let fetched = settings
-        .fetcher
+        .fetcher(context.data())
         .document(&actor_url, key.as_ref())
         .await
         .map_err(|error| error.to_string())?;
@@ -188,7 +231,11 @@ async fn fetch_key<D: Clone + Send + Sync + 'static>(
             None
         }
     };
-    let document = settings.fetcher.document(&owner, key.as_ref()).await.ok()?;
+    let document = settings
+        .fetcher(context.data())
+        .document(&owner, key.as_ref())
+        .await
+        .ok()?;
     let pem = verification::published_key_pem(&document.json, &signature.key_id)?;
     Some(Published {
         pem,

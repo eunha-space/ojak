@@ -20,6 +20,7 @@ mod webfinger;
 pub use collection::{Collection, First, Page};
 pub use inbox::{InboxWorker, InboxWorkerConfig, MAX_BODY as MAX_INBOX_BODY, Received};
 pub use nodeinfo::{NodeInfo, Software, Usage};
+pub use signer::KnownKey;
 
 use crate::fetch::Fetcher;
 use crate::kv::{KvError, KvStore};
@@ -244,6 +245,7 @@ struct Inner<D> {
     inboxes: Vec<(String, Template)>,
     shared_inbox: Option<Template>,
     listeners: std::collections::HashMap<&'static str, inbox::ListenerFn<D>>,
+    fallback_listener: Option<inbox::ListenerFn<D>>,
     blocked: Option<inbox::BlockedFn<D>>,
     on_unverified: Option<inbox::UnverifiedFn<D>>,
     inbox_queue: Option<inbox::QueueFn<D>>,
@@ -292,6 +294,7 @@ pub struct Builder<D> {
     inboxes: Vec<(String, String)>,
     shared_inbox: Option<String>,
     listeners: std::collections::HashMap<&'static str, inbox::ListenerFn<D>>,
+    fallback_listener: Option<inbox::ListenerFn<D>>,
     blocked: Option<inbox::BlockedFn<D>>,
     on_unverified: Option<inbox::UnverifiedFn<D>>,
     inbox_queue: Option<inbox::QueueFn<D>>,
@@ -315,6 +318,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             inboxes: Vec::new(),
             shared_inbox: None,
             listeners: std::collections::HashMap::new(),
+            fallback_listener: None,
             blocked: None,
             on_unverified: None,
             inbox_queue: None,
@@ -721,7 +725,63 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
             kv: Arc::new(kv),
             key_ttl,
             key: boxed(key),
+            fetcher_for: None,
+            known_key: None,
         });
+        self
+    }
+
+    /// The fetcher for a request's data, in place of the one given to
+    /// [`Builder::signed_fetch`]: an application serving several instances
+    /// fetches with each one's own. Call after `signed_fetch`.
+    #[must_use]
+    pub fn fetcher_for(
+        mut self,
+        fetcher: impl Fn(&D) -> Arc<Fetcher> + Send + Sync + 'static,
+    ) -> Self {
+        match &mut self.signed_fetch {
+            Some(settings) => settings.fetcher_for = Some(Arc::new(fetcher)),
+            None => self.errors.push("fetcher_for before signed_fetch".into()),
+        }
+        self
+    }
+
+    /// A key the application already holds for a key ID, tried before the
+    /// key-value store and a fetch: an application that stores remote
+    /// actors' keys, as Mastodon's schema does, need not fetch them again. A
+    /// key that does not verify is fetched fresh. Call after `signed_fetch`.
+    #[must_use]
+    pub fn known_key<F, Fut, E>(mut self, known: F) -> Self
+    where
+        F: Fn(Context<D>, String) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<KnownKey>, E>> + Send + 'static,
+        E: Into<Error>,
+    {
+        let known = boxed(move |(context, key_id)| known(context, key_id));
+        match &mut self.signed_fetch {
+            Some(settings) => {
+                settings.known_key =
+                    Some(Arc::new(move |context, key_id| known((context, key_id))));
+            }
+            None => self.errors.push("known_key before signed_fetch".into()),
+        }
+        self
+    }
+
+    /// Run `listen` for every activity no typed listener is registered for,
+    /// read as whatever it is: for an application with a dispatcher of its
+    /// own, which reads [`Received::vouched`].
+    #[must_use]
+    pub fn on_any<F, Fut, E>(mut self, listen: F) -> Self
+    where
+        F: Fn(Context<D>, Received<feder_vocab::generated::AnyObject>) -> Fut
+            + Send
+            + Sync
+            + 'static,
+        Fut: Future<Output = Result<(), E>> + Send + 'static,
+        E: Into<Error>,
+    {
+        self.fallback_listener = Some(inbox::any_listener(listen));
         self
     }
 
@@ -947,6 +1007,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     inboxes,
                     shared_inbox,
                     listeners: self.listeners,
+                    fallback_listener: self.fallback_listener,
                     blocked: self.blocked,
                     on_unverified: self.on_unverified,
                     inbox_queue: self.inbox_queue,
