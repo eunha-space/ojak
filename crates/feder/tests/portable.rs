@@ -11,13 +11,15 @@ use axum::routing::get;
 use feder::client::{Client, ClientConfig};
 use feder::deliverer::{Deliverer, DelivererConfig, PortableInbox, SenderKeys};
 use feder::delivery::{Scheme, SenderKey};
-use feder::federation::{ActorRef, Context, Federation, Found, Handled, PORTABLE_JSON, Received};
+use feder::federation::{
+    ActorRef, Context, Federation, Forward, Found, GatewayInbox, Handled, PORTABLE_JSON, Received,
+};
 use feder::fetch::{FetchError, Fetcher};
 use feder::kv::MemoryKvStore;
 use feder::portable::{Ed25519Signer, ProofSigner};
 use feder::queue::{MemoryQueue, QueueError, RetryPolicy};
 use feder_core::portable::ApUri;
-use feder_runtime::signature::PrivateKey;
+use feder_runtime::signature::{PrivateKey, sign_request_with_key};
 use feder_vocab::generated::{Delete, Follow};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -27,6 +29,8 @@ use url::Url;
 
 const PRIVATE_KEY: &str =
     include_str!("../../feder-runtime/tests/fixtures/rfc9421_test_key_rsa.pem");
+const PUBLIC_KEY: &str =
+    include_str!("../../feder-runtime/tests/fixtures/rfc9421_test_key_rsa_public.pem");
 const HOST: &str = "oeee.test";
 
 fn client() -> Client {
@@ -168,6 +172,9 @@ async fn a_portable_object_is_taken_from_the_first_gateway_whose_copy_is_proven(
 struct Store {
     seen: Mutex<Vec<(String, Option<ActorRef>)>>,
     objects: Mutex<HashMap<String, Value>>,
+    forwarded: Mutex<Vec<Forward>>,
+    /// The activities as the listeners read them.
+    activities: Mutex<Vec<Value>>,
 }
 
 type App = Arc<Store>;
@@ -178,8 +185,16 @@ fn record<T>(ctx: &Context<App>, received: &Received<T>) -> Result<(), String> {
         .lock()
         .unwrap()
         .push((received.sender.to_string(), received.recipient.clone()));
+    ctx.data()
+        .activities
+        .lock()
+        .unwrap()
+        .push(received.vouched.clone());
     Ok(())
 }
+
+/// The gateways alice lists: this server, and another.
+const ALICE_GATEWAYS: [&str; 2] = ["https://oeee.test", "https://server2.example"];
 
 fn federation(alice: &Ed25519Signer) -> Federation<App> {
     let inbox = ApUri::parse(&format!("ap://{}/actor/inbox", alice.did())).unwrap();
@@ -204,7 +219,21 @@ fn federation(alice: &Ed25519Signer) -> Federation<App> {
         })
         .gateway_inbox(move |_, uri: ApUri| {
             let hosted = uri == inbox;
-            async move { Ok::<_, String>(hosted.then(|| ActorRef::new("person", "alice"))) }
+            async move {
+                Ok::<_, String>(hosted.then(|| {
+                    GatewayInbox {
+                        recipient: ActorRef::new("person", "alice"),
+                        gateways: ALICE_GATEWAYS
+                            .iter()
+                            .map(|g| Url::parse(g).unwrap())
+                            .collect(),
+                    }
+                }))
+            }
+        })
+        .forward(|ctx: Context<App>, forward| async move {
+            ctx.data().forwarded.lock().unwrap().push(forward);
+            Ok::<_, String>(())
         })
         .build()
         .unwrap()
@@ -394,4 +423,216 @@ async fn a_delivery_goes_to_the_first_gateway_that_takes_it() {
     let records = deliverer.queue().records();
     assert!(records[0].complete);
     assert_eq!(records[0].job.attempts, 0, "no retry was needed");
+}
+
+#[tokio::test]
+async fn what_arrives_at_a_gateway_is_forwarded_to_the_others_once() {
+    let alice = Ed25519Signer::generate();
+    let bob = Ed25519Signer::generate();
+    let federation = federation(&alice);
+    let store = App::default();
+    let alice_inbox = format!("/.well-known/apgateway/{}/actor/inbox", alice.did());
+
+    let proven = bob.prove(&follow(&bob, &alice, 1)).await.unwrap();
+    assert_eq!(post(&federation, &store, &alice_inbox, &proven).await, 202);
+    // The same activity again, as another gateway forwarding it back would
+    // send it: not forwarded a second time.
+    assert_eq!(post(&federation, &store, &alice_inbox, &proven).await, 202);
+
+    let forwarded = store.forwarded.lock().unwrap().clone();
+    assert_eq!(forwarded.len(), 1);
+    assert_eq!(forwarded[0].activity, proven);
+    assert_eq!(
+        forwarded[0].to.inbox,
+        ApUri::parse(&format!("ap://{}/actor/inbox", alice.did())).unwrap()
+    );
+    assert_eq!(
+        forwarded[0].to.gateways,
+        [Url::parse("https://server2.example").unwrap()],
+        "this gateway is left out"
+    );
+
+    // What is refused is not forwarded, and nor is what arrives at an
+    // ordinary inbox.
+    let mallory = Ed25519Signer::generate();
+    let forged = mallory.prove(&follow(&bob, &alice, 2)).await.unwrap();
+    assert_eq!(post(&federation, &store, &alice_inbox, &forged).await, 401);
+    let proven = bob.prove(&follow(&bob, &alice, 3)).await.unwrap();
+    assert_eq!(post(&federation, &store, "/ap/inbox", &proven).await, 202);
+    assert_eq!(store.forwarded.lock().unwrap().len(), 1);
+}
+
+/// An ordinary server on the loopback interface: actors with a key, and the
+/// activities it serves at their ids.
+#[derive(Clone, Default)]
+struct Origin {
+    activities: Arc<Mutex<HashMap<String, Value>>>,
+    fetches: Arc<Mutex<Vec<String>>>,
+}
+
+async fn origin_actor(
+    State(origin): State<Origin>,
+    Path(name): Path<String>,
+    headers: http::HeaderMap,
+) -> ([(&'static str, &'static str); 1], String) {
+    let host = headers["host"].to_str().unwrap();
+    let id = format!("http://{host}/users/{name}");
+    origin
+        .fetches
+        .lock()
+        .unwrap()
+        .push(format!("/users/{name}"));
+    (
+        [("content-type", "application/activity+json")],
+        json!({
+            "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
+            "id": id,
+            "type": "Person",
+            "inbox": format!("{id}/inbox"),
+            "publicKey": {"id": format!("{id}#main-key"), "owner": id, "publicKeyPem": PUBLIC_KEY},
+        })
+        .to_string(),
+    )
+}
+
+async fn origin_activity(
+    State(origin): State<Origin>,
+    Path(n): Path<String>,
+) -> (StatusCode, [(&'static str, &'static str); 1], String) {
+    let path = format!("/activities/{n}");
+    origin.fetches.lock().unwrap().push(path.clone());
+    match origin.activities.lock().unwrap().get(&path) {
+        Some(activity) => (
+            StatusCode::OK,
+            [("content-type", "application/activity+json")],
+            activity.to_string(),
+        ),
+        None => (
+            StatusCode::NOT_FOUND,
+            [("content-type", "text/plain")],
+            String::new(),
+        ),
+    }
+}
+
+async fn serve_origin(origin: Origin) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = Router::new()
+        .route("/users/{name}", get(origin_actor))
+        .route("/activities/{n}", get(origin_activity))
+        .with_state(origin);
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    format!("http://{address}")
+}
+
+/// A POST of `body` to `path`, signed with the key of `key_id`.
+fn signed(path: &str, key_id: &str, body: &Value) -> (http::request::Parts, Vec<u8>) {
+    let bytes = serde_json::to_vec(body).unwrap();
+    let key = PrivateKey::from_pem(PRIVATE_KEY).unwrap();
+    let signed = sign_request_with_key(
+        "post",
+        &format!("https://{HOST}{path}"),
+        &bytes,
+        key_id,
+        &key,
+        &[],
+    )
+    .unwrap();
+    let parts = http::Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("host", HOST)
+        .header("content-type", "application/activity+json")
+        .header("date", signed.date)
+        .header("digest", signed.digest)
+        .header("signature", signed.signature)
+        .body(())
+        .unwrap()
+        .into_parts()
+        .0;
+    (parts, bytes)
+}
+
+async fn status_of(
+    federation: &Federation<App>,
+    store: &App,
+    (parts, body): (http::request::Parts, Vec<u8>),
+) -> u16 {
+    match federation
+        .handle_with_body(&parts, &body, store.clone())
+        .await
+    {
+        Handled::Response(response) => response.status().as_u16(),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// An activity forwarded by a server other than its actor's, with no proof,
+/// is taken from its origin; the forwarder's copy is only a claim, and
+/// without a signature nothing is fetched at all.
+#[tokio::test]
+async fn a_forwarded_activity_is_taken_from_its_origin() {
+    let alice = Ed25519Signer::generate();
+    let federation = federation(&alice);
+    let store = App::default();
+    let (bobs, forwarders) = (Origin::default(), Origin::default());
+    let bob_server = serve_origin(bobs.clone()).await;
+    let forwarder = serve_origin(forwarders).await;
+    let bob = format!("{bob_server}/users/bob");
+    let alice_inbox = format!("/.well-known/apgateway/{}/actor/inbox", alice.did());
+    let follow = |n: u32, object: &str| {
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("{bob_server}/activities/{n}"),
+            "type": "Follow",
+            "actor": bob,
+            "object": object,
+        })
+    };
+    let alice_actor = format!("ap://{}/actor", alice.did());
+    bobs.activities
+        .lock()
+        .unwrap()
+        .insert("/activities/1".into(), follow(1, &alice_actor));
+
+    // Forwarded, and altered on the way: what is processed is what bob's
+    // server serves.
+    let claim = follow(1, "https://elsewhere.example/users/carol");
+    let forwarder_key = format!("{forwarder}/users/gateway#main-key");
+    assert_eq!(
+        status_of(
+            &federation,
+            &store,
+            signed(&alice_inbox, &forwarder_key, &claim)
+        )
+        .await,
+        202
+    );
+    let seen = store.seen.lock().unwrap().clone();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].0, bob);
+    let activities = store.activities.lock().unwrap().clone();
+    assert_eq!(activities[0]["object"], alice_actor.as_str());
+
+    // What bob's server does not serve is not established.
+    let unserved = follow(2, &alice_actor);
+    assert_eq!(
+        status_of(
+            &federation,
+            &store,
+            signed(&alice_inbox, &forwarder_key, &unserved)
+        )
+        .await,
+        401
+    );
+
+    // Unsigned, it makes this server fetch nothing.
+    let before = bobs.fetches.lock().unwrap().len();
+    assert_eq!(
+        post(&federation, &store, &alice_inbox, &follow(3, &alice_actor)).await,
+        401
+    );
+    assert_eq!(bobs.fetches.lock().unwrap().len(), before);
+    assert_eq!(store.seen.lock().unwrap().len(), 1);
 }

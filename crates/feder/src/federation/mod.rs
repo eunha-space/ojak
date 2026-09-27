@@ -18,7 +18,9 @@ mod signer;
 mod webfinger;
 
 pub use collection::{Collection, First, Page};
-pub use inbox::{InboxWorker, InboxWorkerConfig, MAX_BODY as MAX_INBOX_BODY, Received};
+pub use inbox::{
+    Forward, GatewayInbox, InboxWorker, InboxWorkerConfig, MAX_BODY as MAX_INBOX_BODY, Received,
+};
 pub use nodeinfo::{NodeInfo, Software, Usage};
 pub use signer::KnownKey;
 
@@ -207,7 +209,9 @@ type ErrorFn = Arc<dyn Fn(&Error) + Send + Sync>;
 type GatewayFn<D> =
     Arc<dyn Fn(Context<D>, ApUri) -> BoxFuture<'static, Result<Found<Value>, Error>> + Send + Sync>;
 type GatewayInboxFn<D> = Arc<
-    dyn Fn(Context<D>, ApUri) -> BoxFuture<'static, Result<Option<ActorRef>, Error>> + Send + Sync,
+    dyn Fn(Context<D>, ApUri) -> BoxFuture<'static, Result<Option<GatewayInbox>, Error>>
+        + Send
+        + Sync,
 >;
 
 enum Dispatcher<D> {
@@ -257,6 +261,7 @@ struct Inner<D> {
     inbox_queue: Option<inbox::QueueFn<D>>,
     gateway: Option<GatewayFn<D>>,
     gateway_inbox: Option<GatewayInboxFn<D>>,
+    forward: Option<inbox::ForwardFn<D>>,
 }
 
 /// Everything Feder serves, and the URIs it builds. Cheap to clone.
@@ -308,6 +313,7 @@ pub struct Builder<D> {
     inbox_queue: Option<inbox::QueueFn<D>>,
     gateway: Option<GatewayFn<D>>,
     gateway_inbox: Option<GatewayInboxFn<D>>,
+    forward: Option<inbox::ForwardFn<D>>,
     errors: Vec<String>,
 }
 
@@ -334,6 +340,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             inbox_queue: None,
             gateway: None,
             gateway_inbox: None,
+            forward: None,
             errors: Vec::new(),
         }
     }
@@ -421,8 +428,8 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             let Some(inbox_for) = &self.inner.gateway_inbox else {
                 return Handled::Response(method_not_allowed());
             };
-            match inbox_for(context.clone(), uri).await {
-                Ok(Some(recipient)) => inbox::receive(context, Some(recipient), body).await,
+            match inbox_for(context.clone(), uri.clone()).await {
+                Ok(Some(gateway)) => inbox::receive_at_gateway(context, uri, gateway, body).await,
                 // Not an inbox this server accepts deliveries for.
                 Ok(None) => empty(StatusCode::NOT_FOUND),
                 Err(error) => {
@@ -990,17 +997,37 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
 
     /// Accept deliveries to portable inboxes: `inbox_for` maps the `ap` URI
     /// of an inbox POSTed to at `/.well-known/apgateway/…` to the actor the
-    /// application hosts it for, who the listeners see as the recipient.
+    /// application hosts it for, who the listeners see as the recipient, and
+    /// the gateways that actor lists, which what arrives is forwarded to.
     /// An inbox it maps to `None` is answered 404.
     #[must_use]
     pub fn gateway_inbox<F, Fut, E>(mut self, inbox_for: F) -> Self
     where
         F: Fn(Context<D>, ApUri) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = Result<Option<ActorRef>, E>> + Send + 'static,
+        Fut: Future<Output = Result<Option<GatewayInbox>, E>> + Send + 'static,
         E: Into<Error>,
     {
         let inbox_for = boxed(move |(context, uri)| inbox_for(context, uri));
         self.gateway_inbox = Some(Arc::new(move |context, uri| inbox_for((context, uri))));
+        self
+    }
+
+    /// Send what arrives at a portable inbox on to the actor's other
+    /// gateways, as FEP-ef61 asks: `forward` is called once for each
+    /// activity, however many times it arrives, with the gateways to send it
+    /// to, and sends it, usually with `Deliverer::send_portable`. Without
+    /// it, nothing is forwarded.
+    #[must_use]
+    pub fn forward<F, Fut, E>(mut self, forward: F) -> Self
+    where
+        F: Fn(Context<D>, Forward) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<(), E>> + Send + 'static,
+        E: Into<Error>,
+    {
+        let forward = boxed(move |(context, activity)| forward(context, activity));
+        self.forward = Some(Arc::new(move |context, activity| {
+            forward((context, activity))
+        }));
         self
     }
 
@@ -1150,6 +1177,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     inbox_queue: self.inbox_queue,
                     gateway: self.gateway,
                     gateway_inbox: self.gateway_inbox,
+                    forward: self.forward,
                 }),
             }),
             _ => Err(BuildError(errors)),

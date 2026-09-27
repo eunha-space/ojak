@@ -114,6 +114,29 @@ registers a gateway:
 Media by hashlink, `/.well-known/apgateway/hl:…`, is not served.
 
 
+Forwarding
+----------
+
+An actor's gateways each keep its data, and a delivery reaches only one of
+them, so FEP-ef61 asks the one it reaches to forward it to the rest, and
+never to forward one activity twice. `gateway_inbox` returns the actor's
+gateways along with the recipient; when an activity arrives at a portable
+inbox and is authenticated, Feder calls the application's `forward` with the
+activity as it arrived and the other gateways, and the application sends it
+with `send_portable`. Whether it was forwarded is kept in the key-value store
+under its `id`, for a week, so a copy that comes back from another gateway
+is not sent on again; an activity with no `id` cannot be kept track of, and
+is not forwarded. Forwarding does not wait for a listener, or need one.
+
+What another gateway forwards is signed by that gateway, which vouches for
+nothing of the actor's. A portable activity carries its proof, and needs
+nothing more. An ordinary one, a Mastodon `Follow` of a portable actor, is
+taken from where its `id` says it lives, as *inbox.md* describes for any
+forwarded activity, and one its server does not serve is refused. That is
+the safe way to be wrong: a gateway may miss an activity, and cannot be
+handed a forged one.
+
+
 Delivery
 --------
 
@@ -151,8 +174,7 @@ comes back is that document with its proof.
 Not in this step
 ----------------
 
- -  *Forwarding* between an actor's gateways of what arrives in its inbox or
-    outbox; the specification asks for it as SHOULD.
+ -  *Forwarding from an outbox*, which comes with FEP-ae97.
  -  *Client-to-server* (FEP-ae97): outboxes that accept activities signed by
     the client.
  -  *Collections* served without proofs, which are authentic only from a

@@ -7,6 +7,7 @@
 //! by an [`InboxWorker`]; otherwise inside the request.
 
 use super::{ActorRef, BoxFuture, Context, Error, Federation, Inner, RequestInfo, empty, signer};
+use crate::deliverer::PortableInbox;
 use crate::queue::{Job, QueueError, RetryPolicy, SharedQueue};
 use feder_core::origin::same_origin;
 use feder_core::portable::ApUri;
@@ -71,6 +72,30 @@ pub(super) type BlockedFn<D> =
 pub(super) type UnverifiedFn<D> =
     Arc<dyn Fn(Context<D>, Value) -> BoxFuture<'static, ()> + Send + Sync>;
 pub(super) type QueueFn<D> = Arc<dyn Fn(&D) -> Option<SharedQueue> + Send + Sync>;
+pub(super) type ForwardFn<D> =
+    Arc<dyn Fn(Context<D>, Forward) -> BoxFuture<'static, Result<(), Error>> + Send + Sync>;
+
+/// A portable inbox this server is a gateway for, as the application
+/// describes it: who receives what arrives there, and every gateway the
+/// actor lists, this one included.
+#[derive(Clone, Debug)]
+pub struct GatewayInbox {
+    pub recipient: ActorRef,
+    pub gateways: Vec<Url>,
+}
+
+/// An activity to forward to a portable actor's other gateways, as FEP-ef61
+/// asks of the gateway it arrived at: the activity as it arrived, and the
+/// inbox with the gateways to send it to, this one left out. The
+/// application sends it, with `Deliverer::send_portable`.
+#[derive(Clone, Debug)]
+pub struct Forward {
+    pub activity: Value,
+    pub to: PortableInbox,
+}
+
+/// How long an activity's forwarding is remembered: once is the rule.
+const FORWARDED_FOR: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 /// Wrap a typed listener for the registry.
 pub(super) fn listener<D, T, F, Fut, E>(listen: F) -> ListenerFn<D>
@@ -130,7 +155,7 @@ where
 }
 
 /// The `actor` of an activity: an IRI, or an object's `id`.
-fn actor_of(document: &Value) -> Option<&str> {
+pub(super) fn actor_of(document: &Value) -> Option<&str> {
     match document.get("actor")? {
         Value::String(actor) => Some(actor),
         Value::Object(actor) => actor.get("id")?.as_str(),
@@ -239,11 +264,32 @@ pub(super) async fn receive<D: Clone + Send + Sync + 'static>(
     recipient: Option<ActorRef>,
     body: &[u8],
 ) -> http::Response<Vec<u8>> {
+    receive_at(context, recipient, body, None).await
+}
+
+/// Receive `body`, POSTed to a portable inbox this server is a gateway for:
+/// as any inbox receives it, and forwarded to the actor's other gateways.
+pub(super) async fn receive_at_gateway<D: Clone + Send + Sync + 'static>(
+    context: Context<D>,
+    inbox: ApUri,
+    gateway: GatewayInbox,
+    body: &[u8],
+) -> http::Response<Vec<u8>> {
+    let recipient = Some(gateway.recipient.clone());
+    receive_at(context, recipient, body, Some((inbox, gateway.gateways))).await
+}
+
+async fn receive_at<D: Clone + Send + Sync + 'static>(
+    context: Context<D>,
+    recipient: Option<ActorRef>,
+    body: &[u8],
+    gateway: Option<(ApUri, Vec<Url>)>,
+) -> http::Response<Vec<u8>> {
     let inner = context.inner.federation.clone();
     if body.len() > MAX_BODY {
         return empty(StatusCode::PAYLOAD_TOO_LARGE);
     }
-    let document: Value = match serde_json::from_slice(body) {
+    let mut document: Value = match serde_json::from_slice(body) {
         Ok(document @ Value::Object(_)) => document,
         _ => return status(StatusCode::BAD_REQUEST, "not a JSON object"),
     };
@@ -252,6 +298,9 @@ pub(super) async fn receive<D: Clone + Send + Sync + 'static>(
     };
 
     let portable = ApUri::parse(&actor);
+    // What arrived, which is what is forwarded: the next gateway establishes
+    // it for itself.
+    let forwarded = document.clone();
 
     // A blocked server costs nothing: no key is fetched for it. A portable
     // actor has no server, and is blocked by its DID.
@@ -298,11 +347,33 @@ pub(super) async fn receive<D: Clone + Send + Sync + 'static>(
             }
         }
     } else {
-        match signer::authenticate(&context, body).await {
-            Ok(sender) => sender,
-            Err(unsigned) => match signer::prove(&context, &document, &actor).await {
+        let signed = signer::authenticate(&context, body).await;
+        match signed {
+            Ok(sender) if same_origin(&actor, sender.as_str()) => sender,
+            signed => match signer::prove(&context, &document, &actor).await {
                 Ok(sender) => sender,
+                // Signed by a server other than the actor's: forwarded, by
+                // a gateway or a server passing on a reply. The forwarder
+                // vouches for nothing of the actor's; the activity is taken
+                // from where its id says it lives instead. Only a signed
+                // request gets this far, so an unsigned POST cannot make
+                // this server fetch.
+                Err(unproven) if signed.is_ok() => {
+                    match signer::establish(&context, &document, &actor).await {
+                        Ok((established, sender)) => {
+                            document = established;
+                            sender
+                        }
+                        Err(unfetched) => {
+                            return status(
+                                StatusCode::UNAUTHORIZED,
+                                &format!("forwarded; proof: {unproven}; origin: {unfetched}"),
+                            );
+                        }
+                    }
+                }
                 Err(unproven) => {
+                    let unsigned = signed.err().unwrap_or_default();
                     if let Some(hook) = &inner.on_unverified {
                         hook(context.clone(), document.clone()).await;
                     }
@@ -347,6 +418,14 @@ pub(super) async fn receive<D: Clone + Send + Sync + 'static>(
     };
     let mut vouched = document.clone();
     reduce(&mut vouched, &sender);
+
+    // Forwarded before anything else is decided, whether or not a listener
+    // wants it: the other gateways keep the actor's data too.
+    let origin = context.origin().to_string();
+    if let (Some((inbox, gateways)), Some(id)) = (gateway, &id) {
+        forward(&context, &origin, id, forwarded, inbox, gateways).await;
+    }
+
     if listener_for(&inner, &normalized).is_none() {
         return accepted();
     }
@@ -354,7 +433,6 @@ pub(super) async fn receive<D: Clone + Send + Sync + 'static>(
     // Once each: the id is remembered under the origin it arrived at, so
     // that the same activity delivered to two instances in one process is
     // processed by both.
-    let origin = context.origin().to_string();
     let seen = id
         .as_deref()
         .map(|id| ["feder", "inbox", origin.as_str(), id]);
@@ -414,6 +492,57 @@ pub(super) async fn receive<D: Clone + Send + Sync + 'static>(
             }
             empty(StatusCode::INTERNAL_SERVER_ERROR)
         }
+    }
+}
+
+/// Hand `activity`, which arrived at `inbox` here, to the application to
+/// send to the actor's other gateways: once, however many times it arrives,
+/// so that gateways forwarding to each other stop.
+async fn forward<D: Clone + Send + Sync + 'static>(
+    context: &Context<D>,
+    origin: &str,
+    id: &str,
+    activity: Value,
+    inbox: ApUri,
+    gateways: Vec<Url>,
+) {
+    let inner = &context.inner.federation;
+    let Some(hook) = &inner.forward else {
+        return;
+    };
+    let ours = context.origin();
+    let others: Vec<Url> = gateways
+        .into_iter()
+        .filter(|gateway| !same_origin(gateway.as_str(), ours.as_str()))
+        .collect();
+    if others.is_empty() {
+        return;
+    }
+    if let Some(settings) = &inner.signed_fetch {
+        let key = ["feder", "forwarded", origin, id];
+        match settings
+            .kv
+            .insert(&key, Value::Bool(true), Some(FORWARDED_FOR))
+            .await
+        {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(error) => {
+                // Not knowing whether it was forwarded, it is not forwarded
+                // again: once is a MUST, and each gateway forwards too.
+                context.report(&Error::from(error));
+                return;
+            }
+        }
+    } else {
+        return;
+    }
+    let to = PortableInbox {
+        inbox,
+        gateways: others,
+    };
+    if let Err(error) = hook(context.clone(), Forward { activity, to }).await {
+        context.report(&error);
     }
 }
 

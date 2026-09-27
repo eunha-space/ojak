@@ -212,6 +212,51 @@ pub(super) async fn prove<D: Clone + Send + Sync + 'static>(
     Url::parse(&fetched.id).map_err(|error| error.to_string())
 }
 
+/// Fetch an activity forwarded by a server other than its actor's from
+/// where its `id` says it lives, and establish it there: served from its own
+/// origin, by the actor the forwarded copy named. What comes back is the
+/// activity to process, and its actor; the forwarded copy was only a claim.
+pub(super) async fn establish<D: Clone + Send + Sync + 'static>(
+    context: &Context<D>,
+    document: &Value,
+    actor: &str,
+) -> Result<(Value, Url), String> {
+    let settings = context
+        .inner
+        .federation
+        .signed_fetch
+        .as_ref()
+        .ok_or("signed fetches are not configured")?;
+    let id = document
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or("a forwarded activity with no id cannot be fetched")?;
+    let url = Url::parse(id).map_err(|error| format!("{id}: {error}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(format!("{id} cannot be fetched from its origin"));
+    }
+    let key = match (settings.key)(context.clone()).await {
+        Ok(key) => key,
+        Err(error) => {
+            context.report(&error);
+            None
+        }
+    };
+    let fetched = settings
+        .fetcher(context.data())
+        .document(&url, key.as_ref())
+        .await
+        .map_err(|error| format!("{id}: {error}"))?;
+    if fetched.id != id {
+        return Err(format!("{id} is served as {}", fetched.id));
+    }
+    if super::inbox::actor_of(&fetched.json) != Some(actor) {
+        return Err(format!("{id} as its origin serves it is not by {actor}"));
+    }
+    let actor = Url::parse(actor).map_err(|error| error.to_string())?;
+    Ok((fetched.json, actor))
+}
+
 /// The `publicKeyMultibase` of the `assertionMethod` `method` an actor lists.
 fn assertion_method(actor: &Value, method: &str) -> Option<String> {
     let methods = match actor.get("assertionMethod")? {

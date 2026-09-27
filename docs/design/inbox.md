@@ -58,6 +58,13 @@ the activity. Everything the activity says about anyone else is a claim.
 6.  The activity's `actor`, and its `id` when it has one, have to be on the
     sender's origin. A server vouches for its own actors, as Mastodon's rule
     has it, and for nobody else's.
+7.  A request signed by a server other than the actor's was forwarded: by a
+    gateway (*portable.md*), or by a server passing a reply on to its
+    followers. Its signature says nothing of the actor, so a proof by the
+    actor is looked for, and failing that the activity is fetched from its
+    `id` and processed as the actor's server serves it, if it names the same
+    actor. Only a request that verified gets this far, so an unsigned POST
+    cannot make the server fetch.
 
 An activity that is not authenticated is answered 401, except a `Delete`,
 which is answered 202 and dropped: the usual reason a `Delete` does not
@@ -147,6 +154,7 @@ fallback to a proof and the `Delete` rule are Feder's.
 Not in this step
 ----------------
 
- -  *Inbox forwarding* of replies to the addressees' followers.
+ -  *Inbox forwarding* of replies to the addressees' followers. Receiving what
+    others forward is here (step 7 above); sending it on is not.
  -  *Portable objects* (FEP-ef61), which are step 7.
  -  *Relays.*

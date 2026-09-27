@@ -320,7 +320,8 @@ async fn what_is_not_authenticated_reaches_no_listener() {
         401
     );
 
-    // Signed by bob, claiming an actor on another server.
+    // Signed by bob, claiming an actor on another server: taken as
+    // forwarded, and refused when that server does not serve it.
     let forged = json!({
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": "https://elsewhere.test/follows/1",
