@@ -1,12 +1,13 @@
-124 documents: 66 read without loss, 4 read as no known type.
+137 documents: 73 read without loss, 4 read as no known type.
 Contexts named and not bundled, which leave their terms unread:
     https://fedia.io/contexts (1)
     https://greenish.red/schemas/litepub-0.1.jsonld (2)
+    https://ihatebeinga.live/schemas/litepub-0.1.jsonld (1)
     https://mycrowd.ca/schemas/litepub-0.1.jsonld (1)
     https://queer.hacktivis.me/schemas/litepub-0.1.jsonld (3)
+    https://w3id.org/identity/v1 (3)
+    https://webmonetization.org/ns.jsonld (1)
 
-lemmy/discourse/objects/person.json: "Person" read as Person
-    lost sharedInbox: "https://socialhub.activitypub.rocks/ap/users/inbox"
 lemmy/friendica/activities/create_note.json: "Create" read as Create
     lost object.https://diasporafoundation.org/ns/comment: "{\"author\":\"jakob@soc.schuerz.at\",\"guid\":\"4edd2508-4361-edb8-c4d8-b45181083984\",\"created_at…
     lost object.https://diasporafoundation.org/ns/guid: "4edd2508-4361-edb8-c4d8-b45181083984"
@@ -217,3 +218,25 @@ lemmy/wordpress/objects/page.json: "Article" read as Article
     lost interactionPolicy.canReply.always: "https://www.w3.org/ns/activitystreams#Public"
 lemmy/wordpress/objects/person.json: "Person" read as Person
     lost https://webfinger.net/#: "matthias@pfefferle.org"
+live/bookwyrm/actor.json: "Person" read as Person
+    lost bookwyrmUser: true
+    lost hideFollows: true
+live/bookwyrm/outbox-1.json: "Note" read as Note
+    lost inReplyToBook: "https://bookwyrm.social/book/2158961"
+    lost rating: "5.00000000000e0"
+live/fedify/actor.json: "Person" read as Person
+    lost publicKey.type: "CryptographicKey"
+live/misskey/actor.json: "Person" read as Person
+    lost misskey:_misskey_requireSigninToViewContents: false
+    lost misskey:_misskey_summary: "このアカウントは管理者によって予約されています"
+    lost publicKey.type: "CryptographicKey"
+live/pixelfed/actor.json: "Person" read as Person
+    lost interactionPolicy.canFeature: {"automaticApproval":"https://www.w3.org/ns/activitystreams#Public"}
+live/sharkey/actor.json: "Person" read as Person
+    lost https://joinsharkey.org/ns#enableRss: true
+    lost https://joinsharkey.org/ns#hideOnlineStatus: true
+    lost misskey:_misskey_requireSigninToViewContents: false
+    lost noindex: false
+    lost publicKey.type: "CryptographicKey"
+live/writefreely/actor.json: "Person" read as Person
+    lost monetization: "$ilp.uphold.com/Q9MPaMkJ2xwj"

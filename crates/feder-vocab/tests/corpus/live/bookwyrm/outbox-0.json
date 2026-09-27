@@ -1,0 +1,53 @@
+{
+  "id": "https://bookwyrm.social/user/bookwyrm/generatednote/9084060",
+  "type": "Note",
+  "published": "2025-11-29T16:46:39.496595+00:00",
+  "attributedTo": "https://bookwyrm.social/user/bookwyrm",
+  "content": "bookwyrm started reading <a href=\"https://bookwyrm.social/book/2158990\"><i>জান্নাত জাহান্নাম</i></a>",
+  "to": [
+    "https://www.w3.org/ns/activitystreams#Public"
+  ],
+  "cc": [
+    "https://bookwyrm.social/user/bookwyrm/followers"
+  ],
+  "replies": {
+    "id": "https://bookwyrm.social/user/bookwyrm/generatednote/9084060/replies",
+    "type": "OrderedCollection",
+    "totalItems": 0,
+    "first": "https://bookwyrm.social/user/bookwyrm/generatednote/9084060/replies?page=1",
+    "last": "https://bookwyrm.social/user/bookwyrm/generatednote/9084060/replies?page=1",
+    "@context": [
+      "https://www.w3.org/ns/activitystreams",
+      {
+        "Hashtag": "as:Hashtag"
+      }
+    ]
+  },
+  "tag": [
+    {
+      "type": "Edition",
+      "href": "https://bookwyrm.social/book/2158990",
+      "name": "@জান্নাত জাহান্নাম"
+    }
+  ],
+  "attachment": [
+    {
+      "type": "Document",
+      "url": "https://bookwyrm-social.sfo3.digitaloceanspaces.com/images/previews/covers/2158990-f566c8c1-29f0-4a90-9451-cce799c9ce76.jpg",
+      "name": "ড. উমার সুলায়মান আল আশকার: জান্নাত জাহান্নাম (Hardcover, Bangla language, রুহামা পাবলিকেশন)",
+      "@context": [
+        "https://www.w3.org/ns/activitystreams",
+        {
+          "Hashtag": "as:Hashtag"
+        }
+      ]
+    }
+  ],
+  "sensitive": false,
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    {
+      "Hashtag": "as:Hashtag"
+    }
+  ]
+}

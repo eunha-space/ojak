@@ -1821,6 +1821,9 @@ pub struct Application {
     /// The gateways that serve the actor, as origins with no path, the first
     /// preferred (FEP-ef61).
     pub gateways: Vec<Iri>,
+    /// The shared inbox, where Misskey writes it: on the actor rather than in
+    /// its `endpoints`. Prefer `endpoints.sharedInbox` when both are there.
+    pub shared_inbox: Option<Iri>,
 }
 
 impl Application {
@@ -1903,6 +1906,7 @@ impl FromJson for Application {
             cat: json::one(object, &["isCat"]),
             webfinger: json::one(object, &["webfinger"]),
             gateways: json::many(object, &["gateways"]),
+            shared_inbox: json::one(object, &["sharedInbox"]),
         })
     }
 }
@@ -2004,6 +2008,7 @@ impl ToJson for Application {
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
         json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
         json::put_many(&mut object, &["gateways"], &self.gateways);
+        json::put_one(&mut object, &["sharedInbox"], self.shared_inbox.as_ref());
         Value::Object(object)
     }
 }
@@ -6796,6 +6801,9 @@ pub struct Group {
     /// The gateways that serve the actor, as origins with no path, the first
     /// preferred (FEP-ef61).
     pub gateways: Vec<Iri>,
+    /// The shared inbox, where Misskey writes it: on the actor rather than in
+    /// its `endpoints`. Prefer `endpoints.sharedInbox` when both are there.
+    pub shared_inbox: Option<Iri>,
 }
 
 impl Group {
@@ -6880,6 +6888,7 @@ impl FromJson for Group {
             posting_restricted_to_mods: json::one(object, &["postingRestrictedToMods"]),
             moderators: json::one(object, &["moderators"]),
             gateways: json::many(object, &["gateways"]),
+            shared_inbox: json::one(object, &["sharedInbox"]),
         })
     }
 }
@@ -6987,6 +6996,7 @@ impl ToJson for Group {
         );
         json::put_one(&mut object, &["moderators"], self.moderators.as_ref());
         json::put_many(&mut object, &["gateways"], &self.gateways);
+        json::put_one(&mut object, &["sharedInbox"], self.shared_inbox.as_ref());
         Value::Object(object)
     }
 }
@@ -11533,6 +11543,9 @@ pub struct Organization {
     /// The gateways that serve the actor, as origins with no path, the first
     /// preferred (FEP-ef61).
     pub gateways: Vec<Iri>,
+    /// The shared inbox, where Misskey writes it: on the actor rather than in
+    /// its `endpoints`. Prefer `endpoints.sharedInbox` when both are there.
+    pub shared_inbox: Option<Iri>,
 }
 
 impl Organization {
@@ -11615,6 +11628,7 @@ impl FromJson for Organization {
             cat: json::one(object, &["isCat"]),
             webfinger: json::one(object, &["webfinger"]),
             gateways: json::many(object, &["gateways"]),
+            shared_inbox: json::one(object, &["sharedInbox"]),
         })
     }
 }
@@ -11716,6 +11730,7 @@ impl ToJson for Organization {
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
         json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
         json::put_many(&mut object, &["gateways"], &self.gateways);
+        json::put_one(&mut object, &["sharedInbox"], self.shared_inbox.as_ref());
         Value::Object(object)
     }
 }
@@ -12145,6 +12160,9 @@ pub struct Person {
     /// The gateways that serve the actor, as origins with no path, the first
     /// preferred (FEP-ef61).
     pub gateways: Vec<Iri>,
+    /// The shared inbox, where Misskey writes it: on the actor rather than in
+    /// its `endpoints`. Prefer `endpoints.sharedInbox` when both are there.
+    pub shared_inbox: Option<Iri>,
 }
 
 impl Person {
@@ -12228,6 +12246,7 @@ impl FromJson for Person {
             webfinger: json::one(object, &["webfinger"]),
             matrix_user_id: json::one(object, &["matrixUserId"]),
             gateways: json::many(object, &["gateways"]),
+            shared_inbox: json::one(object, &["sharedInbox"]),
         })
     }
 }
@@ -12330,6 +12349,7 @@ impl ToJson for Person {
         json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
         json::put_one(&mut object, &["matrixUserId"], self.matrix_user_id.as_ref());
         json::put_many(&mut object, &["gateways"], &self.gateways);
+        json::put_one(&mut object, &["sharedInbox"], self.shared_inbox.as_ref());
         Value::Object(object)
     }
 }
@@ -15333,6 +15353,9 @@ pub struct Service {
     /// The gateways that serve the actor, as origins with no path, the first
     /// preferred (FEP-ef61).
     pub gateways: Vec<Iri>,
+    /// The shared inbox, where Misskey writes it: on the actor rather than in
+    /// its `endpoints`. Prefer `endpoints.sharedInbox` when both are there.
+    pub shared_inbox: Option<Iri>,
 }
 
 impl Service {
@@ -15415,6 +15438,7 @@ impl FromJson for Service {
             cat: json::one(object, &["isCat"]),
             webfinger: json::one(object, &["webfinger"]),
             gateways: json::many(object, &["gateways"]),
+            shared_inbox: json::one(object, &["sharedInbox"]),
         })
     }
 }
@@ -15516,6 +15540,7 @@ impl ToJson for Service {
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
         json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
         json::put_many(&mut object, &["gateways"], &self.gateways);
+        json::put_one(&mut object, &["sharedInbox"], self.shared_inbox.as_ref());
         Value::Object(object)
     }
 }

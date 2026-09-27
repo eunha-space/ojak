@@ -1,0 +1,47 @@
+{
+  "@context": [
+    "https://w3id.org/identity/v1",
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/data-integrity/v1",
+    "https://gotosocial.org/ns",
+    {
+      "toot": "http://joinmastodon.org/ns#",
+      "misskey": "https://misskey-hub.net/ns#",
+      "fedibird": "http://fedibird.com/ns#",
+      "sensitive": "as:sensitive",
+      "votersCount": {
+        "@id": "toot:votersCount",
+        "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"
+      },
+      "Emoji": "toot:Emoji",
+      "Hashtag": "as:Hashtag",
+      "quote": {
+        "@id": "https://w3id.org/fep/044f#quote",
+        "@type": "@id"
+      },
+      "quoteUrl": "as:quoteUrl",
+      "_misskey_quote": "misskey:_misskey_quote",
+      "quoteUri": "fedibird:quoteUri",
+      "QuoteAuthorization": "https://w3id.org/fep/044f#QuoteAuthorization",
+      "QuoteRequest": "https://w3id.org/fep/044f#QuoteRequest",
+      "quoteAuthorization": {
+        "@id": "https://w3id.org/fep/044f#quoteAuthorization",
+        "@type": "@id"
+      },
+      "emojiReactions": {
+        "@id": "fedibird:emojiReactions",
+        "@type": "@id"
+      }
+    }
+  ],
+  "id": "https://hollo.social/@fedify/019f0338-a719-70cf-bb29-a00e9cc2dc13#activity",
+  "type": "Announce",
+  "actor": "https://hollo.social/@fedify",
+  "cc": [
+    "https://hollo.social/@fedify/followers",
+    "https://hackers.pub/ap/actors/01959320-e9b1-7535-b3b6-a5347a5765b5"
+  ],
+  "object": "https://hackers.pub/ap/notes/019f0331-d01d-79fd-baae-9205c7f5a022",
+  "published": "2026-06-26T09:17:52.287Z",
+  "to": "as:Public"
+}

@@ -1,0 +1,53 @@
+{
+  "id": "https://bookwyrm.social/user/bookwyrm/generatednote/9084057",
+  "type": "Note",
+  "published": "2025-11-29T16:46:12.705339+00:00",
+  "attributedTo": "https://bookwyrm.social/user/bookwyrm",
+  "content": "bookwyrm finished reading <a href=\"https://bookwyrm.social/book/2158961\"><i>হারাম সম্পদের বিধিবিধান</i></a>",
+  "to": [
+    "https://www.w3.org/ns/activitystreams#Public"
+  ],
+  "cc": [
+    "https://bookwyrm.social/user/bookwyrm/followers"
+  ],
+  "replies": {
+    "id": "https://bookwyrm.social/user/bookwyrm/generatednote/9084057/replies",
+    "type": "OrderedCollection",
+    "totalItems": 0,
+    "first": "https://bookwyrm.social/user/bookwyrm/generatednote/9084057/replies?page=1",
+    "last": "https://bookwyrm.social/user/bookwyrm/generatednote/9084057/replies?page=1",
+    "@context": [
+      "https://www.w3.org/ns/activitystreams",
+      {
+        "Hashtag": "as:Hashtag"
+      }
+    ]
+  },
+  "tag": [
+    {
+      "type": "Edition",
+      "href": "https://bookwyrm.social/book/2158961",
+      "name": "@হারাম সম্পদের বিধিবিধান"
+    }
+  ],
+  "attachment": [
+    {
+      "type": "Document",
+      "url": "https://bookwyrm-social.sfo3.digitaloceanspaces.com/images/previews/covers/2158961-6bdb324a-35fd-4298-aa6d-6637d5e0dd48.jpg",
+      "name": "ড. আব্বাস আহমাদ মুহাম্মাদ আল-বায: হারাম সম্পদের বিধিবিধান (Paperback, Bangla language, বিলিভার্স ভিশন পাবলিকেশন্স)",
+      "@context": [
+        "https://www.w3.org/ns/activitystreams",
+        {
+          "Hashtag": "as:Hashtag"
+        }
+      ]
+    }
+  ],
+  "sensitive": false,
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    {
+      "Hashtag": "as:Hashtag"
+    }
+  ]
+}

@@ -171,3 +171,23 @@ additions:
       preferred (FEP-ef61).
     range:
     - "http://www.w3.org/2001/XMLSchema#anyURI"
+
+# Misskey and its forks put the shared inbox on the actor itself, where
+# ActivityPub puts it in `endpoints`; it is the same property, and a server
+# that misses it delivers to each of their users one at a time.
+- to:
+  - "https://www.w3.org/ns/activitystreams#Application"
+  - "https://www.w3.org/ns/activitystreams#Group"
+  - "https://www.w3.org/ns/activitystreams#Organization"
+  - "https://www.w3.org/ns/activitystreams#Person"
+  - "https://www.w3.org/ns/activitystreams#Service"
+  properties:
+  - singularName: sharedInbox
+    functional: true
+    compactName: sharedInbox
+    uri: "https://www.w3.org/ns/activitystreams#sharedInbox"
+    description: |
+      The shared inbox, where Misskey writes it: on the actor rather than in
+      its `endpoints`. Prefer `endpoints.sharedInbox` when both are there.
+    range:
+    - "http://www.w3.org/2001/XMLSchema#anyURI"
