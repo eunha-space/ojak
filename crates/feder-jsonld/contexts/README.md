@@ -32,19 +32,19 @@ Provenance
 
 Fetched verbatim from their canonical URLs on 2026-09-17:
 
-| File                                | Source                                          |
-| ----------------------------------- | ----------------------------------------------- |
-| `activitystreams.jsonld`            | <https://www.w3.org/ns/activitystreams>         |
-| `security-v1.jsonld`                | <https://w3id.org/security/v1>                  |
-| `security-data-integrity-v1.jsonld` | <https://w3id.org/security/data-integrity/v1>   |
-| `security-data-integrity-v2.jsonld` | <https://w3id.org/security/data-integrity/v2>, fetched 2026-09-27 |
-| `security-multikey-v1.jsonld`       | <https://w3id.org/security/multikey/v1>         |
-| `did-v1.jsonld`                     | <https://www.w3.org/ns/did/v1>                  |
-| `cid-v1.jsonld`                     | <https://www.w3.org/ns/cid/v1>                  |
-| `gotosocial.jsonld`                 | <https://gotosocial.org/ns>                     |
-| `litepub.jsonld`                    | <https://litepub.social/litepub/context.jsonld> |
-| `webfinger.jsonld`                  | <https://purl.archive.org/socialweb/webfinger>  |
-| `join-lemmy.jsonld`                 | <https://join-lemmy.org/context.json>           |
+| File                                | Source                                                                                                                        |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `activitystreams.jsonld`            | <https://www.w3.org/ns/activitystreams>                                                                                       |
+| `security-v1.jsonld`                | <https://w3id.org/security/v1>                                                                                                |
+| `security-data-integrity-v1.jsonld` | <https://w3id.org/security/data-integrity/v1>                                                                                 |
+| `security-data-integrity-v2.jsonld` | <https://w3id.org/security/data-integrity/v2>, fetched 2026-09-27                                                             |
+| `security-multikey-v1.jsonld`       | <https://w3id.org/security/multikey/v1>                                                                                       |
+| `did-v1.jsonld`                     | <https://www.w3.org/ns/did/v1>                                                                                                |
+| `cid-v1.jsonld`                     | <https://www.w3.org/ns/cid/v1>                                                                                                |
+| `gotosocial.jsonld`                 | <https://gotosocial.org/ns>                                                                                                   |
+| `litepub.jsonld`                    | <https://litepub.social/litepub/context.jsonld>                                                                               |
+| `webfinger.jsonld`                  | <https://purl.archive.org/socialweb/webfinger>                                                                                |
+| `join-lemmy.jsonld`                 | <https://join-lemmy.org/context.json>                                                                                         |
 | `fep-ef61.jsonld`                   | <https://w3id.org/fep/ef61>, copied 2026-09-27 from `fep/ef61/fep-ef61.jsonld` in the FEP repository, which is what it serves |
 
 Two of those need a word of explanation, because the reason they are bundled

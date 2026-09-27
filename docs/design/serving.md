@@ -55,11 +55,11 @@ match federation.handle(request, data).await {
 ~~~~
 
 `request` is an `http::Request` and `data` is the application's `D`, the value
-every callback's context carries. The *feder-axum* adapter, `feder_axum::wrap(app,
-federation, data)`, puts the federation in front of an application's router
-and does exactly the above, taking `D` from a function over the request's
-parts, which is how eunha passes the tenant's state that its dispatch put in
-the extensions.
+every callback's context carries. The *feder-axum* adapter,
+`feder_axum::wrap(app, federation, data)`, puts the federation in front of an
+application's router and does exactly the above, taking `D` from a function
+over the request's parts, which is how eunha passes the tenant's state that its
+dispatch put in the extensions.
 
 ### The origin is the canonical one, from the request
 

@@ -140,12 +140,12 @@ handed a forged one.
 Delivery
 --------
 
-A portable inbox has no host to send to, only gateways. `Deliverer::
-send_portable` queues each inbox with the gateways to try, in order, and a
-delivery tries them in turn within one attempt: the first that accepts it
-completes it, and a gateway that fails is passed over for the next rather
-than retried to exhaustion. When every gateway fails, the attempt fails as
-any delivery does and is retried by the queue's policy, from the first
+A portable inbox has no host to send to, only gateways.
+`Deliverer:: send_portable` queues each inbox with the gateways to try, in
+order, and a delivery tries them in turn within one attempt: the first that
+accepts it completes it, and a gateway that fails is passed over for the next
+rather than retried to exhaustion. When every gateway fails, the attempt fails
+as any delivery does and is retried by the queue's policy, from the first
 gateway again.
 
 The HTTP signature on the request is the sending server's, as for any

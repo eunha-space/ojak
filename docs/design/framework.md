@@ -97,12 +97,12 @@ application provides:
 Both are traits, and as in Fedify their backends are pluggable: an
 application picks one rather than writing one. Feder ships an in-memory
 backend for tests and small deployments, *feder-postgres* keeps the queue and
-the store each in a table of its own that it creates on first use, and more backends can follow
-the same trait. Every backend runs one set of conformance checks, so they
-agree on the parts that lose work when they are wrong. An application with
-tables for the purpose already implements the trait over them instead: eunha's
-queue tables stay exactly as they are, and the loops around them move into
-Feder.
+the store each in a table of its own that it creates on first use, and more
+backends can follow the same trait. Every backend runs one set of conformance
+checks, so they agree on the parts that lose work when they are wrong. An
+application with tables for the purpose already implements the trait over them
+instead: eunha's queue tables stay exactly as they are, and the loops around
+them move into Feder.
 
 The queue is claimed from, not listened to. Where Fedify's message queue hands
 a message to a listener, Feder's worker *claims* jobs from a named queue for a
