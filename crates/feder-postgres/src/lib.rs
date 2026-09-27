@@ -127,6 +127,24 @@ impl PostgresQueue {
     }
 }
 
+/// How much of a job's last error is kept.
+const MAX_ERROR_CHARS: usize = 2000;
+
+/// An error message made safe to store: without NUL, which PostgreSQL `text`
+/// refuses, and bounded.
+///
+/// A delivery's error can carry part of a peer's response. If recording it
+/// failed, the job would keep its lease, be handed out again when the lease
+/// lapsed, and never reach its last attempt: a job that cannot be failed is
+/// retried forever.
+fn storable(error: &str) -> String {
+    let cleaned = error.replace('\0', "");
+    match cleaned.char_indices().nth(MAX_ERROR_CHARS) {
+        Some((end, _)) => format!("{}…", &cleaned[..end]),
+        None => cleaned,
+    }
+}
+
 fn error(error: sqlx::Error) -> QueueError {
     QueueError(error.to_string())
 }
@@ -209,7 +227,7 @@ impl Queue for PostgresQueue {
         ))
         .bind(id(job)?)
         .bind(delay.as_secs_f64())
-        .bind(message)
+        .bind(storable(message))
         .execute(&self.pool)
         .await
         .map_err(error)?;
@@ -223,7 +241,7 @@ impl Queue for PostgresQueue {
             self.table
         ))
         .bind(id(job)?)
-        .bind(message)
+        .bind(storable(message))
         .execute(&self.pool)
         .await
         .map_err(error)?;

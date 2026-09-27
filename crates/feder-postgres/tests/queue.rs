@@ -137,3 +137,36 @@ async fn only_plain_table_names_are_accepted() {
         );
     }
 }
+
+/// A peer's response can hold a NUL, which PostgreSQL `text` refuses; a job
+/// whose failure cannot be recorded would be retried forever.
+#[tokio::test]
+#[ignore = "needs FEDER_TEST_DATABASE_URL"]
+async fn an_error_with_a_nul_is_recorded() {
+    let pool = pool().await;
+    let queue = scratch(&pool, "feder_queue_nul").await;
+    queue
+        .enqueue("q", vec![1.into(), 2.into()])
+        .await
+        .expect("enqueue");
+    let jobs = queue
+        .claim("q", 2, Duration::from_secs(60))
+        .await
+        .expect("claim");
+    queue
+        .retry(&jobs[0].id, Duration::from_secs(60), "bad\0response")
+        .await
+        .expect("retry with a NUL");
+    queue
+        .fail(&jobs[1].id, &"x\0".repeat(5000))
+        .await
+        .expect("fail with a NUL");
+    let errors: Vec<String> =
+        sqlx::query_scalar("SELECT last_error FROM feder_queue_nul ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .expect("read");
+    assert_eq!(errors[0], "badresponse");
+    assert_eq!(errors[1].chars().count(), 2001, "bounded, with an ellipsis");
+    drop_table(&pool, "feder_queue_nul").await;
+}
