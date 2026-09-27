@@ -189,11 +189,38 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
     /// what keeps federation going, and a database that is briefly away should
     /// not stop it.
     pub async fn run(&self) {
+        self.run_until(std::future::pending()).await;
+    }
+
+    /// Send what is queued until `stop` completes.
+    ///
+    /// Once `stop` has completed no new batch is claimed, and the batch in
+    /// hand is finished first, so that a server shutting down does not drop
+    /// deliveries in the middle of sending them. What it had claimed and not
+    /// reached is leased, and comes back when the lease lapses.
+    pub async fn run_until(&self, stop: impl Future<Output = ()>) {
+        tokio::pin!(stop);
         loop {
+            // Between batches, a stop that has come wins.
+            tokio::select! {
+                biased;
+                () = &mut stop => return,
+                () = std::future::ready(()) => {}
+            }
             match self.run_once().await {
-                Ok(0) => self.idle().await,
+                Ok(0) => {
+                    tokio::select! {
+                        () = &mut stop => return,
+                        () = self.idle() => {}
+                    }
+                }
                 Ok(_) => {}
-                Err(_) => tokio::time::sleep(Duration::from_secs(5)).await,
+                Err(_) => {
+                    tokio::select! {
+                        () = &mut stop => return,
+                        () = tokio::time::sleep(Duration::from_secs(5)) => {}
+                    }
+                }
             }
         }
     }

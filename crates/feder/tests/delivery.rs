@@ -354,3 +354,30 @@ async fn a_shared_limit_lets_every_delivery_through_in_turn() {
     assert_eq!(inbox.received().len(), 2);
     assert_eq!(limit.available_permits(), 1, "every permit is returned");
 }
+
+#[tokio::test]
+async fn run_until_returns_when_stopped_and_not_before_the_batch_is_done() {
+    let inbox = Inbox::default();
+    let url = serve(inbox.clone()).await;
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), fast());
+    deliverer.send("alice", &json!({}), [url]).await.unwrap();
+
+    let stop = Arc::new(tokio::sync::Notify::new());
+    let stopping = stop.clone();
+    let run = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(
+            deliverer.run_until(async move { stopping.notified().await }),
+            async {
+                // Stop once the delivery has gone through.
+                while inbox.received().is_empty() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                stop.notify_one();
+            }
+        )
+    })
+    .await;
+
+    assert!(run.is_ok(), "the loop returned once stopped");
+    assert!(deliverer.queue().records()[0].complete);
+}
