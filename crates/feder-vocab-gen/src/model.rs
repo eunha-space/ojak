@@ -127,6 +127,9 @@ pub struct Property {
     pub ranges: Vec<Range>,
     /// Keys of properties meaning the same, in the order they are tried.
     pub redundant_keys: Vec<String>,
+    /// Keys the property is also read from, after the others, and never
+    /// written to.
+    pub fallback_keys: Vec<String>,
     pub hook: Option<Hook>,
     /// Whether the property's values are sent without a `type`.
     pub untyped: bool,
@@ -319,14 +322,43 @@ fn analyse(
         _ => &property.singular_name,
     };
     let owner_type = (!owner.typeless).then_some(owner.uri.as_str());
-    let key = compact_property(owner_type, &property.uri, takes_objects, registry, context)?;
-    let redundant_keys = property
-        .redundant_properties
-        .iter()
-        .map(|redundant| {
-            compact_property(owner_type, &redundant.uri, takes_objects, registry, context)
-        })
-        .collect::<Result<_>>()?;
+    let list = property.container == Some(Container::List);
+    let key = compact_property(
+        owner_type,
+        &property.uri,
+        takes_objects,
+        list,
+        registry,
+        context,
+    )?;
+    let mut fallback_keys = Vec::new();
+    // A list compacts to its own term, `orderedItems` for `as:items`; the
+    // same property sent as a plain array compacts to the other, `items`, and
+    // is read from there when the list is not sent. It is never written.
+    if list {
+        let plain = compact_property(
+            owner_type,
+            &property.uri,
+            takes_objects,
+            false,
+            registry,
+            context,
+        )?;
+        if plain != key {
+            fallback_keys.push(plain);
+        }
+    }
+    let mut redundant_keys = Vec::new();
+    for redundant in &property.redundant_properties {
+        redundant_keys.push(compact_property(
+            owner_type,
+            &redundant.uri,
+            takes_objects,
+            false,
+            registry,
+            context,
+        )?);
+    }
     Ok(Property {
         uri: property.uri.clone(),
         field: snake_case(name),
@@ -336,6 +368,7 @@ fn analyse(
         container: property.container,
         ranges: ranges.into_iter().collect(),
         redundant_keys,
+        fallback_keys,
         hook,
         untyped: property.untyped,
         declared_by: declared_by.name.clone(),
@@ -355,6 +388,7 @@ fn compact_property(
     owner: Option<&str>,
     iri: &str,
     takes_objects: bool,
+    list: bool,
     registry: &Registry,
     context: &Value,
 ) -> Result<String> {
@@ -362,6 +396,11 @@ fn compact_property(
         json!({"@id": "https://feder.example/sample"})
     } else {
         json!({"@value": "sample"})
+    };
+    let sample = if list {
+        json!({ "@list": [sample] })
+    } else {
+        sample
     };
     let mut node = json!({ iri: [sample] });
     if let Some(owner) = owner {

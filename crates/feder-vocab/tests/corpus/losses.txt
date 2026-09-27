@@ -1,0 +1,220 @@
+124 documents: 66 read without loss, 4 read as no known type.
+Contexts named and not bundled, which leave their terms unread:
+    https://fedia.io/contexts (1)
+    https://greenish.red/schemas/litepub-0.1.jsonld (2)
+    https://mycrowd.ca/schemas/litepub-0.1.jsonld (1)
+    https://queer.hacktivis.me/schemas/litepub-0.1.jsonld (3)
+    https://w3id.org/security/data-integrity/v2 (2)
+
+lemmy/discourse/objects/person.json: "Person" read as Person
+    lost sharedInbox: "https://socialhub.activitypub.rocks/ap/users/inbox"
+lemmy/friendica/activities/create_note.json: "Create" read as Create
+    lost object.https://diasporafoundation.org/ns/comment: "{\"author\":\"jakob@soc.schuerz.at\",\"guid\":\"4edd2508-4361-edb8-c4d8-b45181083984\",\"created_at…
+    lost object.https://diasporafoundation.org/ns/guid: "4edd2508-4361-edb8-c4d8-b45181083984"
+    lost signature: {"created":"2022-01-23T20:21:25Z","creator":"https://soc.schuerz.at/profile/jakob#main-key","nonce":…
+lemmy/friendica/activities/create_page_1.json: "Create" read as Create
+    lost object.atomUri: "https://masto.qa.urbanwildlife.biz/users/mastodon/statuses/110435994705014161"
+    lost object.conversation: "tag:masto.qa.urbanwildlife.biz,2023-05-26:objectId=61:objectType=Conversation"
+lemmy/friendica/activities/create_page_2.json: "Create" read as Create
+    lost object.https://diasporafoundation.org/ns/guid: "ec054ce7-5162-3bf2-504c-16d024994850"
+    lost signature: {"created":"2022-03-24T04:26:55Z","creator":"https://pirati.ca/profile/heluecht#main-key","nonce":"d…
+lemmy/friendica/activities/delete.json: "Delete" read as Delete
+    lost signature: {"created":"2022-03-24T21:43:46Z","creator":"https://pirati.ca/profile/heluecht#main-key","nonce":"e…
+lemmy/friendica/activities/dislike_page.json: "Dislike" read as Dislike
+    lost https://diasporafoundation.org/ns/guid: "ec054ce7-1862-3ce2-b3e4-870035437794"
+    lost https://diasporafoundation.org/ns/like: "{\"author\":\"heluecht@pirati.ca\",\"guid\":\"ec054ce7-1862-3ce2-b3e4-870035437794\",\"parent_guid\…
+    lost signature: {"created":"2022-03-24T21:32:43Z","creator":"https://pirati.ca/profile/heluecht#main-key","nonce":"0…
+lemmy/friendica/activities/like_page.json: "Like" read as Like
+    lost https://diasporafoundation.org/ns/guid: "ec054ce7-1062-3ce2-7f10-2a6640956978"
+    lost https://diasporafoundation.org/ns/like: "{\"author\":\"heluecht@pirati.ca\",\"guid\":\"ec054ce7-1062-3ce2-7f10-2a6640956978\",\"parent_guid\…
+    lost signature: {"created":"2022-03-24T21:33:58Z","creator":"https://pirati.ca/profile/heluecht#main-key","nonce":"3…
+lemmy/friendica/activities/undo_dislike_page.json: "Undo" read as Undo
+    lost object.https://diasporafoundation.org/ns/guid: "ec054ce7-1862-3ce2-b3e4-870035437794"
+    lost object.https://diasporafoundation.org/ns/like: "{\"author\":\"heluecht@pirati.ca\",\"guid\":\"ec054ce7-1862-3ce2-b3e4-870035437794\",\"parent_guid\…
+    lost signature: {"created":"2022-03-24T21:41:48Z","creator":"https://pirati.ca/profile/heluecht#main-key","nonce":"1…
+lemmy/friendica/activities/update_note.json: "Update" read as Update
+    lost object.https://diasporafoundation.org/ns/comment: "{\"author\":\"heluecht@pirati.ca\",\"guid\":\"ec054ce7-4762-3c1c-3c25-0cc665717210\",\"created_at\"…
+    lost object.https://diasporafoundation.org/ns/guid: "ec054ce7-4762-3c1c-3c25-0cc665717210"
+    lost signature: {"created":"2022-03-24T21:37:50Z","creator":"https://pirati.ca/profile/heluecht#main-key","nonce":"5…
+lemmy/friendica/objects/note_1.json: "Note" read as Note
+    lost https://diasporafoundation.org/ns/comment: "{\"author\":\"jakob@soc.schuerz.at\",\"guid\":\"4edd2508-4361-edb8-c4d8-b45181083984\",\"created_at…
+    lost https://diasporafoundation.org/ns/guid: "4edd2508-4361-edb8-c4d8-b45181083984"
+lemmy/friendica/objects/note_2.json: "Note" read as Note
+    lost https://diasporafoundation.org/ns/comment: "{\"author\":\"liwott@nerdica.net\",\"guid\":\"a85d7459-7262-66e9-f901-f05552414769\",\"created_at\"…
+    lost https://diasporafoundation.org/ns/guid: "a85d7459-7262-66e9-f901-f05552414769"
+lemmy/friendica/objects/page_1.json: "Page" read as Page
+    lost https://diasporafoundation.org/ns/guid: "ec054ce7-8062-3c1b-016c-910426317080"
+lemmy/friendica/objects/page_2.json: "Article" read as Article
+    lost https://diasporafoundation.org/ns/guid: "ec054ce7-5162-3bf2-504c-16d024994850"
+lemmy/friendica/objects/person_1.json: "Person" read as Person
+    lost https://diasporafoundation.org/ns/guid: "4edd2508-1661-30f6-ebcc-2da966353356"
+    lost vcard:hasAddress: {"type":"vcard:Home","vcard:country-name":"Austria","vcard:locality":"","vcard:region":"Niederoester…
+    lost vcard:hasInstantMessage: ["xmpp:jakob@schuerz.at","matrix:@jakob:schuerz.at"]
+lemmy/friendica/objects/person_2.json: "Organization" read as Organization
+    lost https://diasporafoundation.org/ns/guid: "0477a01e-8161-2935-9a73-393807834700"
+    lost vcard:hasAddress: {"type":"vcard:Home","vcard:country-name":"Italy","vcard:locality":"","vcard:region":"Lazio"}
+lemmy/gnusocial/activities/create_note.json: "Create" read as Create
+    lost object.https://www.gnu.org/software/social/ns#inConversation: {"id":"https://instance.gnusocial.test/conversation/1338"}
+lemmy/gnusocial/activities/create_page.json: "Create" read as Create
+    lost object.https://www.gnu.org/software/social/ns#inConversation: {"id":"https://instance.gnusocial.test/conversation/1338"}
+lemmy/gnusocial/objects/note.json: "Note" read as Note
+    lost https://www.gnu.org/software/social/ns#inConversation: {"id":"https://instance.gnusocial.test/conversation/1338"}
+lemmy/gnusocial/objects/page.json: "Page" read as Page
+    lost https://www.gnu.org/software/social/ns#inConversation: {"id":"https://instance.gnusocial.test/conversation/1338"}
+lemmy/lemmy/activities/community/lock_note.json: "Lock" read as Other (no @context)
+lemmy/lemmy/activities/community/lock_page.json: "Lock" read as Other (no @context)
+lemmy/lemmy/activities/community/resolve_report_page.json: "Resolve" read as Other (no @context)
+lemmy/lemmy/activities/community/update_community.json: "Update" read as Update (no @context)
+    lost object.http://schema.org/inLanguage: [{"http://schema.org/identifier":"fr","name":"Français"},{"http://schema.org/identifier":"de","name"…
+lemmy/lemmy/activities/community/warn.json: "Warn" read as Other (no @context)
+lemmy/lemmy/activities/create_or_update/create_page.json: "Create" read as Create (no @context)
+    lost object.http://schema.org/inLanguage: {"http://schema.org/identifier":"ko","name":"한국어"}
+lemmy/lemmy/collections/group_featured_posts.json: "OrderedCollection" read as OrderedCollection (no @context)
+    lost orderedItems[0].http://schema.org/inLanguage: {"http://schema.org/identifier":"de","name":"Deutsch"}
+    lost orderedItems[1].http://schema.org/inLanguage: {"http://schema.org/identifier":"de","name":"Deutsch"}
+lemmy/lemmy/objects/comment.json: "Note" read as Note (no @context)
+    lost http://schema.org/inLanguage: {"http://schema.org/identifier":"fr","name":"Français"}
+lemmy/lemmy/objects/group.json: "Group" read as Group (no @context)
+    lost description: "A description of ten forward."
+    lost http://schema.org/inLanguage: [{"http://schema.org/identifier":"fr","name":"Français"},{"http://schema.org/identifier":"de","name"…
+lemmy/lemmy/objects/instance.json: "Application" read as Application (no @context)
+    lost description: "A test instance"
+    lost http://schema.org/inLanguage: [{"http://schema.org/identifier":"fr","name":"Français"},{"http://schema.org/identifier":"es","name"…
+lemmy/lemmy/objects/page.json: "Page" read as Page (no @context)
+    lost http://schema.org/inLanguage: {"http://schema.org/identifier":"fr","name":"Français"}
+lemmy/lemmy/objects/page_image_and_link.json: "Page" read as Page (no @context)
+    lost http://schema.org/inLanguage: {"http://schema.org/identifier":"fr","name":"Français"}
+lemmy/lotide/objects/group.json: "Group" read as Group
+    lost publicKey.signatureAlgorithm: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+lemmy/lotide/objects/person.json: "Person" read as Person
+    lost publicKey.signatureAlgorithm: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+lemmy/lotide/objects/tombstone.json: "Tombstone" read as Tombstone
+    lost former_type: "Note"
+lemmy/mastodon/activities/create_note.json: "Create" read as Create
+    lost object.atomUri: "https://mastodon.madrid/users/felix/statuses/107224289116410645"
+    lost object.conversation: "tag:mamot.fr,2021-11-05:objectId=64635960:objectType=Conversation"
+    lost object.inReplyToAtomUri: "https://mamot.fr/users/retiolus/statuses/107224244380204526"
+lemmy/mastodon/activities/delete.json: "Delete" read as Delete
+    lost object.atomUri: "https://mastodon.madrid/users/felix/statuses/107773559874184870"
+    lost signature: {"created":"2022-02-10T11:54:18Z","creator":"https://mastodon.madrid/users/felix#main-key","signatur…
+lemmy/mastodon/activities/private_message.json: "Note" read as Note
+    lost atomUri: "https://mastodon.world/users/nutomic/statuses/110854468010322301"
+    lost conversation: "tag:mastodon.world,2023-08-08:objectId=121377096:objectType=Conversation"
+    lost inReplyToAtomUri: "https://mastodon.world/users/nutomic/statuses/110854464248188528"
+lemmy/mastodon/collections/featured.json: "OrderedCollection" read as OrderedCollection
+    lost orderedItems.atomUri: "https://mastodon.social/users/LemmyDev/statuses/104246642906910728"
+    lost orderedItems.conversation: "tag:mastodon.social,2020-05-28:objectId=175451535:objectType=Conversation"
+lemmy/mastodon/objects/note_1.json: "Note" read as Note
+    lost atomUri: "https://mastodon.madrid/users/felix/statuses/107224289116410645"
+    lost conversation: "tag:mamot.fr,2021-11-05:objectId=64635960:objectType=Conversation"
+    lost inReplyToAtomUri: "https://mamot.fr/users/retiolus/statuses/107224244380204526"
+lemmy/mastodon/objects/note_2.json: "Note" read as Note
+    lost atomUri: "https://floss.social/users/kde/statuses/113306831140126616"
+    lost conversation: "tag:floss.social,2024-10-14:objectId=71424279:objectType=Conversation"
+    lost inReplyToAtomUri: "https://floss.social/users/kde/statuses/113306824627995724"
+lemmy/mastodon/objects/page.json: "Note" read as Note
+    lost atomUri: "https://masto.qa.urbanwildlife.biz/statuses/110830743680706519"
+    lost conversation: "tag:dice.camp,2023-08-04:objectId=29969291:objectType=Conversation"
+lemmy/mastodon/objects/person.json: "Person" read as Person
+    lost toot:devices: {"id":"https://masto.qa.urbanwildlife.biz/users/mastodon/collections/devices"}
+lemmy/mobilizon/objects/event.json: "Event" read as Event
+    lost actor: "https://rendezvous.nomagic.uk/@emorrp1"
+    lost commentsEnabled: {"@type":"schema:Boolean","@value":true}
+    lost contacts: {"@language":"und","@value":"https://rendezvous.nomagic.uk/@emorrp1"}
+    lost draft: false
+    lost http://www.w3.org/2002/12/cal/ical#status: {"@language":"und","@value":"CONFIRMED"}
+    lost https://joinmobilizon.org/ns#anonymousParticipationEnabled: {"@type":"schema:Boolean","@value":true}
+    lost https://joinmobilizon.org/ns#isOnline: {"@type":"schema:Boolean","@value":false}
+    lost https://joinmobilizon.org/ns#joinMode: {"@type":"https://joinmobilizon.org/ns#joinModeType","@value":"free"}
+    lost https://joinmobilizon.org/ns#participantCount: {"@type":"schema:Integer","@value":0}
+    lost https://joinmobilizon.org/ns#repliesModerationOption: {"@type":"https://joinmobilizon.org/ns#repliesModerationOptionType","@value":"allow_all"}
+    lost https://joinmobilizon.org/ns#timezone: {"@type":"schema:Text","@value":"Europe/London"}
+    lost schema:category: {"@language":"und","@value":"SPORTS"}
+    lost schema:identifier: {"@language":"und","@value":"b81c0531-a57c-497d-93ba-af0f8b255498"}
+    lost schema:inLanguage: {"@language":"und","@value":"en"}
+    lost schema:location: {"id":"https://rendezvous.nomagic.uk/address/e4c95383-15ac-4cc7-adf6-723d74ee2ccc","latitude":"5.066…
+    lost schema:maximumAttendeeCapacity: 0
+lemmy/mobilizon/objects/group.json: "Group" read as Group
+    lost endpoints.https://joinmobilizon.org/ns#discussions: {"id":"https://mobilizon.fr/@contribateliers/discussions"}
+    lost endpoints.https://joinmobilizon.org/ns#events: {"id":"https://mobilizon.fr/@contribateliers/events"}
+    lost endpoints.https://joinmobilizon.org/ns#members: {"id":"https://mobilizon.fr/@contribateliers/members"}
+    lost endpoints.https://joinmobilizon.org/ns#posts: {"id":"https://mobilizon.fr/@contribateliers/posts"}
+    lost endpoints.https://joinmobilizon.org/ns#resources: {"id":"https://mobilizon.fr/@contribateliers/resources"}
+    lost endpoints.https://joinmobilizon.org/ns#todos: {"id":"https://mobilizon.fr/@contribateliers/todos"}
+    lost https://joinmobilizon.org/ns#discussions: {"id":"https://mobilizon.fr/@contribateliers/discussions"}
+    lost https://joinmobilizon.org/ns#events: {"id":"https://mobilizon.fr/@contribateliers/events"}
+    lost https://joinmobilizon.org/ns#memberCount: {"@type":"schema:Integer","@value":13}
+    lost https://joinmobilizon.org/ns#members: {"id":"https://mobilizon.fr/@contribateliers/members"}
+    lost https://joinmobilizon.org/ns#openness: {"id":"open"}
+    lost https://joinmobilizon.org/ns#posts: {"id":"https://mobilizon.fr/@contribateliers/posts"}
+    lost https://joinmobilizon.org/ns#resources: {"id":"https://mobilizon.fr/@contribateliers/resources"}
+    lost https://joinmobilizon.org/ns#todos: {"id":"https://mobilizon.fr/@contribateliers/todos"}
+    lost schema:location: {"id":"https://mobilizon.fr/address/935f207e-4c0f-4818-8762-51d6ab2ed27e","schema:address":{"type":"…
+lemmy/mobilizon/objects/person.json: "Person" read as Person
+    lost https://joinmobilizon.org/ns#openness: {"id":"moderated"}
+lemmy/peertube/objects/group.json: "Group" read as Group
+    lost pt:playlists: {"id":"https://tilvids.com/video-channels/thelinuxexperiment_channel/playlists"}
+    lost pt:support: {"@type":"http://schema.org/Text","@value":"Support the channel on Patreon: \nhttps://www.patreon.co…
+lemmy/peertube/objects/person.json: "Person" read as Person
+    lost pt:playlists: {"id":"https://tilvids.com/accounts/thelinuxexperiment/playlists"}
+lemmy/peertube/objects/video.json: "Video" read as Video
+    lost as:comments: {"id":"https://tilvids.com/videos/watch/e7946124-7b72-4ad7-9d22-844a84bb2de1/comments"}
+    lost as:dislikes: {"id":"https://tilvids.com/videos/watch/e7946124-7b72-4ad7-9d22-844a84bb2de1/dislikes"}
+    lost http://schema.org/category: {"http://schema.org/identifier":"15","name":"Science & Technology"}
+    lost http://schema.org/datePublished: "2025-02-01T11:39:50.000Z"
+    lost http://schema.org/hasParts: "https://tilvids.com/videos/watch/e7946124-7b72-4ad7-9d22-844a84bb2de1/chapters"
+    lost http://schema.org/inLanguage: {"http://schema.org/identifier":"en","name":"English"}
+    lost http://schema.org/isLiveBroadcast: false
+    lost http://schema.org/license: {"http://schema.org/identifier":"2","name":"Attribution - Share Alike"}
+    lost preview.rel: "storyboard"
+    lost pt:aspectRatio: {"@type":"http://schema.org/Float","@value":"1.77780000000e0"}
+    lost pt:commentsPolicy: {"@type":"http://schema.org/Number","@value":1}
+    lost pt:downloadEnabled: {"@type":"http://schema.org/Boolean","@value":true}
+    lost pt:state: {"@type":"http://schema.org/Number","@value":1}
+    lost pt:support: {"@type":"http://schema.org/Text","@value":"Support the channel on Patreon: \r\nhttps://www.patreon.…
+    lost pt:uuid: {"@type":"http://schema.org/identifier","@value":"e7946124-7b72-4ad7-9d22-844a84bb2de1"}
+    lost pt:views: {"@type":"http://schema.org/Number","@value":360}
+    lost pt:waitTranscoding: {"@type":"http://schema.org/Boolean","@value":true}
+    lost url[1].tag: [{"name":"bade027756842ecef7a1fb7b437dcaa52eb72350","type":"pt:Infohash"},{"name":"dc1091029454a93ae…
+lemmy/pleroma/activities/create_note.json: "Create" read as Create
+    lost context_id: 6336544
+    lost directMessage: false
+    lost object.actor: "https://greenish.red/users/nutomic"
+    lost object.conversation: {"@language":"und","@value":"https://greenish.red/contexts/f6244742-0526-4b84-ac4f-ceadf1fb4e56"}
+    lost object.source.@language: "und"
+    lost object.source.@value: "@lanodan@ds9.lemmy.ml test"
+lemmy/pleroma/activities/follow.json: "Follow" read as Follow
+    lost state: {"@language":"und","@value":"pending"}
+lemmy/pleroma/objects/note.json: "Note" read as Note
+    lost actor: "https://queer.hacktivis.me/users/lanodan"
+    lost conversation: {"@language":"und","@value":"https://queer.hacktivis.me/contexts/34cba3d2-2f35-4169-aeff-56af9bfeb75…
+    lost source.@language: "und"
+    lost source.@value: "@popolon@pleroma.popolon.org Have what?"
+lemmy/pleroma/objects/person.json: "Person" read as Person
+    lost capabilities: {"acceptsChatMessages":true}
+    lost endpoints.oauthRegistrationEndpoint: {"@language":"und","@value":"https://queer.hacktivis.me/api/v1/apps"}
+lemmy/smithereen/activities/create_note.json: "Create" read as Create
+    lost signature: {"created":"2021-11-09T11:42:35Z","creator":"https://friends.grishka.me/users/1#main-key","signature…
+lemmy/smithereen/objects/person.json: "Person" read as Person
+    lost http://smithereen.software/ns#friends: {"id":"https://friends.grishka.me/users/1/friends"}
+    lost http://smithereen.software/ns#groups: {"id":"https://friends.grishka.me/users/1/groups"}
+    lost http://smithereen.software/ns#supportsFriendRequests: true
+    lost http://smithereen.software/ns#wall: {"id":"https://friends.grishka.me/users/1/wall"}
+    lost icon.http://smithereen.software/ns#cropRegion: ["2.64227628708e-1","3.76693755388e-1","7.11382091045e-1","9.72899734974e-1"]
+    lost schema:additionalName: "Александрович"
+    lost schema:familyName: "Клюшников"
+    lost schema:gender: {"@type":"schema:GenderType","@value":"http://schema.org#Male"}
+    lost schema:givenName: "Григорий"
+    lost vcard:bday: "1993-01-22"
+lemmy/wordpress/activities/announce.json: "Announce" read as Announce
+    lost id: "https://pfefferle.org/lemmy-part-4/#activity#activity"
+lemmy/wordpress/objects/group.json: "Group" read as Group
+    lost attributionDomains: [{"id":"dbzer0.com"}]
+    lost generator.https://w3id.org/fep/844e/implements: [{"href":"https://datatracker.ietf.org/doc/html/rfc9421","name":"RFC-9421: HTTP Message Signatures"}…
+lemmy/wordpress/objects/page.json: "Article" read as Article
+    lost interactionPolicy.canAnnounce.always: "https://www.w3.org/ns/activitystreams#Public"
+    lost interactionPolicy.canLike.always: "https://www.w3.org/ns/activitystreams#Public"
+    lost interactionPolicy.canQuote.always: "https://www.w3.org/ns/activitystreams#Public"
+    lost interactionPolicy.canReply.always: "https://www.w3.org/ns/activitystreams#Public"
+lemmy/wordpress/objects/person.json: "Person" read as Person
+    lost https://webfinger.net/#: "matthias@pfefferle.org"

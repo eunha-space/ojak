@@ -445,3 +445,28 @@ fn an_unshipped_context_is_reported_rather_than_fatal() {
         json!("hello")
     );
 }
+
+/// Mbin names only its own server's context, which extends ActivityStreams
+/// and which feder does not ship. Read as ActivityStreams, the standard
+/// terms in it mean what they always do; otherwise the whole document would
+/// read as nothing.
+#[test]
+fn a_document_naming_only_an_unshipped_context_reads_as_activitystreams() {
+    let document = json!({
+        "@context": ["https://fedia.io/contexts"],
+        "id": "https://fedia.io/i/actor",
+        "type": "Application",
+        "preferredUsername": "fedia.io",
+        "inbox": "https://fedia.io/i/inbox"
+    });
+
+    let normalized = normalize(&registry(), &document).expect("normalize");
+    assert_eq!(
+        normalized.unresolved_contexts(),
+        ["https://fedia.io/contexts"]
+    );
+    let document = normalized.document();
+    assert_eq!(document["type"], json!("Application"));
+    assert_eq!(document["preferredUsername"], json!("fedia.io"));
+    assert_eq!(document["inbox"], json!("https://fedia.io/i/inbox"));
+}

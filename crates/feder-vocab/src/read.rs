@@ -4,7 +4,8 @@ use alloc::{string::String, vec::Vec};
 use core::fmt;
 use serde::de::DeserializeOwned;
 
-use crate::json::ToJson;
+use crate::json::{FromJson, JsonError, ToJson};
+use crate::loss::{self, Loss};
 use serde_json::Value;
 
 pub use feder_jsonld::Registry;
@@ -14,6 +15,7 @@ pub use feder_jsonld::Registry;
 pub struct Read<T> {
     value: T,
     unresolved_contexts: Vec<String>,
+    lost: Vec<Loss>,
 }
 
 impl<T> Read<T> {
@@ -37,6 +39,18 @@ impl<T> Read<T> {
     pub fn unresolved_contexts(&self) -> &[String] {
         &self.unresolved_contexts
     }
+
+    /// What the document said that the value does not: properties the
+    /// vocabulary does not define, and values that were not the shape their
+    /// property allows. Only [`read_reporting`] fills it.
+    ///
+    /// Not an error: reading is tolerant so that one odd property does not
+    /// cost the whole object. Worth logging, and worth a look when a peer's
+    /// documents read emptier than expected.
+    #[must_use]
+    pub fn lost(&self) -> &[Loss] {
+        &self.lost
+    }
 }
 
 /// Why a document could not be read.
@@ -46,6 +60,8 @@ pub enum ReadError {
     JsonLd(feder_jsonld::Error),
     /// The document was processed but is not the shape of the type asked for.
     Shape(serde_json::Error),
+    /// The document was processed but is not a value of the type asked for.
+    Value(JsonError),
 }
 
 impl fmt::Display for ReadError {
@@ -53,6 +69,7 @@ impl fmt::Display for ReadError {
         match self {
             Self::JsonLd(error) => write!(f, "cannot process the document: {error}"),
             Self::Shape(error) => write!(f, "the document is not the expected shape: {error}"),
+            Self::Value(error) => write!(f, "the document is not the expected type: {error}"),
         }
     }
 }
@@ -92,6 +109,31 @@ pub fn read<T: DeserializeOwned>(
     Ok(Read {
         value,
         unresolved_contexts,
+        lost: Vec::new(),
+    })
+}
+
+/// [`read`], and say what the value did not keep: see [`Read::lost`].
+///
+/// # Errors
+///
+/// As [`read`].
+pub fn read_reporting<T: FromJson + ToJson>(
+    registry: &Registry,
+    document: &Value,
+) -> Result<Read<T>, ReadError> {
+    let processed = feder_jsonld::normalize(registry, document).map_err(ReadError::JsonLd)?;
+    let unresolved_contexts = processed.unresolved_contexts().to_vec();
+    let mut normalized = processed.into_document();
+    if let Value::Object(members) = &mut normalized {
+        members.remove("@context");
+    }
+    let value = T::from_json(&normalized).map_err(ReadError::Value)?;
+    let lost = loss::losses(&normalized, &value.to_json());
+    Ok(Read {
+        value,
+        unresolved_contexts,
+        lost,
     })
 }
 

@@ -93,6 +93,65 @@ pub struct Preprocessor {
     pub function: String,
 }
 
+/// Feder's additions to the vocabulary: properties added to types the
+/// vendored schemas describe. See *crates/feder-vocab/extensions*.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Additions {
+    pub additions: Vec<Addition>,
+}
+
+/// Properties added to each of the types in `to`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Addition {
+    /// The IRIs of the types.
+    pub to: Vec<String>,
+    pub properties: Vec<PropertySchema>,
+}
+
+/// Read Feder's additions from `path`.
+///
+/// # Errors
+///
+/// When the file cannot be read or is not of the additions' shape.
+pub fn load_additions(path: &Path) -> Result<Additions> {
+    let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let documents = YamlLoader::load_from_str(&text).context("YAML")?;
+    let [document] = documents.as_slice() else {
+        bail!("expected one YAML document in {}", path.display());
+    };
+    serde_json::from_value(to_json(document)?).context("additions shape")
+}
+
+/// Add `additions` to the types they name.
+///
+/// # Errors
+///
+/// When an addition names a type no schema describes, or a property the
+/// type already has: an addition adds, and never redefines.
+pub fn apply(schemas: &mut [TypeSchema], additions: &Additions) -> Result<()> {
+    for addition in &additions.additions {
+        for uri in &addition.to {
+            let schema = schemas
+                .iter_mut()
+                .find(|schema| &schema.uri == uri)
+                .with_context(|| format!("an addition names {uri}, which no schema describes"))?;
+            for property in &addition.properties {
+                if schema
+                    .properties
+                    .iter()
+                    .any(|known| known.uri == property.uri)
+                {
+                    bail!("{} already has {}", schema.name, property.uri);
+                }
+                schema.properties.push(property.clone());
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Read every `*.yaml` schema in `dir`, sorted by file name.
 ///
 /// # Errors

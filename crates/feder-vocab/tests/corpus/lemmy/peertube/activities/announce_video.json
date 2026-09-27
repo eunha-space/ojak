@@ -1,0 +1,15 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    {
+      "RsaSignature2017": "https://w3id.org/security#RsaSignature2017"
+    }
+  ],
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://tilvids.com/accounts/thelinuxexperiment/followers"],
+  "type": "Announce",
+  "id": "https://tilvids.com/videos/watch/e7946124-7b72-4ad7-9d22-844a84bb2de1/announces/299",
+  "actor": "https://tilvids.com/video-channels/thelinuxexperiment_channel",
+  "object": "https://tilvids.com/videos/watch/e7946124-7b72-4ad7-9d22-844a84bb2de1"
+}

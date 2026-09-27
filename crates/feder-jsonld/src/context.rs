@@ -203,6 +203,9 @@ impl<'a> Session<'a> {
 ///
 /// `remote` is the stack of context IRIs currently being resolved, which is how
 /// a context that refers back to itself is caught rather than recursed into.
+/// The ActivityStreams context, which an unknown context is read as.
+const ACTIVITYSTREAMS: &str = "https://www.w3.org/ns/activitystreams";
+
 pub(crate) fn process(
     active: &ActiveContext,
     local: &Value,
@@ -228,12 +231,23 @@ pub(crate) fn process(
             }
             Value::String(iri) => {
                 let resolved = resolve_context_iri(&result, iri);
-                let Some(document) = session.registry.resolve(&resolved).cloned() else {
-                    // Tolerant on purpose: an extension context feder does not
-                    // ship leaves its terms unexpanded rather than failing the
-                    // whole document. The caller is told which ones.
-                    session.note_unresolved(&resolved);
-                    continue;
+                let document = match session.registry.resolve(&resolved) {
+                    Some(document) => document.clone(),
+                    // Tolerant on purpose: a context feder does not ship does
+                    // not fail the whole document, and the caller is told
+                    // which ones there were. It is read as ActivityStreams:
+                    // every context the fediverse serves extends it (Mbin's
+                    // and Lemmy's own, Pleroma's per-instance LitePub), and
+                    // the sender's own additions, which are all it could add,
+                    // are left unread. Otherwise a document naming only its
+                    // server's context, as Mbin's do, would read as nothing.
+                    None => {
+                        session.note_unresolved(&resolved);
+                        match session.registry.resolve(ACTIVITYSTREAMS) {
+                            Some(document) if resolved != ACTIVITYSTREAMS => document.clone(),
+                            _ => continue,
+                        }
+                    }
                 };
                 if remote.iter().any(|seen| seen == &resolved) {
                     return Err(Error::CyclicContext(resolved));

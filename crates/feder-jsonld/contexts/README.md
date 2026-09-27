@@ -4,8 +4,11 @@ Bundled JSON-LD contexts
 ========================
 
 Every context `feder-jsonld` can resolve is in this directory.  There is no
-document loader: a context IRI that is not listed below does not resolve, is
-not fetched, and its terms simply do not expand.
+document loader: a context IRI that is not listed below does not resolve and
+is not fetched.  It is read as the ActivityStreams context instead, which every
+context the fediverse serves extends, so that a document naming only its own
+server's context, as Mbin's do, still reads; the terms that context would have
+added do not expand, and the caller is told which context went unresolved.
 
 That is a security boundary, not an optimisation.  Context resolution happens
 on inbound, attacker-controlled documents, and a loader that fetches what those
@@ -19,6 +22,7 @@ loader — three SSRF, one unbounded redirect chain, one ReDoS in the HTML
 those bugs.
 
 The cost is that an unknown extension term is dropped rather than understood.
+*feder-vocab*'s `read_reporting` says which ones were.
 That is the right trade for a protocol core: a term feder does not know is a
 term feder was not going to act on.
 

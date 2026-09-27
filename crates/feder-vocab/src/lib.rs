@@ -16,9 +16,11 @@ use serde::{
 
 pub mod generated;
 pub mod json;
+pub mod loss;
 mod read;
 
-pub use read::{Read, ReadError, Registry, read, write};
+pub use loss::Loss;
+pub use read::{Read, ReadError, Registry, read, read_reporting, write};
 
 /// The canonical Activity Streams JSON-LD context URL.
 pub const ACTIVITYSTREAMS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";

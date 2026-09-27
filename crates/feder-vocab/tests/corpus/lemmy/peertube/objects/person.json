@@ -1,0 +1,49 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    { "RsaSignature2017": "https://w3id.org/security#RsaSignature2017" },
+    {
+      "pt": "https://joinpeertube.org/ns#",
+      "sc": "http://schema.org/",
+      "playlists": { "@id": "pt:playlists", "@type": "@id" },
+      "support": { "@type": "sc:Text", "@id": "pt:support" },
+      "lemmy": "https://join-lemmy.org/ns#",
+      "postingRestrictedToMods": "lemmy:postingRestrictedToMods"
+    }
+  ],
+  "type": "Person",
+  "id": "https://tilvids.com/accounts/thelinuxexperiment",
+  "following": "https://tilvids.com/accounts/thelinuxexperiment/following",
+  "followers": "https://tilvids.com/accounts/thelinuxexperiment/followers",
+  "playlists": "https://tilvids.com/accounts/thelinuxexperiment/playlists",
+  "inbox": "https://tilvids.com/accounts/thelinuxexperiment/inbox",
+  "outbox": "https://tilvids.com/accounts/thelinuxexperiment/outbox",
+  "preferredUsername": "thelinuxexperiment",
+  "url": "https://tilvids.com/accounts/thelinuxexperiment",
+  "name": "The Linux Experiment",
+  "endpoints": { "sharedInbox": "https://tilvids.com/inbox" },
+  "publicKey": {
+    "id": "https://tilvids.com/accounts/thelinuxexperiment#main-key",
+    "owner": "https://tilvids.com/accounts/thelinuxexperiment",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqbMvBSLhwEA3VXQ3TPgd\nDCeVpicrjGlk5tRg9OMBMY/xRhT4M3T8H2uYMUmIQJubUcooqAImWL7bYyXig0Ms\nby18vLyAgIR7V7ymvJbJxF2WZV33CC7Ad1yjqLlnhydcG+pWKWqkjP7SXzAy/EHo\n46OhDQK1+Q6FXfDrLAGEDRq5z+qTi5dh1hi/c9ZvI0+3PBg1IfAf5zLeo1AoydV7\nvISCm7kyClABwOW3OjPP86SbAlQL6STFOO3s6EdvvVifTkacC/gl8ad8TI8610Wa\n5wLsjdE8LIky9lLUsFYvVPrJ6v5havxCSmc6W1tkDicitpFylN2X914L36bn609M\n8QIDAQAB\n-----END PUBLIC KEY-----"
+  },
+  "published": "2020-06-30T13:45:17.950Z",
+  "icon": [
+    {
+      "type": "Image",
+      "mediaType": "image/jpeg",
+      "height": 48,
+      "width": 48,
+      "url": "https://tilvids.com/lazy-static/avatars/e74c2c6b-1f6b-4506-9d03-2cbba1635b20.jpg"
+    },
+    {
+      "type": "Image",
+      "mediaType": "image/jpeg",
+      "height": 120,
+      "width": 120,
+      "url": "https://tilvids.com/lazy-static/avatars/bdaa7218-ba3c-43ba-abd3-cfd081394c18.jpg"
+    }
+  ],
+  "summary": "I'm Nick, and I like to tinker with Linux stuff. I'll bumble through distro reviews, tutorials, and general helpful tidbits and impressions on Linux desktop environments, applications, and news. \n\nYou might see a bit of Linux gaming here and there, and some more personal opinion pieces, but in the end, it's more or less all about Linux and FOSS !\n\nIf you want to stay up to snuff, follow me on Mastodon @TheLinuxEXP@mastodon.social"
+}

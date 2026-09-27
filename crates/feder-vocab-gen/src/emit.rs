@@ -282,6 +282,7 @@ fn field_code(
 
     let value_type = value_type(vocabulary, property, enums)?;
     let keys = keys(property);
+    let write_keys = write_keys(property);
     let reader = match (property.hook, property.functional) {
         (Some(Hook::LinkToImage), true) => {
             format!("json::one_mapped(object, {keys}, json::link_to_image)")
@@ -296,7 +297,7 @@ fn field_code(
         FieldCode {
             ty: format!("Option<{value_type}>"),
             read: reader,
-            write: format!("json::put_one(&mut object, {keys}, self.{field}.as_ref())"),
+            write: format!("json::put_one(&mut object, {write_keys}, self.{field}.as_ref())"),
         }
     } else {
         let element = value_type
@@ -306,7 +307,7 @@ fn field_code(
         FieldCode {
             ty: format!("Vec<{element}>"),
             read: reader,
-            write: format!("json::put_many(&mut object, {keys}, &self.{field})"),
+            write: format!("json::put_many(&mut object, {write_keys}, &self.{field})"),
         }
     })
 }
@@ -315,6 +316,7 @@ fn field_code(
 fn untyped_field_code(property: &Property, name: &str, entity: bool) -> FieldCode {
     let field = &property.field;
     let keys = keys(property);
+    let write_keys = write_keys(property);
     let (element, read, write) = if entity {
         (
             format!("Reference<{name}>"),
@@ -339,14 +341,16 @@ fn untyped_field_code(property: &Property, name: &str, entity: bool) -> FieldCod
             ty: format!("Option<{element}>"),
             read: format!("json::one_with(object, {keys}, {read})"),
             write: format!(
-                "json::put_one_with(&mut object, {keys}, self.{field}.as_ref(), {write})"
+                "json::put_one_with(&mut object, {write_keys}, self.{field}.as_ref(), {write})"
             ),
         }
     } else {
         FieldCode {
             ty: format!("Vec<{element}>"),
             read: format!("json::many_with(object, {keys}, {read})"),
-            write: format!("json::put_many_with(&mut object, {keys}, &self.{field}, {write})"),
+            write: format!(
+                "json::put_many_with(&mut object, {write_keys}, &self.{field}, {write})"
+            ),
         }
     }
 }
@@ -359,7 +363,16 @@ fn ensure_no_redundancy(property: &Property) -> Result<()> {
     }
 }
 
+/// The keys a property is read from, in order.
 fn keys(property: &Property) -> String {
+    let mut keys = vec![format!("{:?}", property.key)];
+    keys.extend(property.redundant_keys.iter().map(|key| format!("{key:?}")));
+    keys.extend(property.fallback_keys.iter().map(|key| format!("{key:?}")));
+    format!("&[{}]", keys.join(", "))
+}
+
+/// The keys a property is written to: its own and its redundant ones.
+fn write_keys(property: &Property) -> String {
     let mut keys = vec![format!("{:?}", property.key)];
     keys.extend(property.redundant_keys.iter().map(|key| format!("{key:?}")));
     format!("&[{}]", keys.join(", "))

@@ -17,6 +17,8 @@
       "litepub": "http://litepub.social/ns#",
       "vf": "https://w3id.org/valueflows/ont/vf#",
       "om2": "http://www.ontology-of-units-of-measure.org/resource/om-2/",
+      "lemmy": "https://join-lemmy.org/ns#",
+      "pt": "https://joinpeertube.org/ns#",
 
       "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
       "sensitive": "as:sensitive",
@@ -94,7 +96,15 @@
       "satisfies": { "@id": "vf:satisfies", "@type": "@id" },
       "stipulates": "vf:stipulates",
       "stipulatesReciprocal": "vf:stipulatesReciprocal",
-      "unitBased": "vf:unitBased"
+      "unitBased": "vf:unitBased",
+
+      "commentsEnabled": "pt:commentsEnabled",
+      "distinguished": "lemmy:distinguished",
+      "matrixUserId": "lemmy:matrixUserId",
+      "moderators": { "@id": "lemmy:moderators", "@type": "@id" },
+      "postingRestrictedToMods": "lemmy:postingRestrictedToMods",
+      "removeData": "lemmy:removeData",
+      "stickied": "lemmy:stickied"
     }
   ]
 }

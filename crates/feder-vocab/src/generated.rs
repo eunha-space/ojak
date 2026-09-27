@@ -1788,6 +1788,8 @@ pub struct Application {
     /// displaying the actor or their notes will have some special effects
     /// attached in some clients.
     pub cat: Option<bool>,
+    /// The actor's WebFinger handle, `user@host` (FEP-2c59).
+    pub webfinger: Option<String>,
 }
 
 impl Application {
@@ -1864,6 +1866,7 @@ impl FromJson for Application {
             services: json::many(object, &["service"]),
             followed_message: json::one(object, &["_misskey_followedMessage"]),
             cat: json::one(object, &["isCat"]),
+            webfinger: json::one(object, &["webfinger"]),
         })
     }
 }
@@ -1963,6 +1966,7 @@ impl ToJson for Application {
             self.followed_message.as_ref(),
         );
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
+        json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
         Value::Object(object)
     }
 }
@@ -2282,6 +2286,9 @@ pub struct Article {
     /// A {@link QuoteAuthorization} object that proves this quote was approved
     /// by the quoted object's author.
     pub quote_authorization: Option<Reference<QuoteAuthorization>>,
+    /// Whether replies are accepted: PeerTube's term, which Lemmy sends as
+    /// the opposite of a post being locked.
+    pub comments_enabled: Option<bool>,
 }
 
 impl Article {
@@ -2337,6 +2344,7 @@ impl FromJson for Article {
             quote: json::one(object, &["quote"]),
             quote_url: json::one(object, &["quoteUrl", "_misskey_quote", "quoteUri"]),
             quote_authorization: json::one(object, &["quoteAuthorization"]),
+            comments_enabled: json::one(object, &["commentsEnabled"]),
         })
     }
 }
@@ -2411,6 +2419,11 @@ impl ToJson for Article {
             &mut object,
             &["quoteAuthorization"],
             self.quote_authorization.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["commentsEnabled"],
+            self.comments_enabled.as_ref(),
         );
         Value::Object(object)
     }
@@ -2501,6 +2514,10 @@ pub struct Audio {
     pub width: Option<u64>,
     /// See [`Document::height`].
     pub height: Option<u64>,
+    /// See [`Document::blurhash`].
+    pub blurhash: Option<String>,
+    /// See [`Document::focal_point`].
+    pub focal_point: Vec<f64>,
 }
 
 impl Audio {
@@ -2555,6 +2572,8 @@ impl FromJson for Audio {
             announce_authorization: json::one(object, &["announceAuthorization"]),
             width: json::one(object, &["width"]),
             height: json::one(object, &["height"]),
+            blurhash: json::one(object, &["blurhash"]),
+            focal_point: json::many(object, &["focalPoint"]),
         })
     }
 }
@@ -2621,6 +2640,8 @@ impl ToJson for Audio {
         );
         json::put_one(&mut object, &["width"], self.width.as_ref());
         json::put_one(&mut object, &["height"], self.height.as_ref());
+        json::put_one(&mut object, &["blurhash"], self.blurhash.as_ref());
+        json::put_many(&mut object, &["focalPoint"], &self.focal_point);
         Value::Object(object)
     }
 }
@@ -2721,6 +2742,8 @@ pub struct Block {
     pub origins: Vec<AnyObject>,
     /// See [`Activity::instruments`].
     pub instruments: Vec<AnyObject>,
+    /// Whether what the blocked or deleted person posted is to be removed too.
+    pub remove_data: Option<bool>,
 }
 
 impl Block {
@@ -2779,6 +2802,7 @@ impl FromJson for Block {
             results: json::many(object, &["result"]),
             origins: json::many(object, &["origin"]),
             instruments: json::many(object, &["instrument"]),
+            remove_data: json::one(object, &["removeData"]),
         })
     }
 }
@@ -2849,6 +2873,7 @@ impl ToJson for Block {
         json::put_many(&mut object, &["result"], &self.results);
         json::put_many(&mut object, &["origin"], &self.origins);
         json::put_many(&mut object, &["instrument"], &self.instruments);
+        json::put_one(&mut object, &["removeData"], self.remove_data.as_ref());
         Value::Object(object)
     }
 }
@@ -4161,6 +4186,8 @@ pub struct Delete {
     pub origins: Vec<AnyObject>,
     /// See [`Activity::instruments`].
     pub instruments: Vec<AnyObject>,
+    /// Whether what the blocked or deleted person posted is to be removed too.
+    pub remove_data: Option<bool>,
 }
 
 impl Delete {
@@ -4219,6 +4246,7 @@ impl FromJson for Delete {
             results: json::many(object, &["result"]),
             origins: json::many(object, &["origin"]),
             instruments: json::many(object, &["instrument"]),
+            remove_data: json::one(object, &["removeData"]),
         })
     }
 }
@@ -4289,6 +4317,7 @@ impl ToJson for Delete {
         json::put_many(&mut object, &["result"], &self.results);
         json::put_many(&mut object, &["origin"], &self.origins);
         json::put_many(&mut object, &["instrument"], &self.instruments);
+        json::put_one(&mut object, &["removeData"], self.remove_data.as_ref());
         Value::Object(object)
     }
 }
@@ -4650,6 +4679,10 @@ pub struct Document {
     /// Specifies a hint as to the rendering height in
     /// device-independent pixels of the linked resource.
     pub height: Option<u64>,
+    /// A BlurHash of the media, drawn while it loads.
+    pub blurhash: Option<String>,
+    /// The point a crop of the media keeps in view, as x and y from -1 to 1.
+    pub focal_point: Vec<f64>,
 }
 
 impl Document {
@@ -4704,6 +4737,8 @@ impl FromJson for Document {
             announce_authorization: json::one(object, &["announceAuthorization"]),
             width: json::one(object, &["width"]),
             height: json::one(object, &["height"]),
+            blurhash: json::one(object, &["blurhash"]),
+            focal_point: json::many(object, &["focalPoint"]),
         })
     }
 }
@@ -4770,6 +4805,8 @@ impl ToJson for Document {
         );
         json::put_one(&mut object, &["width"], self.width.as_ref());
         json::put_one(&mut object, &["height"], self.height.as_ref());
+        json::put_one(&mut object, &["blurhash"], self.blurhash.as_ref());
+        json::put_many(&mut object, &["focalPoint"], &self.focal_point);
         Value::Object(object)
     }
 }
@@ -5240,6 +5277,9 @@ pub struct Endpoints {
     /// collection.  Reading from the `sharedInbox` endpoint MUST NOT present
     /// objects which are not addressed to the `Public`` endpoint.
     pub shared_inbox: Option<Iri>,
+    /// Where a client uploads media, as ActivityPub's client-to-server protocol
+    /// describes.
+    pub upload_media: Option<Iri>,
 }
 
 impl Endpoints {
@@ -5257,6 +5297,7 @@ impl FromJson for Endpoints {
             provide_client_key: json::one(object, &["provideClientKey"]),
             sign_client_key: json::one(object, &["signClientKey"]),
             shared_inbox: json::one(object, &["sharedInbox"]),
+            upload_media: json::one(object, &["uploadMedia"]),
         })
     }
 }
@@ -5286,6 +5327,7 @@ impl ToJson for Endpoints {
             self.sign_client_key.as_ref(),
         );
         json::put_one(&mut object, &["sharedInbox"], self.shared_inbox.as_ref());
+        json::put_one(&mut object, &["uploadMedia"], self.upload_media.as_ref());
         Value::Object(object)
     }
 }
@@ -6171,6 +6213,12 @@ pub struct Group {
     /// displaying the actor or their notes will have some special effects
     /// attached in some clients.
     pub cat: Option<bool>,
+    /// The actor's WebFinger handle, `user@host` (FEP-2c59).
+    pub webfinger: Option<String>,
+    /// Whether only the community's moderators may post in it.
+    pub posting_restricted_to_mods: Option<bool>,
+    /// The collection of the community's moderators.
+    pub moderators: Option<Reference<OrderedCollection>>,
 }
 
 impl Group {
@@ -6247,6 +6295,9 @@ impl FromJson for Group {
             services: json::many(object, &["service"]),
             followed_message: json::one(object, &["_misskey_followedMessage"]),
             cat: json::one(object, &["isCat"]),
+            webfinger: json::one(object, &["webfinger"]),
+            posting_restricted_to_mods: json::one(object, &["postingRestrictedToMods"]),
+            moderators: json::one(object, &["moderators"]),
         })
     }
 }
@@ -6346,6 +6397,13 @@ impl ToJson for Group {
             self.followed_message.as_ref(),
         );
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
+        json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
+        json::put_one(
+            &mut object,
+            &["postingRestrictedToMods"],
+            self.posting_restricted_to_mods.as_ref(),
+        );
+        json::put_one(&mut object, &["moderators"], self.moderators.as_ref());
         Value::Object(object)
     }
 }
@@ -6723,6 +6781,10 @@ pub struct Image {
     pub width: Option<u64>,
     /// See [`Document::height`].
     pub height: Option<u64>,
+    /// See [`Document::blurhash`].
+    pub blurhash: Option<String>,
+    /// See [`Document::focal_point`].
+    pub focal_point: Vec<f64>,
 }
 
 impl Image {
@@ -6777,6 +6839,8 @@ impl FromJson for Image {
             announce_authorization: json::one(object, &["announceAuthorization"]),
             width: json::one(object, &["width"]),
             height: json::one(object, &["height"]),
+            blurhash: json::one(object, &["blurhash"]),
+            focal_point: json::many(object, &["focalPoint"]),
         })
     }
 }
@@ -6843,6 +6907,8 @@ impl ToJson for Image {
         );
         json::put_one(&mut object, &["width"], self.width.as_ref());
         json::put_one(&mut object, &["height"], self.height.as_ref());
+        json::put_one(&mut object, &["blurhash"], self.blurhash.as_ref());
+        json::put_many(&mut object, &["focalPoint"], &self.focal_point);
         Value::Object(object)
     }
 }
@@ -9377,6 +9443,11 @@ pub struct Note {
     /// A {@link QuoteAuthorization} object that proves this quote was approved
     /// by the quoted object's author.
     pub quote_authorization: Option<Reference<QuoteAuthorization>>,
+    /// Whether replies are accepted: PeerTube's term, which Lemmy sends as
+    /// the opposite of a post being locked.
+    pub comments_enabled: Option<bool>,
+    /// Whether a moderator marked the comment as speaking for the community.
+    pub distinguished: Option<bool>,
 }
 
 impl Note {
@@ -9432,6 +9503,8 @@ impl FromJson for Note {
             quote: json::one(object, &["quote"]),
             quote_url: json::one(object, &["quoteUrl", "_misskey_quote", "quoteUri"]),
             quote_authorization: json::one(object, &["quoteAuthorization"]),
+            comments_enabled: json::one(object, &["commentsEnabled"]),
+            distinguished: json::one(object, &["distinguished"]),
         })
     }
 }
@@ -9507,6 +9580,12 @@ impl ToJson for Note {
             &["quoteAuthorization"],
             self.quote_authorization.as_ref(),
         );
+        json::put_one(
+            &mut object,
+            &["commentsEnabled"],
+            self.comments_enabled.as_ref(),
+        );
+        json::put_one(&mut object, &["distinguished"], self.distinguished.as_ref());
         Value::Object(object)
     }
 }
@@ -10166,7 +10245,7 @@ impl FromJson for OrderedCollection {
             current: json::one(object, &["current"]),
             first: json::one(object, &["first"]),
             last: json::one(object, &["last"]),
-            items: json::many(object, &["items"]),
+            items: json::many(object, &["orderedItems", "items"]),
             likes_of: json::one(object, &["https://w3id.org/fep/5711#likesOf"]),
             shares_of: json::one(object, &["https://w3id.org/fep/5711#sharesOf"]),
             replies_of: json::one(object, &["https://w3id.org/fep/5711#repliesOf"]),
@@ -10243,7 +10322,7 @@ impl ToJson for OrderedCollection {
         json::put_one(&mut object, &["current"], self.current.as_ref());
         json::put_one(&mut object, &["first"], self.first.as_ref());
         json::put_one(&mut object, &["last"], self.last.as_ref());
-        json::put_many(&mut object, &["items"], &self.items);
+        json::put_many(&mut object, &["orderedItems"], &self.items);
         json::put_one(
             &mut object,
             &["https://w3id.org/fep/5711#likesOf"],
@@ -10464,7 +10543,7 @@ impl FromJson for OrderedCollectionPage {
             current: json::one(object, &["current"]),
             first: json::one(object, &["first"]),
             last: json::one(object, &["last"]),
-            items: json::many(object, &["items"]),
+            items: json::many(object, &["orderedItems", "items"]),
             likes_of: json::one(object, &["https://w3id.org/fep/5711#likesOf"]),
             shares_of: json::one(object, &["https://w3id.org/fep/5711#sharesOf"]),
             replies_of: json::one(object, &["https://w3id.org/fep/5711#repliesOf"]),
@@ -10545,7 +10624,7 @@ impl ToJson for OrderedCollectionPage {
         json::put_one(&mut object, &["current"], self.current.as_ref());
         json::put_one(&mut object, &["first"], self.first.as_ref());
         json::put_one(&mut object, &["last"], self.last.as_ref());
-        json::put_many(&mut object, &["items"], &self.items);
+        json::put_many(&mut object, &["orderedItems"], &self.items);
         json::put_one(
             &mut object,
             &["https://w3id.org/fep/5711#likesOf"],
@@ -10778,6 +10857,8 @@ pub struct Organization {
     /// displaying the actor or their notes will have some special effects
     /// attached in some clients.
     pub cat: Option<bool>,
+    /// The actor's WebFinger handle, `user@host` (FEP-2c59).
+    pub webfinger: Option<String>,
 }
 
 impl Organization {
@@ -10854,6 +10935,7 @@ impl FromJson for Organization {
             services: json::many(object, &["service"]),
             followed_message: json::one(object, &["_misskey_followedMessage"]),
             cat: json::one(object, &["isCat"]),
+            webfinger: json::one(object, &["webfinger"]),
         })
     }
 }
@@ -10953,6 +11035,7 @@ impl ToJson for Organization {
             self.followed_message.as_ref(),
         );
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
+        json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
         Value::Object(object)
     }
 }
@@ -11042,6 +11125,15 @@ pub struct Page {
     pub width: Option<u64>,
     /// See [`Document::height`].
     pub height: Option<u64>,
+    /// See [`Document::blurhash`].
+    pub blurhash: Option<String>,
+    /// See [`Document::focal_point`].
+    pub focal_point: Vec<f64>,
+    /// Whether replies are accepted: PeerTube's term, which Lemmy sends as
+    /// the opposite of a post being locked.
+    pub comments_enabled: Option<bool>,
+    /// Whether the post is pinned to the top of its community.
+    pub stickied: Option<bool>,
 }
 
 impl Page {
@@ -11096,6 +11188,10 @@ impl FromJson for Page {
             announce_authorization: json::one(object, &["announceAuthorization"]),
             width: json::one(object, &["width"]),
             height: json::one(object, &["height"]),
+            blurhash: json::one(object, &["blurhash"]),
+            focal_point: json::many(object, &["focalPoint"]),
+            comments_enabled: json::one(object, &["commentsEnabled"]),
+            stickied: json::one(object, &["stickied"]),
         })
     }
 }
@@ -11162,6 +11258,14 @@ impl ToJson for Page {
         );
         json::put_one(&mut object, &["width"], self.width.as_ref());
         json::put_one(&mut object, &["height"], self.height.as_ref());
+        json::put_one(&mut object, &["blurhash"], self.blurhash.as_ref());
+        json::put_many(&mut object, &["focalPoint"], &self.focal_point);
+        json::put_one(
+            &mut object,
+            &["commentsEnabled"],
+            self.comments_enabled.as_ref(),
+        );
+        json::put_one(&mut object, &["stickied"], self.stickied.as_ref());
         Value::Object(object)
     }
 }
@@ -11350,6 +11454,10 @@ pub struct Person {
     /// displaying the actor or their notes will have some special effects
     /// attached in some clients.
     pub cat: Option<bool>,
+    /// The actor's WebFinger handle, `user@host` (FEP-2c59).
+    pub webfinger: Option<String>,
+    /// The person's Matrix user ID.
+    pub matrix_user_id: Option<String>,
 }
 
 impl Person {
@@ -11426,6 +11534,8 @@ impl FromJson for Person {
             services: json::many(object, &["service"]),
             followed_message: json::one(object, &["_misskey_followedMessage"]),
             cat: json::one(object, &["isCat"]),
+            webfinger: json::one(object, &["webfinger"]),
+            matrix_user_id: json::one(object, &["matrixUserId"]),
         })
     }
 }
@@ -11525,6 +11635,8 @@ impl ToJson for Person {
             self.followed_message.as_ref(),
         );
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
+        json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
+        json::put_one(&mut object, &["matrixUserId"], self.matrix_user_id.as_ref());
         Value::Object(object)
     }
 }
@@ -14471,6 +14583,8 @@ pub struct Service {
     /// displaying the actor or their notes will have some special effects
     /// attached in some clients.
     pub cat: Option<bool>,
+    /// The actor's WebFinger handle, `user@host` (FEP-2c59).
+    pub webfinger: Option<String>,
 }
 
 impl Service {
@@ -14547,6 +14661,7 @@ impl FromJson for Service {
             services: json::many(object, &["service"]),
             followed_message: json::one(object, &["_misskey_followedMessage"]),
             cat: json::one(object, &["isCat"]),
+            webfinger: json::one(object, &["webfinger"]),
         })
     }
 }
@@ -14646,6 +14761,7 @@ impl ToJson for Service {
             self.followed_message.as_ref(),
         );
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
+        json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
         Value::Object(object)
     }
 }
@@ -16119,6 +16235,13 @@ pub struct Video {
     pub width: Option<u64>,
     /// See [`Document::height`].
     pub height: Option<u64>,
+    /// See [`Document::blurhash`].
+    pub blurhash: Option<String>,
+    /// See [`Document::focal_point`].
+    pub focal_point: Vec<f64>,
+    /// Whether replies are accepted: PeerTube's term, which Lemmy sends as
+    /// the opposite of a post being locked.
+    pub comments_enabled: Option<bool>,
 }
 
 impl Video {
@@ -16173,6 +16296,9 @@ impl FromJson for Video {
             announce_authorization: json::one(object, &["announceAuthorization"]),
             width: json::one(object, &["width"]),
             height: json::one(object, &["height"]),
+            blurhash: json::one(object, &["blurhash"]),
+            focal_point: json::many(object, &["focalPoint"]),
+            comments_enabled: json::one(object, &["commentsEnabled"]),
         })
     }
 }
@@ -16239,6 +16365,13 @@ impl ToJson for Video {
         );
         json::put_one(&mut object, &["width"], self.width.as_ref());
         json::put_one(&mut object, &["height"], self.height.as_ref());
+        json::put_one(&mut object, &["blurhash"], self.blurhash.as_ref());
+        json::put_many(&mut object, &["focalPoint"], &self.focal_point);
+        json::put_one(
+            &mut object,
+            &["commentsEnabled"],
+            self.comments_enabled.as_ref(),
+        );
         Value::Object(object)
     }
 }

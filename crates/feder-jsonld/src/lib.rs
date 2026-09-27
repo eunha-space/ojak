@@ -29,7 +29,11 @@
 //! It is not a general JSON-LD processor, and does not try to be. It resolves
 //! only the contexts in `contexts/`, because resolution happens on inbound
 //! attacker-controlled documents and a loader that fetches what they name is a
-//! request-forgery primitive; see `contexts/README.md`. It rejects `@graph`,
+//! request-forgery primitive; see `contexts/README.md`. A context it does not
+//! ship is read as ActivityStreams, which every context the fediverse serves
+//! extends, so its standard terms mean what they always do and only the
+//! sender's own additions go unread; [`Normalized::unresolved_contexts`] says
+//! which contexts those were. It rejects `@graph`,
 //! `@included` and `@reverse` outright, for reasons recorded on
 //! [`Error::RestructuringKeyword`]. It has no flattening, no framing, no RDF
 //! canonicalisation, and no `@nest`, `@index` maps, `@id` maps or `@type`
