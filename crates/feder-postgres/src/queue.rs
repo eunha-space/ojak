@@ -11,6 +11,14 @@
 //! worker stopped comes back when its lease lapses. A job that is done is
 //! deleted; one given up on keeps its row, with `failed_at` and the last
 //! error, until [`PostgresQueue::prune_failed`] removes it.
+//!
+//! A payload is `jsonb`, which refuses a string with NUL in it, and a payload
+//! is often a document a peer sent: one Note with `\u0000` in its content
+//! would fail the enqueue, and the activity would be lost. A payload that
+//! holds NUL anywhere is stored as its JSON text instead, in which NUL is
+//! only ever the escape `\u0000`, wrapped as `{"feder:json": text}`, and
+//! unwrapped when it is claimed. Nothing else changes, so the table needs no
+//! migration.
 
 use crate::table_name;
 use feder::queue::{Job, Queue, QueueError};
@@ -131,6 +139,45 @@ fn storable(error: &str) -> String {
     }
 }
 
+/// The key a payload stored as its JSON text is wrapped under.
+const WRAPPED: &str = "feder:json";
+
+/// `payload` as `jsonb` can hold it: itself, or, when it holds NUL or could
+/// be mistaken for a wrapped payload, its JSON text wrapped.
+fn wrap(payload: &Value) -> Value {
+    let ambiguous = payload
+        .as_object()
+        .is_some_and(|object| object.len() == 1 && object.contains_key(WRAPPED));
+    if ambiguous || holds_nul(payload) {
+        serde_json::json!({ WRAPPED: payload.to_string() })
+    } else {
+        payload.clone()
+    }
+}
+
+/// A payload as it was enqueued.
+fn unwrap(stored: Value) -> Value {
+    if let Some(object) = stored.as_object()
+        && object.len() == 1
+        && let Some(Value::String(text)) = object.get(WRAPPED)
+        && let Ok(payload) = serde_json::from_str(text)
+    {
+        return payload;
+    }
+    stored
+}
+
+fn holds_nul(value: &Value) -> bool {
+    match value {
+        Value::String(text) => text.contains('\0'),
+        Value::Array(items) => items.iter().any(holds_nul),
+        Value::Object(object) => object
+            .iter()
+            .any(|(key, value)| key.contains('\0') || holds_nul(value)),
+        _ => false,
+    }
+}
+
 fn error(error: sqlx::Error) -> QueueError {
     QueueError(error.to_string())
 }
@@ -150,7 +197,7 @@ impl Queue for PostgresQueue {
             self.table
         ))
         .bind(queue)
-        .bind(payloads)
+        .bind(payloads.iter().map(wrap).collect::<Vec<_>>())
         .execute(&self.pool)
         .await
         .map_err(error)?;
@@ -186,7 +233,7 @@ impl Queue for PostgresQueue {
                 Ok(Job {
                     id: row.try_get::<i64, _>("id").map_err(error)?.to_string(),
                     queue: row.try_get("queue").map_err(error)?,
-                    payload: row.try_get("payload").map_err(error)?,
+                    payload: unwrap(row.try_get("payload").map_err(error)?),
                     attempts: u32::try_from(row.try_get::<i32, _>("attempts").map_err(error)?)
                         .unwrap_or(0),
                 })
@@ -245,5 +292,29 @@ impl Queue for PostgresQueue {
         .await
         .map_err(error)?;
         Ok(seconds.map(|seconds| Duration::from_secs_f64(seconds.max(0.0))))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn what_jsonb_refuses_is_wrapped_and_comes_back() {
+        for payload in [
+            json!({"activity": {"content": "a\u{0}b"}}),
+            json!({"a\u{0}": 1}),
+            json!(["x", ["\u{0}"]]),
+            json!({WRAPPED: "not wrapped by us"}),
+        ] {
+            let stored = wrap(&payload);
+            assert!(!stored.to_string().contains('\0'));
+            assert_ne!(stored, payload);
+            assert_eq!(unwrap(stored), payload);
+        }
+        let plain = json!({"activity": {"content": "hello"}});
+        assert_eq!(wrap(&plain), plain);
+        assert_eq!(unwrap(plain.clone()), plain);
     }
 }

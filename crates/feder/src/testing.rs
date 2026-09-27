@@ -122,6 +122,18 @@ pub async fn check_queue(queue: &impl Queue) {
         None,
         "an empty queue has nothing due"
     );
+
+    // What a peer can put in a document, NUL included, is queued and comes
+    // back as it was: an activity that cannot be queued is lost.
+    let peer = json!({"content": "a\u{0}b", "a\u{0}": [1]});
+    queue
+        .enqueue("c", vec![peer.clone()])
+        .await
+        .expect("enqueue what a peer sent");
+    let claimed = queue.claim("c", 10, lease).await.expect("claim c");
+    assert_eq!(claimed.len(), 1);
+    assert_eq!(claimed[0].payload, peer, "a payload comes back as it was");
+    queue.complete(&claimed[0].id).await.expect("complete c");
 }
 
 /// Run every check against `store`, which must be empty.
