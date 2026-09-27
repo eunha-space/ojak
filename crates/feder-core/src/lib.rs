@@ -9,6 +9,7 @@ pub use feder_vocab as vocab;
 
 pub mod addressing;
 pub mod inbound;
+pub mod origin;
 
 /// Portable core state and decision logic.
 #[derive(Debug)]
