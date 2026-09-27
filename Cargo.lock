@@ -471,6 +471,7 @@ dependencies = [
  "chrono",
  "feder-core",
  "feder-runtime",
+ "feder-vocab",
  "futures-util",
  "http",
  "ipnet",
@@ -497,6 +498,7 @@ name = "feder-core"
 version = "0.1.0"
 dependencies = [
  "feder-vocab",
+ "serde_json",
 ]
 
 [[package]]

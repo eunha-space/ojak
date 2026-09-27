@@ -24,11 +24,13 @@ use crate::client::{Client, RequestError, Response};
 use crate::delivery::{Scheme, SenderKey};
 use feder_core::origin::Origin;
 use feder_runtime::{rfc9421, signature};
+use feder_vocab::json::{FromJson, ToJson};
+use feder_vocab::{Read, ReadError, Registry, read_reporting};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use url::Url;
 
 /// What a fetch asks for: ActivityStreams, in either of its media types.
@@ -55,6 +57,9 @@ pub enum FetchError {
     /// The document's `id` is not on the origin it was served from, and
     /// nothing else vouches for it.
     CrossOrigin { id: String, url: Url },
+    /// The document was established but is not a value of the type asked
+    /// for.
+    Read(ReadError),
 }
 
 impl FetchError {
@@ -84,6 +89,7 @@ impl fmt::Display for FetchError {
             Self::CrossOrigin { id, url } => {
                 write!(f, "document served from {url} claims id {id}")
             }
+            Self::Read(error) => error.fmt(f),
         }
     }
 }
@@ -106,6 +112,18 @@ pub struct Document {
     /// The document as it came, not yet normalised.
     pub json: Value,
 }
+
+/// A document fetched, established and read into a vocabulary type.
+#[derive(Debug)]
+pub struct Typed<T> {
+    /// The document as it came, with where it came from.
+    pub document: Document,
+    /// What it read as, and what reading lost.
+    pub read: Read<T>,
+}
+
+/// The contexts documents are read over, parsed once.
+static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::bundled);
 
 /// Fetches from other servers. Cheap to share; one per process is enough.
 #[derive(Debug)]
@@ -308,6 +326,26 @@ impl Fetcher {
             }
             other => other,
         }
+    }
+}
+
+impl Fetcher {
+    /// [`Fetcher::lookup`], and read what it found into `T`: an actor, a
+    /// note, `AnyObject` for whatever it turns out to be. What reading lost
+    /// is in [`Read::lost`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Fetcher::lookup`], and [`FetchError::Read`] when the document is
+    /// not a `T`.
+    pub async fn lookup_as<T: FromJson + ToJson>(
+        &self,
+        url: &Url,
+        key: Option<&SenderKey>,
+    ) -> Result<Typed<T>, FetchError> {
+        let document = self.lookup(url, key).await?;
+        let read = read_reporting(&REGISTRY, &document.json).map_err(FetchError::Read)?;
+        Ok(Typed { document, read })
     }
 }
 

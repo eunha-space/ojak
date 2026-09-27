@@ -87,7 +87,8 @@ fn check(uri: &Uri, headers: &HeaderMap) -> Seen {
     }
 }
 
-fn activity(body: serde_json::Value) -> Response {
+fn activity(mut body: serde_json::Value) -> Response {
+    body["@context"] = json!("https://www.w3.org/ns/activitystreams");
     (
         [("content-type", "application/activity+json")],
         body.to_string(),
@@ -119,6 +120,9 @@ async fn handle(
         "users/bob" => activity(json!({
             "id": format!("http://{host}/users/bob"),
             "type": "Person",
+            "preferredUsername": "bob",
+            "inbox": format!("http://{host}/users/bob/inbox"),
+            "somethingNobodyDefines": true,
         })),
         // A profile page's address, redirected to the actor.
         "@bob" => redirect("/users/bob"),
@@ -350,4 +354,28 @@ async fn what_is_not_an_established_document_is_refused() {
         .await
         .unwrap_err();
     assert_eq!(error.status(), Some(410));
+}
+
+#[tokio::test]
+async fn a_lookup_reads_into_the_type_asked_for_and_says_what_it_lost() {
+    use feder_vocab::generated::{AnyObject, Note, Person};
+
+    let base = serve(Server::default()).await;
+    let url = base.join("users/bob").unwrap();
+    let fetcher = fetcher();
+
+    let person = fetcher.lookup_as::<Person>(&url, None).await.unwrap();
+    assert_eq!(
+        person.read.value().preferred_username.value.as_deref(),
+        Some("bob")
+    );
+    assert_eq!(person.document.url, url);
+    let lost: Vec<&str> = person.read.lost().iter().map(|l| l.path.as_str()).collect();
+    assert_eq!(lost, ["somethingNobodyDefines"]);
+
+    let any = fetcher.lookup_as::<AnyObject>(&url, None).await.unwrap();
+    assert!(matches!(any.read.value(), AnyObject::Person(_)));
+
+    let error = fetcher.lookup_as::<Note>(&url, None).await.unwrap_err();
+    assert!(matches!(error, FetchError::Read(_)), "{error}");
 }

@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 feder-core = { path = "../feder-core" }
 feder-runtime = { path = "../feder-runtime" }
+feder-vocab = { path = "../feder-vocab" }
 chrono.workspace = true
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 http = "1"
