@@ -64,8 +64,11 @@ impl Algorithm {
 
 /// The private key a signature is made with.
 pub enum SigningKey<'a> {
-    /// PKCS#8 or PKCS#1 PEM-encoded RSA private key.
+    /// PKCS#8 or PKCS#1 PEM-encoded RSA private key, parsed each time.
     RsaPem(&'a str),
+    /// An RSA private key parsed once by
+    /// [`PrivateKey::from_pem`](crate::signature::PrivateKey::from_pem).
+    Rsa(&'a crate::signature::PrivateKey),
     /// A raw 32-byte Ed25519 seed.
     Ed25519(&'a [u8; 32]),
 }
@@ -73,7 +76,7 @@ pub enum SigningKey<'a> {
 impl SigningKey<'_> {
     fn algorithm(&self) -> Algorithm {
         match self {
-            Self::RsaPem(_) => Algorithm::RsaV1_5Sha256,
+            Self::RsaPem(_) | Self::Rsa(_) => Algorithm::RsaV1_5Sha256,
             Self::Ed25519(_) => Algorithm::Ed25519,
         }
     }
@@ -81,6 +84,7 @@ impl SigningKey<'_> {
     fn sign(&self, message: &[u8]) -> anyhow::Result<String> {
         match self {
             Self::RsaPem(pem) => crate::signature::rsa_sign_pkcs1v15(pem, message),
+            Self::Rsa(key) => Ok(key.sign(message)),
             Self::Ed25519(seed) => {
                 use ed25519_dalek::Signer as _;
 

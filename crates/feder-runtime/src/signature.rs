@@ -25,6 +25,17 @@ pub struct SignedHeaders {
 /// is one. Signing only the path would produce a signature no correct verifier
 /// could reproduce for such a URL, and would accept two different URLs as the
 /// same one.
+/// The `Host` header a request to `url` carries: the host, and the port when
+/// it is not the scheme's default, which is what an HTTP client sends and so
+/// what the receiver rebuilds the signing string from.
+fn host_header(url: &url::Url) -> String {
+    let host = url.host_str().unwrap_or("");
+    match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_owned(),
+    }
+}
+
 fn request_target(method: &str, url: &url::Url) -> String {
     match url.query() {
         Some(query) => format!("{} {}?{}", method.to_lowercase(), url.path(), query),
@@ -107,7 +118,7 @@ pub fn sign_request_with_key(
         .to_string();
 
     let parsed = url::Url::parse(url).context("invalid URL")?;
-    let host = parsed.host_str().unwrap_or("").to_string();
+    let host = host_header(&parsed);
 
     let mut covered: Vec<(&str, String)> = vec![("host", host), ("date", date.clone())];
     covered.extend(
@@ -165,7 +176,7 @@ pub fn sign_get_with_key(url: &str, key_id: &str, key: &PrivateKey) -> anyhow::R
         .to_string();
 
     let parsed = url::Url::parse(url).context("invalid URL")?;
-    let host = parsed.host_str().unwrap_or("").to_string();
+    let host = host_header(&parsed);
 
     // Same covered set and order as Mastodon: no body, so no digest.
     let covered = [
@@ -274,7 +285,7 @@ impl PrivateKey {
     }
 
     /// RSASSA-PKCS1-v1_5 over SHA-256, base64-encoded.
-    fn sign(&self, message: &[u8]) -> String {
+    pub(crate) fn sign(&self, message: &[u8]) -> String {
         use rsa::signature::{SignatureEncoding as _, Signer as _};
 
         let sig: rsa::pkcs1v15::Signature = self.0.sign(message);
@@ -392,6 +403,35 @@ mod tests {
             ("signature", signed.signature.as_str()),
         ];
         verify_request("post", "/users/bob/inbox", &headers, body, &pub_pem).unwrap();
+    }
+
+    /// A request to a non-default port carries `Host: host:port`, and the
+    /// signature has to cover that, not the bare host, or the receiver
+    /// rebuilds a different signing string.
+    #[test]
+    fn a_non_default_port_is_part_of_the_signed_host() {
+        let (priv_pem, pub_pem) = keypair();
+        let body = br#"{"type":"Create"}"#;
+        let signed = sign_request(
+            "post",
+            "http://127.0.0.1:8080/inbox",
+            body,
+            "https://a.test/users/alice#main-key",
+            &priv_pem,
+            &[],
+        )
+        .unwrap();
+        let headers = [
+            ("host", "127.0.0.1:8080"),
+            ("date", signed.date.as_str()),
+            ("digest", signed.digest.as_str()),
+            ("signature", signed.signature.as_str()),
+        ];
+        verify_request("post", "/inbox", &headers, body, &pub_pem).unwrap();
+
+        // The default port is not written, as no client writes it.
+        let url = url::Url::parse("https://remote.example:443/inbox").unwrap();
+        assert_eq!(host_header(&url), "remote.example");
     }
 
     #[test]
