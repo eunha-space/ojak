@@ -343,7 +343,7 @@ pub(crate) fn rsa_verify_pkcs1v15(
         .context("signature verification failed")
 }
 
-fn parse_params(header: &str) -> std::collections::HashMap<String, String> {
+pub(crate) fn parse_params(header: &str) -> std::collections::HashMap<String, String> {
     let mut map = std::collections::HashMap::new();
     for part in header.split(',') {
         let part = part.trim();

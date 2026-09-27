@@ -11,4 +11,5 @@ pub mod delivery;
 pub mod integrity;
 pub mod rfc9421;
 pub mod signature;
+pub mod verification;
 pub mod webfinger;
