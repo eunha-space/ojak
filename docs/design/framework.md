@@ -193,6 +193,42 @@ Documents Feder writes are compacted into Feder's context, so the `@context`
 of every type is declared once, next to the type, and never repeated as a
 literal.
 
+### The vocabulary is generated from Fedify's schemas
+
+Fedify describes 81 ActivityStreams and extension types in YAML: for each
+type its IRI, what it extends and its default `@context`; for each property
+its IRI, the IRIs of the types its values may take, whether it holds one value
+or several, and which other vocabularies' properties mean the same thing.
+Almost none of that is TypeScript. Hand-writing the same types in Rust would
+mean rediscovering, one peer at a time, what those files already record.
+
+So Feder's vocabulary types are generated from them:
+
+ -  The schemas are vendored under *crates/feder-vocab/schemas/*, pinned to a
+    released Fedify version and carrying Fedify's MIT notice, with a
+    provenance file saying which release and how to update it. Nothing is
+    fetched at build time.
+ -  A generator, *feder-vocab-gen*, reads them and writes Rust into
+    *feder-vocab*. The generated code is committed, so it is reviewed like any
+    other code and *feder-vocab* builds with no generator dependencies, and a
+    test fails when the committed code is not what the generator would write
+    now.
+ -  A property's key in Rust is its IRI compacted against Feder's context,
+    computed by *feder-jsonld*, not the schema's `compactName`. That is the
+    key `feder_vocab::read` produces, so the types and the reader cannot
+    disagree about spelling.
+ -  Inherited properties are copied into each type. A property whose values
+    may be several types takes an enum of those types, with a variant that
+    keeps anything else as JSON, since peers send types nobody listed.
+ -  Where a schema names a TypeScript function to adjust a value on the way
+    in, the generator maps the name to a Rust function written by hand, and
+    refuses to generate when it meets a name it has no mapping for.
+
+The schemas' format belongs to Fedify, and a change to it can break the
+generator. Once the generator works, the case for Fedify publishing the
+schemas separately, with a promise about their format, is one Feder can make
+with something to show.
+
 ### Signed bytes are kept, not rebuilt
 
 Normalisation rewrites a document, and a proof covers the bytes that were
@@ -423,7 +459,11 @@ next to what they have now.
 5.  *The inbox.* Late, because it is where a mistake is a security problem.
     Eunha's handlers become listeners; what they do to the database does not
     change.
-6.  *Gateways.* Serving and accepting portable objects, and the signer trait
+6.  *Generated vocabulary.* Vendor the schemas, write the generator, and move
+    *feder-vocab* onto its output once the generated types read the same
+    documents the hand-written ones do. It can run beside the steps above;
+    later steps get more types from it, not a different shape.
+7.  *Gateways.* Serving and accepting portable objects, and the signer trait
     for keys held off the server. The rules they need are already in place by
     step 2; this step is the routes and the delivery path.
 
@@ -434,9 +474,6 @@ the end.
 Open questions
 --------------
 
- -  *Vocabulary generation.* Hand-written types are enough for now; the
-    question is when the number of types makes generating them from a schema
-    cheaper.
  -  *Client-to-server.* Clients that sign activities themselves (FEP-ae97) are
     the natural other half of keys held off the server. Outbox listeners are
     left out until an application needs them.
