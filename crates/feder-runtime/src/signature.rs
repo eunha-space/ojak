@@ -356,11 +356,52 @@ pub(crate) fn parse_params(header: &str) -> std::collections::HashMap<String, St
     map
 }
 
+/// A new RSA key pair for an actor, 2048 bits: the private key as PKCS#8
+/// PEM and the public key as SPKI PEM, the forms actor documents publish and
+/// [`PrivateKey::from_pem`] reads.
+///
+/// # Errors
+///
+/// When the operating system's randomness is unavailable.
+pub fn generate_rsa_keypair() -> anyhow::Result<(String, String)> {
+    use rsa::pkcs8::{EncodePrivateKey as _, EncodePublicKey as _, LineEnding};
+
+    let private = rsa::RsaPrivateKey::new(&mut rand_core::OsRng, 2048)?;
+    let public = rsa::RsaPublicKey::from(&private);
+    Ok((
+        private.to_pkcs8_pem(LineEnding::LF)?.to_string(),
+        public.to_public_key_pem(LineEnding::LF)?,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rsa::pkcs1::EncodeRsaPrivateKey as _;
     use rsa::pkcs8::EncodePublicKey as _;
+
+    #[test]
+    fn a_generated_key_pair_signs_and_verifies() {
+        let (private, public) = generate_rsa_keypair().unwrap();
+        assert!(private.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(public.starts_with("-----BEGIN PUBLIC KEY-----"));
+        let signed = sign_request(
+            "post",
+            "https://a.example/inbox",
+            b"{}",
+            "https://b.example/users/b#main-key",
+            &private,
+            &[],
+        )
+        .unwrap();
+        let headers = [
+            ("host", "a.example"),
+            ("date", signed.date.as_str()),
+            ("digest", signed.digest.as_str()),
+            ("signature", signed.signature.as_str()),
+        ];
+        verify_request("post", "/inbox", &headers, b"{}", &public).unwrap();
+    }
 
     fn keypair() -> (String, String) {
         let mut rng = rand::thread_rng();
