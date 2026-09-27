@@ -14,6 +14,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
 
+/// An RSA private key, parsed once; what a [`SenderKey`] signs with.
+pub use feder_runtime::signature::PrivateKey;
+
 const ACTIVITY_JSON: &str = "application/activity+json";
 
 /// An HTTP signature scheme.
@@ -41,7 +44,7 @@ impl Scheme {
 pub struct SenderKey {
     /// The key's IRI, as its actor document publishes it.
     pub key_id: String,
-    pub private_key: Arc<signature::PrivateKey>,
+    pub private_key: Arc<PrivateKey>,
 }
 
 /// Why a delivery did not go through.
