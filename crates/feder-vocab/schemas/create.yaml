@@ -1,0 +1,37 @@
+$schema: ../../vocab-tools/schema.yaml
+name: Create
+compactName: Create
+uri: "https://www.w3.org/ns/activitystreams#Create"
+extends: "https://www.w3.org/ns/activitystreams#Activity"
+entity: true
+description: Indicates that the `actor` has created the `object`.
+defaultContext:
+- "https://w3id.org/identity/v1"
+- "https://www.w3.org/ns/activitystreams"
+- "https://w3id.org/security/data-integrity/v1"
+- "https://gotosocial.org/ns"
+- toot: "http://joinmastodon.org/ns#"
+  misskey: "https://misskey-hub.net/ns#"
+  fedibird: "http://fedibird.com/ns#"
+  sensitive: "as:sensitive"
+  votersCount:
+    "@id": "toot:votersCount"
+    "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"
+  Emoji: "toot:Emoji"
+  Hashtag: "as:Hashtag"
+  ChatMessage: "http://litepub.social/ns#ChatMessage"
+  quote:
+    "@id": "https://w3id.org/fep/044f#quote"
+    "@type": "@id"
+  quoteUrl: "as:quoteUrl"
+  _misskey_quote: "misskey:_misskey_quote"
+  quoteUri: "fedibird:quoteUri"
+  QuoteAuthorization: "https://w3id.org/fep/044f#QuoteAuthorization"
+  QuoteRequest: "https://w3id.org/fep/044f#QuoteRequest"
+  quoteAuthorization:
+    "@id": "https://w3id.org/fep/044f#quoteAuthorization"
+    "@type": "@id"
+  emojiReactions:
+    "@id": "fedibird:emojiReactions"
+    "@type": "@id"
+properties: []

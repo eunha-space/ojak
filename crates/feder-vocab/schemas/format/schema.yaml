@@ -1,0 +1,285 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: Fedify model schema
+
+$defs:
+  property:
+    description: >-
+      The schema of a property.  It is used to generate property accessors of
+      a class.
+    anyOf:
+    - allOf:
+      - $ref: "#/$defs/property-base"
+      - $ref: "#/$defs/property-typing"
+      - type: object
+        properties:
+          functional:
+            description: &functional-description >-
+              Marks the property that it can have only one value.  Turning on
+              this flag will generate only singular property accessors,
+              so pluralName and singularAccessor should not be specified.
+            const: false
+          pluralName:
+            description: >-
+              The plural form of the property name.  It is used as the name of
+              the generated property accessors.
+            type: string
+          singularAccessor:
+            description: >-
+              Whether to generate singular property accessors.  Regardless of
+              this flag, plural property accessors are generated
+              (unless functional is turned on).
+            type: boolean
+          container:
+            description: >-
+              The container type of the property values.  It can be unspecified.
+            enum:
+            - graph
+            - list
+        required:
+        - pluralName
+    - allOf:
+      - $ref: "#/$defs/property-base"
+      - $ref: "#/$defs/property-typing"
+      - type: object
+        properties:
+          functional:
+            description: *functional-description
+            const: true
+          redundantProperties::
+            description: >-
+              If it's present, those redundant properties are also filled with
+              the same value altogether when the object is serialized into
+              JSON-LD.  When it's deserialized from JSON-LD, it tries to
+              parse the values of the specified properties in order.
+            type: array
+            items:
+              type: object
+              properties:
+                uri:
+                  description: The qualified URI of the property.
+                  type: string
+                  format: uri
+                compactName:
+                  description: >-
+                    The property name used in the compacted JSON-LD document.
+                    It is used as the key of the property.
+                  type: string
+              required:
+              - uri
+        required:
+        - functional
+
+  property-base:
+    type: object
+    properties:
+      singularName:
+        description: >-
+          The singular form of the property name.  It is used as the name of the
+          generated property accessors.
+        type: string
+      uri:
+        description: The qualified URI of the property.
+        type: string
+        format: uri
+      compactName:
+        description: >-
+          The property name used in the compacted JSON-LD document.  It is used
+          as the key of the property.
+        type: string
+      subpropertyOf:
+        description: >-
+          The qualified URI of the superproperty of the property (if any).
+          It means that the property is a specialization of the referenced
+          property.
+        type: string
+        format: uri
+      description:
+        description: >-
+          The description of the property.  It is used as the doc comment of
+          the generated property accessors.
+        type: string
+      embedContext:
+        description: >-
+          Whether the enclosed object should have its own context when
+          the document is compacted.
+        type: object
+        properties:
+          compactName:
+            description: >-
+              The compact name of the property that contains the context.
+            type: string
+          inherit:
+            description: >-
+              Whether the embedded context should be the same as the context of
+              the enclosing document.
+            const: true
+      preprocessors:
+        description: >-
+          Preprocessors for this property.  Each preprocessor receives an
+          expanded JSON-LD property value and may return a vocabulary object
+          matching the property's declared range, `undefined` when it did not
+          handle the value, or an `Error` when it recognized the value but
+          failed while converting it.
+
+          `module` is resolved from the generated vocabulary source file
+          and imported statically at the top of the generated file.
+        type: array
+        items:
+          type: object
+          properties:
+            module:
+              description: >-
+                Module specifier resolved from the generated vocabulary
+                source file.
+              type: string
+              minLength: 1
+            function:
+              description: The name of the exported function in the module.
+              type: string
+              pattern: "^[a-zA-Z_$][a-zA-Z0-9_$]*$"
+          required:
+          - module
+          - function
+    required:
+    - singularName
+    - uri
+    - description
+
+  property-typing:
+    anyOf:
+    - type: object
+      properties:
+        untyped:
+          description: >-
+            Whether the property value has @type field.  If true, the range must
+            have only one element.
+          const: false
+        range:
+          description: >-
+            The qualified URIs of all possible types of the property values.
+          type: array
+          items:
+            $ref: "#/$defs/typeUri"
+          minItems: 1
+          uniqueItems: true
+      required:
+      - range
+    - type: object
+      properties:
+        untyped:
+          description: >-
+            Whether the property value has @type field.  If true, the range must
+            have only one element.
+          const: true
+        range:
+          description: >-
+            The qualified URIs of all possible types of the property values.
+          type: array
+          items:
+            $ref: "#/$defs/typeUri"
+          minItems: 1
+          maxItems: 1
+      required:
+      - untyped
+      - range
+
+  typeUri:
+    description: >-
+      The qualified URI of a type.  It is used as the range of a property.
+    anyOf:
+    - type: string
+      format: uri
+    - enum:
+      - fedify:langTag
+
+  ldContext:
+    anyOf:
+    - type: string
+      format: uri
+    - $ref: "#/$defs/ldEmbeddedContext"
+    - type: array
+      items:
+        anyOf:
+        - type: string
+          format: uri
+        - $ref: "#/$defs/ldEmbeddedContext"
+      uniqueItems: true
+
+  ldEmbeddedContext:
+    type: object
+    patternProperties:
+      "^.+$":
+        $ref: "#/$defs/ldTermDefinition"
+
+  ldTermDefinition:
+    anyOf:
+    - type: string
+      format: uri
+    - type: object
+      patternProperties:
+        "^.+$":
+          anyOf:
+          - type: string
+            format: uri
+          - const: "@id"
+
+description: The schema of a type.  It is used to generate a class.
+type: object
+properties:
+  name:
+    description: The type name.  It is used as the name of the generated class.
+    type: string
+  uri:
+    description: The qualified URI of the type.
+    type: string
+    format: uri
+  compactName:
+    description: >-
+      The type name used in the compacted JSON-LD document.  It is used as the
+      value of the `type` field.
+    type: string
+  extends:
+    description: The qualified URIs of the base type of the type (if any).
+    type: string
+    format: uri
+  entity:
+    description: >-
+      Marks the type an entity type rather than a value type.  Turning on this
+      flag will make property accessors for the type asynchronous, so that they
+      can load the values of the properties from the remote server.
+
+      The extended subtypes must have the consistent value of this flag.
+    type: boolean
+  typeless:
+    description: >-
+      Whether the type omits @type in JSON-LD serialization.  When true,
+      the generated toJsonLd() method will not emit @type (or type in
+      compact form) in the serialized JSON-LD.  The generated fromJsonLd()
+      method will still accept @type if present for backward compatibility.
+
+      This is useful for types that are not real vocabulary types but rather
+      anonymous object structures (e.g., Endpoints, Source in
+      ActivityStreams).
+    type: boolean
+  description:
+    description: >-
+      The description of the type.  It is used as the doc comment of
+      the generated class.
+    type: string
+  properties:
+    description: The possible properties of the type.
+    type: array
+    items:
+      $ref: "#/$defs/property"
+    uniqueItems: true
+  defaultContext:
+    description:  >-
+      The default JSON-LD context of the type.  It is used as the default
+      context of the generated toJsonLd() method.
+    $ref: "#/$defs/ldContext"
+required:
+- name
+- uri
+- entity
+- description
+- properties

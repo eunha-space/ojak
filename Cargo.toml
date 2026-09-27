@@ -4,6 +4,7 @@ members = [
   "crates/feder-jsonld",
   "crates/feder-runtime",
   "crates/feder-vocab",
+  "crates/feder-vocab-gen",
 ]
 resolver = "3"
 
