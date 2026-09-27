@@ -14,9 +14,11 @@ use serde::{
     ser::{SerializeMap, SerializeSeq},
 };
 
+pub mod generated;
+pub mod json;
 mod read;
 
-pub use read::{Read, ReadError, Registry, read};
+pub use read::{Read, ReadError, Registry, read, write};
 
 /// The canonical Activity Streams JSON-LD context URL.
 pub const ACTIVITYSTREAMS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";

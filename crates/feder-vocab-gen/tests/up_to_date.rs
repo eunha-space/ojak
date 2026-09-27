@@ -1,0 +1,13 @@
+//! The committed generated code is what the generator writes now.
+
+#[test]
+fn generated_code_is_up_to_date() {
+    let expected = feder_vocab_gen::render().expect("render");
+    let path = feder_vocab_gen::output_path();
+    let committed = std::fs::read_to_string(&path).unwrap_or_default();
+    assert!(
+        committed == expected,
+        "{} is stale; run `cargo run -p feder-vocab-gen`",
+        path.display()
+    );
+}

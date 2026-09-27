@@ -128,6 +128,8 @@ pub struct Property {
     /// Keys of properties meaning the same, in the order they are tried.
     pub redundant_keys: Vec<String>,
     pub hook: Option<Hook>,
+    /// Whether the property's values are sent without a `type`.
+    pub untyped: bool,
     /// The name of the type that declared the property.
     pub declared_by: String,
 }
@@ -178,8 +180,7 @@ impl Vocabulary {
             let mut properties: Vec<Property> = Vec::new();
             for ancestor in chain.iter().rev() {
                 for property in &ancestor.properties {
-                    let property =
-                        analyse(property, ancestor, schema, &by_uri, registry, &context)
+                    let property = analyse(property, ancestor, schema, &by_uri, registry, &context)
                         .with_context(|| format!("{}.{}", ancestor.name, property.singular_name))?;
                     match properties
                         .iter_mut()
@@ -336,6 +337,7 @@ fn analyse(
         ranges: ranges.into_iter().collect(),
         redundant_keys,
         hook,
+        untyped: property.untyped,
         declared_by: declared_by.name.clone(),
     })
 }

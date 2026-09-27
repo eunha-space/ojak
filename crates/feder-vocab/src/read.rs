@@ -1,8 +1,10 @@
-//! Reading documents written by other servers.
+//! Reading documents written by other servers, and writing Feder's own.
 
 use alloc::{string::String, vec::Vec};
 use core::fmt;
 use serde::de::DeserializeOwned;
+
+use crate::json::ToJson;
 use serde_json::Value;
 
 pub use feder_jsonld::Registry;
@@ -91,4 +93,19 @@ pub fn read<T: DeserializeOwned>(
         value,
         unresolved_contexts,
     })
+}
+
+/// Write a vocabulary value as a document: in Feder's spelling, under Feder's
+/// context.
+///
+/// This is the counterpart of [`read`], and only for the top of a document.
+/// A value's own [`ToJson`] writes no `@context`, because an object embedded
+/// in another takes its context from the document around it.
+#[must_use]
+pub fn write<T: ToJson>(value: &T) -> Value {
+    let mut document = value.to_json();
+    if let Value::Object(members) = &mut document {
+        members.insert("@context".into(), feder_jsonld::feder_context());
+    }
+    document
 }
