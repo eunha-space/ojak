@@ -65,8 +65,10 @@ mod context;
 mod expand;
 mod registry;
 
+pub use context::{ContextCache, NoCache, ProcessedContext};
 pub use registry::Registry;
 
+use alloc::sync::Arc;
 use context::{ActiveContext, Session};
 
 /// The context feder compacts to, and emits.
@@ -254,16 +256,69 @@ pub fn normalize_with(
     document: &Value,
     limits: Limits,
 ) -> Result<Processed, Error> {
-    let expanded = expand_with(registry, document, limits)?;
-    let context: Value =
-        serde_json::from_str(FEDER_CONTEXT).expect("bundled feder context is valid JSON");
-    let context = context
-        .get("@context")
-        .cloned()
-        .expect("bundled feder context has an @context member");
-    let mut compacted = compact_with(registry, expanded.document(), &context, limits)?;
-    compacted.unresolved = expanded.unresolved;
-    Ok(compacted)
+    normalize_with_cache(registry, document, limits, &NoCache)
+}
+
+/// [`normalize_with`], keeping processed contexts in `cache`.
+///
+/// The result is the same as without one. What changes is the cost: a
+/// document whose `@context` has been seen before, as nearly every one a
+/// server receives has, is not made to process it again, and nor is feder's
+/// own context, which every document is compacted against.
+pub fn normalize_with_cache(
+    registry: &Registry,
+    document: &Value,
+    limits: Limits,
+    cache: &dyn ContextCache,
+) -> Result<Processed, Error> {
+    let mut session = Session::with_cache(registry, cache, limits);
+    let expanded = expand::expand_document(&ActiveContext::default(), document, &mut session)?;
+    let unresolved = session.unresolved;
+
+    let feder = feder_context_processed(registry, limits, cache)?;
+    let mut session = Session::with_cache(registry, cache, limits);
+    session.contexts = feder.charged;
+    let context = feder
+        .source
+        .as_ref()
+        .expect("feder's context is kept with its source");
+    let compacted = compact::compact_document(&feder.active, &expanded, context, &mut session)?;
+    Ok(Processed {
+        document: compacted,
+        unresolved,
+    })
+}
+
+/// Feder's own context, processed: from `cache` when it has been before.
+fn feder_context_processed(
+    registry: &Registry,
+    limits: Limits,
+    cache: &dyn ContextCache,
+) -> Result<Arc<ProcessedContext>, Error> {
+    let key = alloc::format!(
+        "\u{0}feder\u{0}{}\u{0}{}",
+        limits.max_contexts,
+        limits.max_terms
+    );
+    if let Some(cached) = cache.get(&key) {
+        return Ok(cached);
+    }
+    let context = feder_context();
+    let mut session = Session::new(registry, limits);
+    let active = context::process(
+        &ActiveContext::default(),
+        &context,
+        &mut session,
+        &mut Vec::new(),
+    )?;
+    let processed = Arc::new(ProcessedContext {
+        active,
+        charged: session.contexts,
+        unresolved: session.unresolved,
+        source: Some(context),
+    });
+    cache.put(key, processed.clone());
+    Ok(processed)
 }
 
 /// The `@context` value feder emits and compacts to.

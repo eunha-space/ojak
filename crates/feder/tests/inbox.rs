@@ -779,3 +779,46 @@ async fn a_reply_to_our_post_is_forwarded_to_its_authors_followers() {
         }]
     );
 }
+
+/// Read as written, an activity reaches its listener without JSON-LD
+/// processing: in its sender's spelling, and even with a context feder could
+/// not have processed, which is otherwise refused.
+#[tokio::test]
+async fn an_activity_can_be_read_as_written() {
+    let bob = serve_remote(Remote::default()).await;
+    let key_id = format!("{bob}#main-key");
+    let mut unprocessable = follow(&bob, 1);
+    unprocessable["@context"] = json!(5);
+
+    let processing = federation(|b| b);
+    let store = App::default();
+    assert_eq!(
+        deliver(
+            &processing,
+            &store,
+            post("/ap/inbox", &key_id, &unprocessable, &unprocessable)
+        )
+        .await,
+        400,
+        "processed, a context that cannot be is refused"
+    );
+
+    let as_written = federation(feder::federation::Builder::read_inbox_as_written);
+    let store = App::default();
+    assert_eq!(
+        deliver(
+            &as_written,
+            &store,
+            post("/ap/inbox", &key_id, &unprocessable, &unprocessable)
+        )
+        .await,
+        202
+    );
+    let seen = store.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].kind, "Follow");
+    assert_eq!(
+        seen[0].activity["object"],
+        format!("https://{HOST}/ap/users/1")
+    );
+}

@@ -108,7 +108,9 @@ A listener is an async function of the context and a `Received<T>`:
  -  `lost`, what reading it into `T` did not keep.
 
 The listener is chosen by the activity's `type` after normalisation, so
-`as:Follow` and `Follow` reach the same one. An activity with no listener is
+`as:Follow` and `Follow` reach the same one — unless the inbox reads
+activities as written (`Builder::read_inbox_as_written`), when it is chosen by
+the `type` the sender wrote. An activity with no listener is
 answered 202 and dropped, as Mastodon does.
 
 ### Queued, or not

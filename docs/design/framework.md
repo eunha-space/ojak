@@ -205,6 +205,22 @@ documents come back emptier than expected. Documents that use `@graph`,
 `@included` or `@reverse` are refused, because they let one graph be written as
 trees that say different things.
 
+Processing a context costs about ten times what reading a document with it
+does — a four-field `Like` took 370 µs to normalise, nearly all of it spent
+processing the ActivityStreams context again — and the fediverse sends a few
+dozen distinct contexts. A document's own top-level `@context`, and Feder's
+context it is compacted into, are therefore processed once and kept, in a
+cache the caller supplies (*feder-jsonld* is `no_std` and keeps no state).
+The inbox keeps a bounded one, which starts over when full rather than grow
+with contexts a sender invents. A cached context normalises every document
+in the corpus exactly as an uncached one does; the same `Like` takes 25 µs.
+
+An application that reads activities as JSON itself, as Mastodon does,
+needs none of this, and can have its inbox hand listeners the activity as
+written instead (`Builder::read_inbox_as_written`). The activity is still
+reduced to what its sender vouches for; it is only not rewritten, and a
+context that could not be processed is no longer a reason to refuse it.
+
 Documents Feder writes are compacted into Feder's context, so the `@context`
 of every type is declared once, next to the type, and never repeated as a
 literal.

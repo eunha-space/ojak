@@ -250,11 +250,21 @@ fn listener_for<'a, D>(inner: &'a Inner<D>, normalized: &Value) -> Option<&'a Li
         .or(inner.fallback_listener.as_ref())
 }
 
-/// Normalise an activity and reduce it to what its sender vouches for.
-fn prepare(document: &Value, sender: &Url) -> Result<Value, String> {
-    let processed = feder_jsonld::normalize(&crate::fetch::REGISTRY, document)
-        .map_err(|error| error.to_string())?;
-    let mut normalized = processed.into_document();
+/// Normalise an activity and reduce it to what its sender vouches for — or,
+/// `as_written`, only reduce it.
+fn prepare(document: &Value, sender: &Url, as_written: bool) -> Result<Value, String> {
+    let mut normalized = if as_written {
+        document.clone()
+    } else {
+        feder_jsonld::normalize_with_cache(
+            &crate::fetch::REGISTRY,
+            document,
+            feder_jsonld::Limits::default(),
+            &*crate::fetch::CONTEXTS,
+        )
+        .map_err(|error| error.to_string())?
+        .into_document()
+    };
     if let Some(members) = normalized.as_object_mut() {
         members.remove("@context");
     }
@@ -429,7 +439,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         );
     }
 
-    let normalized = match prepare(&document, &sender) {
+    let normalized = match prepare(&document, &sender, inner.read_as_written) {
         Ok(normalized) => normalized,
         Err(error) => return status(StatusCode::BAD_REQUEST, &error),
     };
@@ -748,7 +758,7 @@ impl<D: Clone + Send + Sync + 'static> InboxWorker<D> {
                 r.get("identifier")?.as_str()?,
             ))
         });
-        let normalized = prepare(&document, &sender)?;
+        let normalized = prepare(&document, &sender, self.federation.inner.read_as_written)?;
         let mut vouched = document.clone();
         reduce(&mut vouched, &sender);
         let inner = &self.federation.inner;

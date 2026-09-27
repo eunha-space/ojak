@@ -263,6 +263,7 @@ struct Inner<D> {
     gateway: Option<GatewayFn<D>>,
     gateway_inbox: Option<GatewayInboxFn<D>>,
     forward: Option<inbox::ForwardFn<D>>,
+    read_as_written: bool,
 }
 
 /// Everything Feder serves, and the URIs it builds. Cheap to clone.
@@ -315,6 +316,7 @@ pub struct Builder<D> {
     gateway: Option<GatewayFn<D>>,
     gateway_inbox: Option<GatewayInboxFn<D>>,
     forward: Option<inbox::ForwardFn<D>>,
+    read_as_written: bool,
     errors: Vec<String>,
 }
 
@@ -342,6 +344,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             gateway: None,
             gateway_inbox: None,
             forward: None,
+            read_as_written: false,
             errors: Vec::new(),
         }
     }
@@ -937,6 +940,22 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         self
     }
 
+    /// Hand listeners each activity as its sender wrote it, without JSON-LD
+    /// processing: its `@context` removed and what it embeds reduced to what
+    /// the sender can vouch for, as always, but its terms left as spelled.
+    ///
+    /// By default an activity is expanded and compacted against feder's
+    /// context first, so that a sender's aliases, prefixes and extension terms
+    /// read as feder's vocabulary expects. That is what a listener typed to a
+    /// vocabulary type relies on. An application that reads the JSON itself,
+    /// as Mastodon reads it, needs none of it, and this skips the work — and
+    /// the refusal of a document whose context cannot be processed.
+    #[must_use]
+    pub fn read_inbox_as_written(mut self) -> Self {
+        self.read_as_written = true;
+        self
+    }
+
     /// Whether activities from `host` are refused, asked before any key is
     /// fetched for them. A refused activity is answered 202 and dropped.
     #[must_use]
@@ -1180,6 +1199,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     gateway: self.gateway,
                     gateway_inbox: self.gateway_inbox,
                     forward: self.forward,
+                    read_as_written: self.read_as_written,
                 }),
             }),
             _ => Err(BuildError(errors)),

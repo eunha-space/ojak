@@ -146,6 +146,38 @@ pub struct Typed<T> {
 /// The contexts documents are read over, parsed once.
 pub(crate) static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::bundled);
 
+/// Contexts processed over [`REGISTRY`], kept for the next document naming
+/// them. Processing a context costs ten times what reading the document
+/// with it does, and the fediverse sends a few dozen distinct ones.
+pub(crate) static CONTEXTS: LazyLock<ContextCache> = LazyLock::new(ContextCache::default);
+
+/// A bounded [`feder_jsonld::ContextCache`].
+///
+/// Inline contexts are the sender's to write, so a sender could name a new
+/// one with every activity. Rather than grow with them, the cache starts
+/// over when full; that costs only the processing it was saving.
+#[derive(Default)]
+pub(crate) struct ContextCache(Mutex<HashMap<String, Arc<feder_jsonld::ProcessedContext>>>);
+
+impl ContextCache {
+    const CAPACITY: usize = 1_024;
+}
+
+impl feder_jsonld::ContextCache for ContextCache {
+    fn get(&self, key: &str) -> Option<Arc<feder_jsonld::ProcessedContext>> {
+        self.0.lock().ok()?.get(key).cloned()
+    }
+
+    fn put(&self, key: String, context: Arc<feder_jsonld::ProcessedContext>) {
+        if let Ok(mut contexts) = self.0.lock() {
+            if contexts.len() >= Self::CAPACITY {
+                contexts.clear();
+            }
+            contexts.insert(key, context);
+        }
+    }
+}
+
 /// Fetches from other servers. Cheap to share; one per process is enough.
 pub struct Fetcher {
     client: Client,

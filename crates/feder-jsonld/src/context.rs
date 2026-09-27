@@ -15,6 +15,7 @@ use alloc::{
     boxed::Box,
     collections::BTreeMap,
     string::{String, ToString},
+    sync::Arc,
     vec::Vec,
 };
 use serde_json::{Map, Value};
@@ -124,15 +125,28 @@ pub(crate) struct TermDefinition {
 }
 
 /// The context in force at one point in a document.
+///
+/// Expansion hands every node the context of its parent unless the node
+/// brings its own, so this is cloned once per node. The terms are shared
+/// until a context actually changes them, which makes that clone a reference
+/// count rather than a copy of every term the ActivityStreams context defines.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ActiveContext {
-    terms: BTreeMap<String, TermDefinition>,
+    terms: Arc<BTreeMap<String, TermDefinition>>,
     base: Option<String>,
     vocab: Option<String>,
     language: Option<String>,
 }
 
 impl ActiveContext {
+    /// Whether nothing has been defined: the context a document starts in.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.terms.is_empty()
+            && self.base.is_none()
+            && self.vocab.is_none()
+            && self.language.is_none()
+    }
+
     pub(crate) fn term(&self, name: &str) -> Option<&TermDefinition> {
         self.terms.get(name)
     }
@@ -159,6 +173,7 @@ impl ActiveContext {
 /// registry, and the contexts that could not be resolved.
 pub(crate) struct Session<'a> {
     pub registry: &'a Registry,
+    pub cache: &'a dyn ContextCache,
     pub limits: Limits,
     pub contexts: usize,
     pub nodes: usize,
@@ -167,8 +182,17 @@ pub(crate) struct Session<'a> {
 
 impl<'a> Session<'a> {
     pub(crate) fn new(registry: &'a Registry, limits: Limits) -> Self {
+        Self::with_cache(registry, &NoCache, limits)
+    }
+
+    pub(crate) fn with_cache(
+        registry: &'a Registry,
+        cache: &'a dyn ContextCache,
+        limits: Limits,
+    ) -> Self {
         Self {
             registry,
+            cache,
             limits,
             contexts: 0,
             nodes: 0,
@@ -199,6 +223,61 @@ impl<'a> Session<'a> {
     }
 }
 
+/// A `@context` value already processed, kept to be used again.
+///
+/// Holds what processing it produced — the active context — and what it cost
+/// and reported, so that a document using it from a cache is charged and told
+/// exactly what it would have been had it been processed again.
+#[derive(Debug)]
+pub struct ProcessedContext {
+    pub(crate) active: ActiveContext,
+    pub(crate) charged: usize,
+    pub(crate) unresolved: Vec<String>,
+    /// The `@context` value itself, where the caller needs it back.
+    pub(crate) source: Option<Value>,
+}
+
+/// Where processed contexts are kept between documents.
+///
+/// Processing a context costs far more than using one, and nearly every
+/// document a server receives names the same few. This crate is `no_std` and
+/// keeps no state of its own, so the caller supplies the store — behind a
+/// mutex, typically — and decides how much it may hold. A cache holds what one
+/// [`Registry`] resolved, and must be used with that registry only.
+///
+/// Only a document's own top-level `@context` is cached. A context nested in
+/// the document, or scoped to a term, depends on the context around it.
+pub trait ContextCache {
+    /// The context processed under `key`, if kept.
+    fn get(&self, key: &str) -> Option<Arc<ProcessedContext>>;
+    /// Keep a context processed under `key`.
+    fn put(&self, key: String, context: Arc<ProcessedContext>);
+}
+
+/// A [`ContextCache`] that keeps nothing: every context is processed afresh.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoCache;
+
+impl ContextCache for NoCache {
+    fn get(&self, _key: &str) -> Option<Arc<ProcessedContext>> {
+        None
+    }
+
+    fn put(&self, _key: String, _context: Arc<ProcessedContext>) {}
+}
+
+/// The key a top-level `@context` is cached under: the value itself, and the
+/// limits it was processed within, which decide whether processing succeeds.
+pub(crate) fn cache_key(local: &Value, limits: &Limits) -> String {
+    let mut key = serde_json::to_string(local).unwrap_or_default();
+    key.push_str(&alloc::format!(
+        "\u{0}{}\u{0}{}",
+        limits.max_contexts,
+        limits.max_terms
+    ));
+    key
+}
+
 /// Process a `@context` value against `active`, returning the new context.
 ///
 /// `remote` is the stack of context IRIs currently being resolved, which is how
@@ -207,6 +286,46 @@ impl<'a> Session<'a> {
 const ACTIVITYSTREAMS: &str = "https://www.w3.org/ns/activitystreams";
 
 pub(crate) fn process(
+    active: &ActiveContext,
+    local: &Value,
+    session: &mut Session<'_>,
+    remote: &mut Vec<String>,
+) -> Result<ActiveContext, Error> {
+    // A document's own context, processed first thing from nothing, means
+    // the same wherever it appears; anything later depends on what came
+    // before it, and is processed as it comes.
+    let cacheable = active.is_empty()
+        && remote.is_empty()
+        && session.contexts == 0
+        && session.unresolved.is_empty();
+    if !cacheable {
+        return process_uncached(active, local, session, remote);
+    }
+    let key = cache_key(local, &session.limits);
+    if let Some(cached) = session.cache.get(&key) {
+        session.contexts = cached.charged;
+        if session.contexts > session.limits.max_contexts {
+            return Err(Error::ContextBudgetExceeded);
+        }
+        for iri in &cached.unresolved {
+            session.note_unresolved(iri);
+        }
+        return Ok(cached.active.clone());
+    }
+    let result = process_uncached(active, local, session, remote)?;
+    session.cache.put(
+        key,
+        Arc::new(ProcessedContext {
+            active: result.clone(),
+            charged: session.contexts,
+            unresolved: session.unresolved.clone(),
+            source: None,
+        }),
+    );
+    Ok(result)
+}
+
+fn process_uncached(
     active: &ActiveContext,
     local: &Value,
     session: &mut Session<'_>,
@@ -362,7 +481,7 @@ fn create_term_definition(
         Value::Object(map) => {
             if map.get("@id").is_some_and(Value::is_null) {
                 // An explicit null `@id` is the object form of removing a term.
-                active.terms.insert(term.to_owned(), definition);
+                Arc::make_mut(&mut active.terms).insert(term.to_owned(), definition);
                 defined.insert(term.to_owned(), true);
                 return Ok(());
             }
@@ -440,7 +559,7 @@ fn create_term_definition(
         _ => return Err(Error::InvalidTermDefinition(term.to_owned())),
     }
 
-    active.terms.insert(term.to_owned(), definition);
+    Arc::make_mut(&mut active.terms).insert(term.to_owned(), definition);
     defined.insert(term.to_owned(), true);
     Ok(())
 }
