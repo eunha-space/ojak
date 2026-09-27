@@ -37,7 +37,7 @@ pub(super) struct SignedFetch<D> {
 
 impl<D> SignedFetch<D> {
     /// The fetcher for a request's data.
-    fn fetcher(&self, data: &D) -> Arc<Fetcher> {
+    pub(super) fn fetcher(&self, data: &D) -> Arc<Fetcher> {
         match &self.fetcher_for {
             Some(fetcher) => fetcher(data),
             None => self.fetcher.clone(),

@@ -19,10 +19,14 @@
 //!
 //! A portable object, whose `id` is an `ap://` IRI, is never trusted from a
 //! fetch alone: its origin is a key, and only its proof vouches for it.
+//! [`Fetcher::portable`] asks its gateways for it and keeps the first copy
+//! whose proof holds; [`Fetcher::lookup`] sends a portable URL there.
 
 use crate::client::{Client, RequestError, Response};
 use crate::delivery::{Scheme, SenderKey};
+use crate::portable::{self, DidResolver};
 use feder_core::origin::Origin;
+use feder_core::portable::ApUri;
 use feder_runtime::{rfc9421, signature};
 use feder_vocab::json::{FromJson, ToJson};
 use feder_vocab::{Read, ReadError, Registry, read_reporting};
@@ -30,11 +34,15 @@ use reqwest::header::{HeaderMap, HeaderValue};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use url::Url;
 
 /// What a fetch asks for: ActivityStreams, in either of its media types.
 pub const ACTIVITY_ACCEPT: &str = "application/activity+json, application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"";
+
+/// What a gateway is asked for, as FEP-ef61 has it.
+pub const PORTABLE_ACCEPT: &str =
+    "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"";
 
 /// Why a fetch did not produce a document.
 #[derive(Debug)]
@@ -60,6 +68,9 @@ pub enum FetchError {
     /// The document was established but is not a value of the type asked
     /// for.
     Read(ReadError),
+    /// No gateway served a portable object whose proof holds; why, for each
+    /// gateway tried.
+    Portable(Vec<(String, String)>),
 }
 
 impl FetchError {
@@ -90,6 +101,16 @@ impl fmt::Display for FetchError {
                 write!(f, "document served from {url} claims id {id}")
             }
             Self::Read(error) => error.fmt(f),
+            Self::Portable(tried) if tried.is_empty() => {
+                f.write_str("portable object with no gateway to ask")
+            }
+            Self::Portable(tried) => {
+                f.write_str("no gateway served it:")?;
+                for (gateway, why) in tried {
+                    write!(f, " {gateway}: {why};")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -126,12 +147,21 @@ pub struct Typed<T> {
 pub(crate) static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::bundled);
 
 /// Fetches from other servers. Cheap to share; one per process is enough.
-#[derive(Debug)]
 pub struct Fetcher {
     client: Client,
     first_scheme: Scheme,
     /// The scheme each host last accepted.
     schemes: Mutex<HashMap<String, Scheme>>,
+    resolver: Option<Arc<dyn DidResolver>>,
+}
+
+impl fmt::Debug for Fetcher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Fetcher")
+            .field("client", &self.client)
+            .field("first_scheme", &self.first_scheme)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Fetcher {
@@ -142,7 +172,22 @@ impl Fetcher {
             client,
             first_scheme,
             schemes: Mutex::new(HashMap::new()),
+            resolver: None,
         }
+    }
+
+    /// Resolve DID methods other than `did:key` with `resolver`, when
+    /// verifying portable objects.
+    #[must_use]
+    pub fn did_resolver(mut self, resolver: Arc<dyn DidResolver>) -> Self {
+        self.resolver = Some(resolver);
+        self
+    }
+
+    /// The resolver portable objects are verified with, if any.
+    #[must_use]
+    pub fn resolver(&self) -> Option<&dyn DidResolver> {
+        self.resolver.as_deref()
     }
 
     /// The client the fetcher sends through.
@@ -313,7 +358,13 @@ impl Fetcher {
     /// # Errors
     ///
     /// As [`Fetcher::document`], for the second fetch when there is one.
+    ///
+    /// A portable URL, `ap` or at a gateway, is fetched with
+    /// [`Fetcher::portable`] instead.
     pub async fn lookup(&self, url: &Url, key: Option<&SenderKey>) -> Result<Document, FetchError> {
+        if let Some(uri) = ApUri::parse(url.as_str()) {
+            return self.portable(&uri, &[], key).await;
+        }
         match self.document(url, key).await {
             Err(FetchError::CrossOrigin { id, url: served }) => {
                 let Ok(own) = Url::parse(&id) else {
@@ -330,6 +381,81 @@ impl Fetcher {
 }
 
 impl Fetcher {
+    /// Fetch the portable object `uri` names from its gateways: the hints it
+    /// carries, then `gateways`, in order. The first document served as
+    /// ActivityPub whose `id` is `uri` and whose proof by `uri`'s DID holds
+    /// is returned; a gateway that fails any of that is passed over.
+    ///
+    /// # Errors
+    ///
+    /// [`FetchError::Portable`], with why each gateway was passed over.
+    pub async fn portable(
+        &self,
+        uri: &ApUri,
+        gateways: &[&str],
+        key: Option<&SenderKey>,
+    ) -> Result<Document, FetchError> {
+        let mut tried = Vec::new();
+        let mut asked: Vec<&str> = Vec::new();
+        for gateway in uri
+            .gateways()
+            .iter()
+            .map(String::as_str)
+            .chain(gateways.iter().copied())
+        {
+            if asked.contains(&gateway) {
+                continue;
+            }
+            asked.push(gateway);
+            match self.ask_gateway(uri, gateway, key).await {
+                Ok(document) => return Ok(document),
+                Err(why) => tried.push((gateway.to_owned(), why)),
+            }
+        }
+        Err(FetchError::Portable(tried))
+    }
+
+    async fn ask_gateway(
+        &self,
+        uri: &ApUri,
+        gateway: &str,
+        key: Option<&SenderKey>,
+    ) -> Result<Document, String> {
+        let url = Url::parse(&uri.at_gateway(gateway)).map_err(|error| error.to_string())?;
+        let response = self
+            .get(&url, PORTABLE_ACCEPT, key)
+            .await
+            .map_err(|error| error.to_string())?;
+        if !(200..300).contains(&response.status) {
+            return Err(FetchError::Status(response.status).to_string());
+        }
+        let content_type = response
+            .headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        if !is_activity_content_type(content_type) {
+            return Err(FetchError::NotActivityPub(content_type.to_owned()).to_string());
+        }
+        let json: Value =
+            serde_json::from_slice(&response.body).map_err(|error| error.to_string())?;
+        let id = portable::verify(&json, self.resolver())
+            .await
+            .map_err(|error| error.to_string())?;
+        if id != *uri {
+            return Err(format!("served {id} for {uri}"));
+        }
+        Ok(Document {
+            id: json
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            url: response.url,
+            json,
+        })
+    }
+
     /// [`Fetcher::lookup`], and read what it found into `T`: an actor, a
     /// note, `AnyObject` for whatever it turns out to be. What reading lost
     /// is in [`Read::lost`].

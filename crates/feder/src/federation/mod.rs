@@ -26,6 +26,7 @@ use crate::fetch::Fetcher;
 use crate::kv::{KvError, KvStore};
 use crate::template::{Template, TemplateError, Values};
 use chrono::{DateTime, SecondsFormat, Utc};
+use feder_core::portable::ApUri;
 use http::{HeaderValue, Method, StatusCode, header};
 use serde_json::{Value, json};
 use std::fmt;
@@ -203,6 +204,11 @@ type NodeInfoFn<D> =
     Arc<dyn Fn(Context<D>) -> BoxFuture<'static, Result<NodeInfo, Error>> + Send + Sync>;
 type OriginFn<D> = Arc<dyn Fn(&str, &D) -> Option<Url> + Send + Sync>;
 type ErrorFn = Arc<dyn Fn(&Error) + Send + Sync>;
+type GatewayFn<D> =
+    Arc<dyn Fn(Context<D>, ApUri) -> BoxFuture<'static, Result<Found<Value>, Error>> + Send + Sync>;
+type GatewayInboxFn<D> = Arc<
+    dyn Fn(Context<D>, ApUri) -> BoxFuture<'static, Result<Option<ActorRef>, Error>> + Send + Sync,
+>;
 
 enum Dispatcher<D> {
     Actor(ActorFn<D>),
@@ -249,6 +255,8 @@ struct Inner<D> {
     blocked: Option<inbox::BlockedFn<D>>,
     on_unverified: Option<inbox::UnverifiedFn<D>>,
     inbox_queue: Option<inbox::QueueFn<D>>,
+    gateway: Option<GatewayFn<D>>,
+    gateway_inbox: Option<GatewayInboxFn<D>>,
 }
 
 /// Everything Feder serves, and the URIs it builds. Cheap to clone.
@@ -298,6 +306,8 @@ pub struct Builder<D> {
     blocked: Option<inbox::BlockedFn<D>>,
     on_unverified: Option<inbox::UnverifiedFn<D>>,
     inbox_queue: Option<inbox::QueueFn<D>>,
+    gateway: Option<GatewayFn<D>>,
+    gateway_inbox: Option<GatewayInboxFn<D>>,
     errors: Vec<String>,
 }
 
@@ -322,6 +332,8 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             blocked: None,
             on_unverified: None,
             inbox_queue: None,
+            gateway: None,
+            gateway_inbox: None,
             errors: Vec::new(),
         }
     }
@@ -362,10 +374,70 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
     }
 
     /// Whether `path` is an inbox, whose POSTs [`Federation::handle_with_body`]
-    /// answers: what an adapter asks before reading a request's body.
+    /// answers: what an adapter asks before reading a request's body. Every
+    /// gateway path is one when the application accepts portable
+    /// deliveries, since which of them are inboxes is the application's to
+    /// say.
     #[must_use]
     pub fn is_inbox(&self, path: &str) -> bool {
         self.inbox_at(path).is_some()
+            || (self.inner.gateway_inbox.is_some() && is_gateway_path(path))
+    }
+
+    /// Answer a request to `/.well-known/apgateway/{did}/{+path}`: a GET for
+    /// a portable object, a POST to a portable inbox.
+    async fn gateway(&self, request: &http::request::Parts, body: &[u8], data: D) -> Handled {
+        let host = request_host(request);
+        let Some(origin) = self.origin_for(&host, &data) else {
+            return Handled::NotFound;
+        };
+        let compatible = format!(
+            "{}{}",
+            origin.as_str().trim_end_matches('/'),
+            request.uri.path()
+        );
+        let Some(uri) = ApUri::parse(&compatible) else {
+            return Handled::NotFound;
+        };
+        let context = Context::new(
+            self.inner.clone(),
+            data,
+            origin,
+            Some(RequestInfo::of(request, host)),
+        );
+        let head = request.method == Method::HEAD;
+        let response = if request.method == Method::GET || head {
+            let Some(load) = &self.inner.gateway else {
+                return Handled::NotFound;
+            };
+            match load(context.clone(), uri.clone()).await {
+                Ok(found) => without_body_if(head, portable_found(found, &uri)),
+                Err(error) => {
+                    context.report(&error);
+                    empty(StatusCode::INTERNAL_SERVER_ERROR)
+                }
+            }
+        } else if request.method == Method::POST {
+            let Some(inbox_for) = &self.inner.gateway_inbox else {
+                return Handled::Response(method_not_allowed());
+            };
+            match inbox_for(context.clone(), uri).await {
+                Ok(Some(recipient)) => inbox::receive(context, Some(recipient), body).await,
+                // Not an inbox this server accepts deliveries for.
+                Ok(None) => empty(StatusCode::NOT_FOUND),
+                Err(error) => {
+                    context.report(&error);
+                    empty(StatusCode::INTERNAL_SERVER_ERROR)
+                }
+            }
+        } else {
+            let mut response = empty(StatusCode::METHOD_NOT_ALLOWED);
+            response
+                .headers_mut()
+                .insert(header::ALLOW, HeaderValue::from_static("GET, HEAD, POST"));
+            response
+        };
+        Handled::Response(response)
     }
 
     /// Answer `request` with its `body`: an activity POSTed to an inbox is
@@ -376,6 +448,9 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
         body: &[u8],
         data: D,
     ) -> Handled {
+        if self.serves_gateway() && is_gateway_path(request.uri.path()) {
+            return self.gateway(request, body, data).await;
+        }
         let Some(recipient) = self.inbox_at(request.uri.path()) else {
             return self.handle(request, data).await;
         };
@@ -403,6 +478,9 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
     /// POST needs its body: [`Federation::handle_with_body`].
     pub async fn handle(&self, request: &http::request::Parts, data: D) -> Handled {
         let path = request.uri.path();
+        if self.serves_gateway() && is_gateway_path(path) {
+            return self.gateway(request, b"", data).await;
+        }
         if self.is_inbox(path) {
             return Box::pin(self.handle_with_body(request, b"", data)).await;
         }
@@ -502,6 +580,10 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
                     .await
             }
         }
+    }
+
+    fn serves_gateway(&self) -> bool {
+        self.inner.gateway.is_some() || self.inner.gateway_inbox.is_some()
     }
 
     fn special(&self, path: &str) -> Option<Special> {
@@ -889,6 +971,39 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         self
     }
 
+    /// Serve the portable objects (FEP-ef61) this server is a gateway for,
+    /// at `/.well-known/apgateway/{did}/{+path}`. `load` returns the object
+    /// an `ap` URI names, as the signed document the application stored: its
+    /// proof covers it, and Feder serves it as it is. An object that is not
+    /// public is the application's to refuse, as for any dispatcher.
+    #[must_use]
+    pub fn gateway<F, Fut, E>(mut self, load: F) -> Self
+    where
+        F: Fn(Context<D>, ApUri) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Found<Value>, E>> + Send + 'static,
+        E: Into<Error>,
+    {
+        let load = boxed(move |(context, uri)| load(context, uri));
+        self.gateway = Some(Arc::new(move |context, uri| load((context, uri))));
+        self
+    }
+
+    /// Accept deliveries to portable inboxes: `inbox_for` maps the `ap` URI
+    /// of an inbox POSTed to at `/.well-known/apgateway/…` to the actor the
+    /// application hosts it for, who the listeners see as the recipient.
+    /// An inbox it maps to `None` is answered 404.
+    #[must_use]
+    pub fn gateway_inbox<F, Fut, E>(mut self, inbox_for: F) -> Self
+    where
+        F: Fn(Context<D>, ApUri) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<ActorRef>, E>> + Send + 'static,
+        E: Into<Error>,
+    {
+        let inbox_for = boxed(move |(context, uri)| inbox_for(context, uri));
+        self.gateway_inbox = Some(Arc::new(move |context, uri| inbox_for((context, uri))));
+        self
+    }
+
     /// See every error a dispatcher returns, which is otherwise a bare 500.
     #[must_use]
     pub fn on_error(mut self, report: impl Fn(&Error) + Send + Sync + 'static) -> Self {
@@ -1033,6 +1148,8 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     blocked: self.blocked,
                     on_unverified: self.on_unverified,
                     inbox_queue: self.inbox_queue,
+                    gateway: self.gateway,
+                    gateway_inbox: self.gateway_inbox,
                 }),
             }),
             _ => Err(BuildError(errors)),
@@ -1376,6 +1493,39 @@ pub(crate) fn activity(status: StatusCode, mut document: Value) -> http::Respons
         .headers_mut()
         .insert(header::VARY, HeaderValue::from_static("Accept"));
     response
+}
+
+/// Whether `path` is under the well-known path gateways serve at.
+fn is_gateway_path(path: &str) -> bool {
+    path.starts_with(feder_core::portable::GATEWAY_PATH)
+}
+
+/// The media type a gateway serves portable objects as (FEP-ef61).
+pub const PORTABLE_JSON: &str =
+    "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"";
+
+/// A portable object as a gateway serves it: the document as the
+/// application stored it, since its proof covers it.
+fn portable_found(found: Found<Value>, uri: &ApUri) -> http::Response<Vec<u8>> {
+    match found {
+        Found::Found(document) => {
+            let body = serde_json::to_vec(&document).unwrap_or_default();
+            response(StatusCode::OK, PORTABLE_JSON, body)
+        }
+        Found::Gone(deleted) => {
+            let mut tombstone = json!({
+                "@context": "https://www.w3.org/ns/activitystreams",
+                "id": uri.canonical(),
+                "type": "Tombstone",
+            });
+            if let Some(deleted) = deleted {
+                tombstone["deleted"] = deleted.to_rfc3339_opts(SecondsFormat::Secs, true).into();
+            }
+            let body = serde_json::to_vec(&tombstone).unwrap_or_default();
+            response(StatusCode::GONE, PORTABLE_JSON, body)
+        }
+        Found::NotFound => empty(StatusCode::NOT_FOUND),
+    }
 }
 
 fn found(found: Found<Value>, url: &Url) -> http::Response<Vec<u8>> {

@@ -488,7 +488,8 @@ next to what they have now.
     properties in `extensions/`, and `tests/corpus` measures what they read.
 7.  *Gateways.* Serving and accepting portable objects, and the signer trait
     for keys held off the server. The rules they need are already in place by
-    step 2; this step is the routes and the delivery path.
+    step 2; this step is the routes and the delivery path. Done:
+    *portable.md* has the details.
 
 For oeee-cafe the same order applies, with `activitypub_federation` removed at
 the end.

@@ -151,3 +151,23 @@ additions:
       Whether what the blocked or deleted person posted is to be removed too.
     range:
     - "http://www.w3.org/2001/XMLSchema#boolean"
+
+# FEP-ef61: where a portable actor's latest document can be fetched, in
+# order. An actor whose id is an `ap` URI has to list at least one.
+- to:
+  - "https://www.w3.org/ns/activitystreams#Application"
+  - "https://www.w3.org/ns/activitystreams#Group"
+  - "https://www.w3.org/ns/activitystreams#Organization"
+  - "https://www.w3.org/ns/activitystreams#Person"
+  - "https://www.w3.org/ns/activitystreams#Service"
+  properties:
+  - singularName: gateway
+    pluralName: gateways
+    compactName: gateways
+    uri: "https://w3id.org/fep/ef61/gateways"
+    container: list
+    description: |
+      The gateways that serve the actor, as origins with no path, the first
+      preferred (FEP-ef61).
+    range:
+    - "http://www.w3.org/2001/XMLSchema#anyURI"

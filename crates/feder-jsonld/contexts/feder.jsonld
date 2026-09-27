@@ -7,6 +7,7 @@
     "https://www.w3.org/ns/did/v1",
     "https://gotosocial.org/ns",
     "https://purl.archive.org/socialweb/webfinger",
+    "https://w3id.org/fep/ef61",
     {
       "toot": "http://joinmastodon.org/ns#",
       "schema": "http://schema.org#",

@@ -5,8 +5,8 @@
 //! The application owns its data; these decide what the protocol says should
 //! happen to it. Addressing and visibility ([`addressing`]), what to do with
 //! a Follow ([`inbound`]), what a post or reaction means where the fediverse
-//! says it several ways ([`meaning`]), and where an identifier's authority
-//! comes from ([`origin`]).
+//! says it several ways ([`meaning`]), where an identifier's authority
+//! comes from ([`origin`]), and portable objects' identifiers ([`portable`]).
 
 extern crate alloc;
 
@@ -16,3 +16,4 @@ pub mod addressing;
 pub mod inbound;
 pub mod meaning;
 pub mod origin;
+pub mod portable;

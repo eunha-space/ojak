@@ -1818,6 +1818,9 @@ pub struct Application {
     pub cat: Option<bool>,
     /// The actor's WebFinger handle, `user@host` (FEP-2c59).
     pub webfinger: Option<String>,
+    /// The gateways that serve the actor, as origins with no path, the first
+    /// preferred (FEP-ef61).
+    pub gateways: Vec<Iri>,
 }
 
 impl Application {
@@ -1899,6 +1902,7 @@ impl FromJson for Application {
             followed_message: json::one(object, &["_misskey_followedMessage"]),
             cat: json::one(object, &["isCat"]),
             webfinger: json::one(object, &["webfinger"]),
+            gateways: json::many(object, &["gateways"]),
         })
     }
 }
@@ -1999,6 +2003,7 @@ impl ToJson for Application {
         );
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
         json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
+        json::put_many(&mut object, &["gateways"], &self.gateways);
         Value::Object(object)
     }
 }
@@ -6788,6 +6793,9 @@ pub struct Group {
     pub posting_restricted_to_mods: Option<bool>,
     /// The collection of the community's moderators.
     pub moderators: Option<Reference<OrderedCollection>>,
+    /// The gateways that serve the actor, as origins with no path, the first
+    /// preferred (FEP-ef61).
+    pub gateways: Vec<Iri>,
 }
 
 impl Group {
@@ -6871,6 +6879,7 @@ impl FromJson for Group {
             webfinger: json::one(object, &["webfinger"]),
             posting_restricted_to_mods: json::one(object, &["postingRestrictedToMods"]),
             moderators: json::one(object, &["moderators"]),
+            gateways: json::many(object, &["gateways"]),
         })
     }
 }
@@ -6977,6 +6986,7 @@ impl ToJson for Group {
             self.posting_restricted_to_mods.as_ref(),
         );
         json::put_one(&mut object, &["moderators"], self.moderators.as_ref());
+        json::put_many(&mut object, &["gateways"], &self.gateways);
         Value::Object(object)
     }
 }
@@ -11520,6 +11530,9 @@ pub struct Organization {
     pub cat: Option<bool>,
     /// The actor's WebFinger handle, `user@host` (FEP-2c59).
     pub webfinger: Option<String>,
+    /// The gateways that serve the actor, as origins with no path, the first
+    /// preferred (FEP-ef61).
+    pub gateways: Vec<Iri>,
 }
 
 impl Organization {
@@ -11601,6 +11614,7 @@ impl FromJson for Organization {
             followed_message: json::one(object, &["_misskey_followedMessage"]),
             cat: json::one(object, &["isCat"]),
             webfinger: json::one(object, &["webfinger"]),
+            gateways: json::many(object, &["gateways"]),
         })
     }
 }
@@ -11701,6 +11715,7 @@ impl ToJson for Organization {
         );
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
         json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
+        json::put_many(&mut object, &["gateways"], &self.gateways);
         Value::Object(object)
     }
 }
@@ -12127,6 +12142,9 @@ pub struct Person {
     pub webfinger: Option<String>,
     /// The person's Matrix user ID.
     pub matrix_user_id: Option<String>,
+    /// The gateways that serve the actor, as origins with no path, the first
+    /// preferred (FEP-ef61).
+    pub gateways: Vec<Iri>,
 }
 
 impl Person {
@@ -12209,6 +12227,7 @@ impl FromJson for Person {
             cat: json::one(object, &["isCat"]),
             webfinger: json::one(object, &["webfinger"]),
             matrix_user_id: json::one(object, &["matrixUserId"]),
+            gateways: json::many(object, &["gateways"]),
         })
     }
 }
@@ -12310,6 +12329,7 @@ impl ToJson for Person {
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
         json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
         json::put_one(&mut object, &["matrixUserId"], self.matrix_user_id.as_ref());
+        json::put_many(&mut object, &["gateways"], &self.gateways);
         Value::Object(object)
     }
 }
@@ -15310,6 +15330,9 @@ pub struct Service {
     pub cat: Option<bool>,
     /// The actor's WebFinger handle, `user@host` (FEP-2c59).
     pub webfinger: Option<String>,
+    /// The gateways that serve the actor, as origins with no path, the first
+    /// preferred (FEP-ef61).
+    pub gateways: Vec<Iri>,
 }
 
 impl Service {
@@ -15391,6 +15414,7 @@ impl FromJson for Service {
             followed_message: json::one(object, &["_misskey_followedMessage"]),
             cat: json::one(object, &["isCat"]),
             webfinger: json::one(object, &["webfinger"]),
+            gateways: json::many(object, &["gateways"]),
         })
     }
 }
@@ -15491,6 +15515,7 @@ impl ToJson for Service {
         );
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
         json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
+        json::put_many(&mut object, &["gateways"], &self.gateways);
         Value::Object(object)
     }
 }

@@ -45,6 +45,7 @@ Fetched verbatim from their canonical URLs on 2026-09-17:
 | `litepub.jsonld`                    | <https://litepub.social/litepub/context.jsonld> |
 | `webfinger.jsonld`                  | <https://purl.archive.org/socialweb/webfinger>  |
 | `join-lemmy.jsonld`                 | <https://join-lemmy.org/context.json>           |
+| `fep-ef61.jsonld`                   | <https://w3id.org/fep/ef61>, copied 2026-09-27 from `fep/ef61/fep-ef61.jsonld` in the FEP repository, which is what it serves |
 
 Two of those need a word of explanation, because the reason they are bundled
 is not “to save a round trip”.

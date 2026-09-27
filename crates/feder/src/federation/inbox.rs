@@ -9,6 +9,7 @@
 use super::{ActorRef, BoxFuture, Context, Error, Federation, Inner, RequestInfo, empty, signer};
 use crate::queue::{Job, QueueError, RetryPolicy, SharedQueue};
 use feder_core::origin::same_origin;
+use feder_core::portable::ApUri;
 use feder_vocab::json::{FromJson, ToJson, Typed};
 use feder_vocab::loss::{self, Loss};
 use futures_util::StreamExt as _;
@@ -35,7 +36,9 @@ pub struct Received<T> {
     /// The activity, read into the listener's type.
     pub activity: T,
     /// The actor Feder authenticated as its sender. Everything the activity
-    /// says about anyone else is a claim.
+    /// says about anyone else is a claim. A portable actor's is its `ap` URI
+    /// with the DID's colons percent-encoded, which is how a `Url` holds one;
+    /// `feder_core::portable::ApUri::parse` reads it back.
     pub sender: Url,
     /// The actor whose inbox it arrived at; `None` for the shared inbox,
     /// where the recipients are worked out from the addressing.
@@ -248,12 +251,18 @@ pub(super) async fn receive<D: Clone + Send + Sync + 'static>(
         return status(StatusCode::BAD_REQUEST, "no actor");
     };
 
-    // A blocked server costs nothing: no key is fetched for it.
+    let portable = ApUri::parse(&actor);
+
+    // A blocked server costs nothing: no key is fetched for it. A portable
+    // actor has no server, and is blocked by its DID.
     if let Some(blocked) = &inner.blocked {
-        let host = Url::parse(&actor)
-            .ok()
-            .and_then(|url| url.host_str().map(str::to_owned))
-            .unwrap_or_default();
+        let host = match &portable {
+            Some(uri) => uri.did().to_owned(),
+            None => Url::parse(&actor)
+                .ok()
+                .and_then(|url| url.host_str().map(str::to_owned))
+                .unwrap_or_default(),
+        };
         match blocked(context.clone(), host).await {
             Ok(true) => return accepted(),
             Ok(false) => {}
@@ -264,26 +273,52 @@ pub(super) async fn receive<D: Clone + Send + Sync + 'static>(
         }
     }
 
-    let sender = match signer::authenticate(&context, body).await {
-        Ok(sender) => sender,
-        Err(unsigned) => match signer::prove(&context, &document, &actor).await {
-            Ok(sender) => sender,
+    let sender = if let Some(uri) = &portable {
+        // A portable actor is vouched for by its key alone: the HTTP
+        // signature, if there is one, is the gateway's that sent it.
+        let resolver = inner
+            .signed_fetch
+            .as_ref()
+            .map(|settings| settings.fetcher(context.data()));
+        let resolver = resolver
+            .as_deref()
+            .and_then(crate::fetch::Fetcher::resolver);
+        match crate::portable::verify_by(&document, uri.did(), resolver).await {
+            Ok(()) => match Url::parse(&uri.encoded()) {
+                Ok(sender) => sender,
+                Err(error) => return status(StatusCode::BAD_REQUEST, &error.to_string()),
+            },
             Err(unproven) => {
                 if let Some(hook) = &inner.on_unverified {
                     hook(context.clone(), document.clone()).await;
                 }
-                // A Delete that does not verify is most often one whose
-                // actor is gone, key and all; the server would retry it
-                // until told otherwise.
-                if document.get("type").and_then(Value::as_str) == Some("Delete") {
-                    return accepted();
-                }
-                return status(
-                    StatusCode::UNAUTHORIZED,
-                    &format!("signature: {unsigned}; proof: {unproven}"),
-                );
+                // Unlike a server's actor, a DID does not go away and take
+                // its key with it, so a Delete is refused like anything else.
+                return status(StatusCode::UNAUTHORIZED, &format!("proof: {unproven}"));
             }
-        },
+        }
+    } else {
+        match signer::authenticate(&context, body).await {
+            Ok(sender) => sender,
+            Err(unsigned) => match signer::prove(&context, &document, &actor).await {
+                Ok(sender) => sender,
+                Err(unproven) => {
+                    if let Some(hook) = &inner.on_unverified {
+                        hook(context.clone(), document.clone()).await;
+                    }
+                    // A Delete that does not verify is most often one whose
+                    // actor is gone, key and all; the server would retry it
+                    // until told otherwise.
+                    if document.get("type").and_then(Value::as_str) == Some("Delete") {
+                        return accepted();
+                    }
+                    return status(
+                        StatusCode::UNAUTHORIZED,
+                        &format!("signature: {unsigned}; proof: {unproven}"),
+                    );
+                }
+            },
+        }
     };
 
     // A server vouches for its own actors and activities, and nobody else's.

@@ -8,10 +8,14 @@
 //!     defines an origin;
 //!  -  for an `ap://` IRI (FEP-ef61) or a DID URL, the DID: a portable object
 //!     is vouched for by the key that controls it, wherever it is served from.
+//!     So is a portable object's compatible `https` identifier at a gateway,
+//!     `https://gateway.example/.well-known/apgateway/did:key:…/path`: the
+//!     gateway is where it is, not who vouches for it.
 //!
 //! The rules are written once against [`Origin`], never against hostnames, so
 //! that portable objects are the same rules over a second kind of origin.
 
+use crate::portable::{ApUri, did_of};
 use alloc::string::{String, ToString};
 
 /// An identifier's origin.
@@ -36,12 +40,12 @@ impl Origin {
     pub fn of(iri: &str) -> Option<Self> {
         let (scheme, rest) = iri.split_once(':')?;
         match scheme.to_ascii_lowercase().as_str() {
-            scheme @ ("http" | "https") => web(scheme, rest),
-            "ap" | "ap+ef61" => {
-                let authority = authority(rest.strip_prefix("//")?);
-                did(&percent_decode_colons(authority))
-            }
-            "did" => did(iri),
+            scheme @ ("http" | "https") => match ApUri::parse(iri) {
+                Some(portable) => Some(Self::Did(portable.did().to_string())),
+                None => web(scheme, rest),
+            },
+            "ap" | "ap+ef61" => ApUri::parse(iri).map(|uri| Self::Did(uri.did().to_string())),
+            "did" => did_of(iri).map(|did| Self::Did(did.to_string())),
             _ => None,
         }
     }
@@ -102,24 +106,6 @@ fn web(scheme: &str, rest: &str) -> Option<Origin> {
         host: host.to_ascii_lowercase(),
         port,
     })
-}
-
-/// The DID a DID URL names: `did:method:id`, without path, query or fragment.
-fn did(did_url: &str) -> Option<Origin> {
-    let end = did_url.find(['/', '?', '#']).unwrap_or(did_url.len());
-    let did = &did_url[..end];
-    let mut parts = did.splitn(3, ':');
-    let (scheme, method, id) = (parts.next()?, parts.next()?, parts.next()?);
-    if !scheme.eq_ignore_ascii_case("did") || method.is_empty() || id.is_empty() {
-        return None;
-    }
-    Some(Origin::Did(alloc::format!("did:{method}:{id}")))
-}
-
-/// An `ap://` authority may percent-encode the DID's colons, as a URI
-/// authority cannot otherwise hold more than one.
-fn percent_decode_colons(authority: &str) -> String {
-    authority.replace("%3A", ":").replace("%3a", ":")
 }
 
 #[cfg(test)]
@@ -204,8 +190,14 @@ mod tests {
             "ap://did:key:z6MkAbc/users/alice",
             "did:key:z6MkAbc#z6MkAbc"
         ));
-        assert!(!same_origin(
+        // A compatible identifier is the portable object's, not the
+        // gateway's.
+        assert!(same_origin(
             "ap://did:key:z6MkAbc/users/alice",
+            "https://gateway.example/.well-known/apgateway/did:key:z6MkAbc/users/alice"
+        ));
+        assert!(!same_origin(
+            "https://gateway.example/users/bob",
             "https://gateway.example/.well-known/apgateway/did:key:z6MkAbc/users/alice"
         ));
     }

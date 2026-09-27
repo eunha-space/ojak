@@ -312,16 +312,53 @@ impl FromJson for Iri {
             }
             other => string(other).ok(),
         };
-        text.ok_or_else(|| JsonError::new("expected an IRI"))?
-            .parse()
-            .map_err(|_| JsonError::new("not an IRI"))
+        let text = text.ok_or_else(|| JsonError::new("expected an IRI"))?;
+        match text.parse() {
+            Ok(iri) => Ok(iri),
+            Err(_) => portable_encoded(text)
+                .and_then(|encoded| encoded.parse().ok())
+                .ok_or_else(|| JsonError::new("not an IRI")),
+        }
     }
 }
 
 impl ToJson for Iri {
     fn to_json(&self) -> Value {
-        Value::String(self.as_str().to_owned())
+        Value::String(portable_decoded(self.as_str()).unwrap_or_else(|| self.as_str().to_owned()))
     }
+}
+
+/// A portable object's `ap` URI (FEP-ef61) with its DID's colons
+/// percent-encoded. The canonical `ap://did:key:z6Mk…/path` has colons in its
+/// authority, which RFC 3986 does not allow and no IRI parser accepts; the
+/// encoded form is the same identifier, and parses.
+fn portable_encoded(text: &str) -> Option<String> {
+    let (scheme, rest) = text.split_once("://")?;
+    if !matches!(scheme.to_ascii_lowercase().as_str(), "ap" | "ap+ef61") {
+        return None;
+    }
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, rest) = rest.split_at(end);
+    Some(format!(
+        "{scheme}://{}{rest}",
+        authority.replace(':', "%3A")
+    ))
+}
+
+/// The canonical spelling of an `ap` URI read through [`portable_encoded`],
+/// so that what was read is written as it came.
+fn portable_decoded(iri: &str) -> Option<String> {
+    let (scheme, rest) = iri.split_once("://")?;
+    if !matches!(scheme.to_ascii_lowercase().as_str(), "ap" | "ap+ef61") {
+        return None;
+    }
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, rest) = rest.split_at(end);
+    if !authority.to_ascii_lowercase().contains("%3a") {
+        return None;
+    }
+    let authority = authority.replace("%3A", ":").replace("%3a", ":");
+    Some(format!("{scheme}://{authority}{rest}"))
 }
 
 impl<T: FromJson> FromJson for Box<T> {

@@ -5,10 +5,15 @@
 //! application spawns it on whatever runtime and in whatever task context it
 //! uses — Feder does not spawn tasks of its own. Any number of loops may run,
 //! in any number of processes, over one queue.
+//!
+//! A portable inbox (FEP-ef61) has no host of its own, only the gateways its
+//! actor lists; [`Deliverer::send_portable`] queues it with them, and one
+//! attempt tries each in order until one accepts.
 
 use crate::client::Client;
 use crate::delivery::{self, DeliveryError, Scheme, SenderKey};
 use crate::queue::{Job, Queue, QueueError, RetryPolicy};
+use feder_core::portable::ApUri;
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use serde_json::{Value, json};
@@ -82,28 +87,61 @@ impl Default for DelivererConfig {
     }
 }
 
+/// A portable actor's inbox, and the gateways that accept deliveries to it,
+/// in the order its actor lists them.
+#[derive(Clone, Debug)]
+pub struct PortableInbox {
+    pub inbox: ApUri,
+    pub gateways: Vec<Url>,
+}
+
 /// One delivery, as it waits in the queue.
 struct Delivery {
     activity: Value,
+    /// The inbox; a portable one's `ap` URI, percent-encoded as a `Url`.
     inbox: Url,
+    /// Where to send it, in order, when that is not `inbox` itself: a
+    /// portable inbox at each of its gateways.
+    via: Vec<Url>,
     sender: String,
 }
 
 impl Delivery {
     fn payload(&self) -> Value {
-        json!({
+        let mut payload = json!({
             "activity": self.activity,
             "inbox": self.inbox.as_str(),
             "sender": self.sender,
-        })
+        });
+        if !self.via.is_empty() {
+            payload["via"] = self.via.iter().map(Url::as_str).collect::<Vec<_>>().into();
+        }
+        payload
     }
 
     fn from_payload(payload: &Value) -> Option<Self> {
+        let via = match payload.get("via") {
+            Some(Value::Array(via)) => via
+                .iter()
+                .map(|url| Url::parse(url.as_str()?).ok())
+                .collect::<Option<Vec<_>>>()?,
+            _ => Vec::new(),
+        };
         Some(Self {
             activity: payload.get("activity")?.clone(),
             inbox: Url::parse(payload.get("inbox")?.as_str()?).ok()?,
+            via,
             sender: payload.get("sender")?.as_str()?.to_owned(),
         })
+    }
+
+    /// Where the delivery is sent, in the order to try.
+    fn targets(&self) -> Vec<&Url> {
+        if self.via.is_empty() {
+            vec![&self.inbox]
+        } else {
+            self.via.iter().collect()
+        }
     }
 }
 
@@ -173,11 +211,58 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                 Delivery {
                     activity: activity.clone(),
                     inbox,
+                    via: Vec::new(),
                     sender: sender.to_owned(),
                 }
                 .payload()
             })
             .collect();
+        self.queue.enqueue(&self.config.queue, payloads).await?;
+        self.wake.notify_one();
+        Ok(())
+    }
+
+    /// Queue `activity`, signed by `sender`, for each portable inbox, once
+    /// each: sent to the inbox at its first gateway that accepts it.
+    ///
+    /// # Errors
+    ///
+    /// When the backend cannot queue them.
+    pub async fn send_portable(
+        &self,
+        sender: &str,
+        activity: &Value,
+        inboxes: impl IntoIterator<Item = PortableInbox>,
+    ) -> Result<(), QueueError> {
+        let mut seen = BTreeSet::new();
+        let mut payloads = Vec::new();
+        for PortableInbox { inbox, gateways } in inboxes {
+            if !seen.insert(inbox.canonical()) {
+                continue;
+            }
+            let via: Vec<Url> = gateways
+                .iter()
+                .filter_map(|gateway| Url::parse(&inbox.at_gateway(gateway.as_str())).ok())
+                .collect();
+            let Ok(encoded) = Url::parse(&inbox.encoded()) else {
+                continue;
+            };
+            if via.is_empty() {
+                continue;
+            }
+            payloads.push(
+                Delivery {
+                    activity: activity.clone(),
+                    inbox: encoded,
+                    via,
+                    sender: sender.to_owned(),
+                }
+                .payload(),
+            );
+        }
+        if payloads.is_empty() {
+            return Ok(());
+        }
         self.queue.enqueue(&self.config.queue, payloads).await?;
         self.wake.notify_one();
         Ok(())
@@ -280,7 +365,27 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                 return Err(DeliveryError::Unavailable(format!("key lookup: {error}")));
             }
         };
-        let host = delivery.inbox.host_str().unwrap_or_default().to_owned();
+        let body = serde_json::to_vec(&delivery.activity)
+            .map_err(|error| DeliveryError::Signing(error.to_string()))?;
+        // Each gateway in turn: the first that accepts completes the
+        // delivery, and one that fails is passed over rather than retried.
+        let mut last = None;
+        for target in delivery.targets() {
+            match self.attempt_at(target, &body, &key).await {
+                Ok(()) => return Ok(()),
+                Err(error) => last = Some(error),
+            }
+        }
+        Err(last.unwrap_or_else(|| DeliveryError::Signing("nowhere to deliver".into())))
+    }
+
+    async fn attempt_at(
+        &self,
+        target: &Url,
+        body: &[u8],
+        key: &SenderKey,
+    ) -> Result<(), DeliveryError> {
+        let host = target.host_str().unwrap_or_default().to_owned();
         let permit = self.host_semaphore(&host).acquire_owned().await;
         let shared_permit = match &self.config.shared_limit {
             Some(limit) => Some(limit.clone().acquire_owned().await),
@@ -293,9 +398,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             .get(&host)
             .copied()
             .unwrap_or(self.config.first_scheme);
-        let body = serde_json::to_vec(&delivery.activity)
-            .map_err(|error| DeliveryError::Signing(error.to_string()))?;
-        let result = delivery::deliver(&self.client, &delivery.inbox, &body, &key, first).await;
+        let result = delivery::deliver(&self.client, target, body, key, first).await;
         drop(shared_permit);
         drop(permit);
         let accepted = result?;

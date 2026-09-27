@@ -247,3 +247,47 @@ fn the_wrong_type_is_a_shape_error() {
         Err(ReadError::Shape(_))
     ));
 }
+
+/// A portable actor (FEP-ef61): its `ap` URIs are not RFC 3986 URIs, since
+/// the DID puts colons in the authority, and are read all the same, with its
+/// gateways, and written back as they came.
+#[test]
+fn a_portable_actor_reads_its_ap_uris_and_gateways() {
+    let did = "did:key:z6MkrJVnaZkeFzdQyMZu1cgjg7k1pZZ6pvBQ7XJPt4swbTQ2";
+    let document = json!({
+        "@context": [
+            "https://www.w3.org/ns/activitystreams",
+            "https://w3id.org/security/data-integrity/v1",
+            "https://w3id.org/fep/ef61"
+        ],
+        "type": "Person",
+        "id": format!("ap://{did}/actor"),
+        "inbox": format!("ap://{did}/actor/inbox"),
+        "outbox": format!("ap://{did}/actor/outbox"),
+        "gateways": ["https://server1.example", "https://server2.example"]
+    });
+
+    let read = feder_vocab::read_reporting::<AnyActor>(&registry(), &document).expect("read");
+    assert!(read.lost().is_empty(), "{:?}", read.lost());
+    assert!(read.unresolved_contexts().is_empty());
+    let AnyActor::Person(person) = read.into_value() else {
+        panic!("not a person");
+    };
+    let id = person.id.as_ref().expect("the id is kept");
+    assert_eq!(decoded(id.as_str()), format!("ap://{did}/actor"));
+    assert_eq!(
+        person
+            .gateways
+            .iter()
+            .map(|gateway| gateway.as_str())
+            .collect::<Vec<_>>(),
+        ["https://server1.example", "https://server2.example"]
+    );
+    let written = write(&*person);
+    assert_eq!(written["id"], format!("ap://{did}/actor"));
+    assert_eq!(written["inbox"], format!("ap://{did}/actor/inbox"));
+}
+
+fn decoded(encoded: &str) -> String {
+    encoded.replace("%3A", ":")
+}

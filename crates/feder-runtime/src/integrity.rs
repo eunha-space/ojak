@@ -264,6 +264,20 @@ pub fn parse_ed25519_key(pem: &str) -> Result<([u8; 32], [u8; 32])> {
     Ok((key.to_bytes(), key.verifying_key().to_bytes()))
 }
 
+/// The public key of a raw 32-byte Ed25519 seed.
+#[must_use]
+pub fn ed25519_public_key(seed: &[u8; 32]) -> [u8; 32] {
+    ed25519_dalek::SigningKey::from_bytes(seed)
+        .verifying_key()
+        .to_bytes()
+}
+
+/// A fresh raw 32-byte Ed25519 seed.
+#[must_use]
+pub fn generate_ed25519_seed() -> [u8; 32] {
+    ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng).to_bytes()
+}
+
 /// Attach an `eddsa-jcs-2022` integrity proof to `document`.
 ///
 /// The inverse of [`verify_object_integrity_proof`], and deliberately written

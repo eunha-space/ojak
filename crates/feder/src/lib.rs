@@ -6,7 +6,8 @@
 //! every outgoing request goes through, delivery of activities through a
 //! queue the application provides, fetching documents from other servers,
 //! the key-value store Feder keeps its caches in, and serving actors,
-//! objects, collections, WebFinger and NodeInfo.
+//! objects, collections, WebFinger and NodeInfo, and portable objects
+//! (FEP-ef61) at gateways.
 
 pub mod client;
 pub mod deliverer;
@@ -14,6 +15,7 @@ pub mod delivery;
 pub mod federation;
 pub mod fetch;
 pub mod kv;
+pub mod portable;
 pub mod queue;
 pub mod template;
 #[cfg(feature = "testing")]
