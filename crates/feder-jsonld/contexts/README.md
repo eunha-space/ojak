@@ -73,11 +73,18 @@ Mastodon's own definition is the one followed here.
 
 `feder.jsonld` is not a fetched context either, and is not something a document
 can refer to.  It is the context feder compacts *to*: the vocabulary
-[`normalize`] writes its output in.  Its terms are the union of Mastodon
-4.7.1’s `CONTEXT_EXTENSION_MAP`, which is what the rest of the network
-already agrees to read — the `toot:`, `ostatus:` and `schema:` terms, and the
-FEP-044f/7aa9 consent vocabulary.  Adding a term here changes the spelling
-feder emits, so it belongs with the vocabulary types that read it.
+[`normalize`] writes its output in.  Its terms come from two places.  The
+first is Mastodon 4.7.1’s `CONTEXT_EXTENSION_MAP`, which is what the rest of
+the network already agrees to read — the `toot:`, `ostatus:` and `schema:`
+terms, and the FEP-044f/7aa9 consent vocabulary.  The second is the default
+contexts of the vocabulary schemas *feder-vocab* generates its types from
+(*crates/feder-vocab/schemas*): the bundled data-integrity, Multikey, DID and
+GoToSocial contexts they reference, and their inline Misskey, Fedibird,
+LitePub, ValueFlows and units-of-measure terms.  Without the data-integrity
+context in particular a proof normalises to `sec:proofValue` in a typed value
+object rather than the `proofValue` it was written with.  Adding a term here
+changes the spelling feder emits, so it belongs with the vocabulary types that
+read it.
 
 [`normalize`]: https://docs.rs/feder-jsonld/latest/feder_jsonld/fn.normalize.html
 

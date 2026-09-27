@@ -2,15 +2,25 @@
   "@context": [
     "https://www.w3.org/ns/activitystreams",
     "https://w3id.org/security/v1",
+    "https://w3id.org/security/data-integrity/v1",
+    "https://w3id.org/security/multikey/v1",
+    "https://www.w3.org/ns/did/v1",
+    "https://gotosocial.org/ns",
     "https://purl.archive.org/socialweb/webfinger",
     {
       "toot": "http://joinmastodon.org/ns#",
       "schema": "http://schema.org#",
       "ostatus": "http://ostatus.org#",
       "gts": "https://gotosocial.org/ns#",
+      "misskey": "https://misskey-hub.net/ns#",
+      "fedibird": "http://fedibird.com/ns#",
+      "litepub": "http://litepub.social/ns#",
+      "vf": "https://w3id.org/valueflows/ont/vf#",
+      "om2": "http://www.ontology-of-units-of-measure.org/resource/om-2/",
 
       "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
       "sensitive": "as:sensitive",
+      "quoteUrl": "as:quoteUrl",
       "Hashtag": "as:Hashtag",
       "movedTo": { "@id": "as:movedTo", "@type": "@id" },
       "alsoKnownAs": { "@id": "as:alsoKnownAs", "@type": "@id" },
@@ -58,7 +68,33 @@
       "canQuote": { "@id": "gts:canQuote", "@type": "@id" },
       "canFeature": { "@id": "https://w3id.org/fep/7aa9#canFeature", "@type": "@id" },
       "automaticApproval": { "@id": "gts:automaticApproval", "@type": "@id" },
-      "manualApproval": { "@id": "gts:manualApproval", "@type": "@id" }
+      "manualApproval": { "@id": "gts:manualApproval", "@type": "@id" },
+
+      "isCat": "misskey:isCat",
+      "_misskey_followedMessage": "misskey:_misskey_followedMessage",
+      "emojiReactions": { "@id": "fedibird:emojiReactions", "@type": "@id" },
+      "ChatMessage": "litepub:ChatMessage",
+      "EmojiReact": "litepub:EmojiReact",
+
+      "hasNumericalValue": "om2:hasNumericalValue",
+      "hasUnit": "om2:hasUnit",
+
+      "Agreement": "vf:Agreement",
+      "Commitment": "vf:Commitment",
+      "Intent": "vf:Intent",
+      "Proposal": "vf:Proposal",
+      "action": "vf:action",
+      "availableQuantity": "vf:availableQuantity",
+      "minimumQuantity": "vf:minimumQuantity",
+      "publishes": "vf:publishes",
+      "purpose": "vf:purpose",
+      "reciprocal": "vf:reciprocal",
+      "resourceConformsTo": { "@id": "vf:resourceConformsTo", "@type": "@id" },
+      "resourceQuantity": "vf:resourceQuantity",
+      "satisfies": { "@id": "vf:satisfies", "@type": "@id" },
+      "stipulates": "vf:stipulates",
+      "stipulatesReciprocal": "vf:stipulatesReciprocal",
+      "unitBased": "vf:unitBased"
     }
   ]
 }
