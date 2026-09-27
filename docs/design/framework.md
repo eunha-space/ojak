@@ -476,7 +476,7 @@ next to what they have now.
     table behind it. This is where retry in the other scheme and typed errors
     pay off.
 4.  *Serving.* Actor, object and collection dispatchers, WebFinger and
-    NodeInfo, which only answer GET requests.
+    NodeInfo, which only answer GET requests. *serving.md* has the design.
 5.  *The inbox.* Late, because it is where a mistake is a security problem.
     Eunha's handlers become listeners; what they do to the database does not
     change.
