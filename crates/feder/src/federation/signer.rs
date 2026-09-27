@@ -45,8 +45,23 @@ impl Published {
 }
 
 pub(super) async fn verify<D: Clone + Send + Sync + 'static>(context: &Context<D>) -> Option<Url> {
-    let settings = context.inner.federation.signed_fetch.as_ref()?;
-    let info = context.inner.request.as_ref()?;
+    authenticate(context, b"").await.ok()
+}
+
+/// Who signed the request `context` was made for, carrying `body`: the actor
+/// whose published key the signature verifies with, after the signature has
+/// been held to the policy. Why not, when it is not.
+pub(super) async fn authenticate<D: Clone + Send + Sync + 'static>(
+    context: &Context<D>,
+    body: &[u8],
+) -> Result<Url, String> {
+    let settings = context
+        .inner
+        .federation
+        .signed_fetch
+        .as_ref()
+        .ok_or("signed fetches are not configured")?;
+    let info = context.inner.request.as_ref().ok_or("no request")?;
     let headers: Vec<(&str, &str)> = info
         .headers
         .iter()
@@ -56,9 +71,9 @@ pub(super) async fn verify<D: Clone + Send + Sync + 'static>(context: &Context<D
         method: &info.method,
         path_and_query: &info.path_and_query,
         headers: &headers,
-        body: b"",
+        body,
     };
-    let signature = verification::parse(&request).ok()?;
+    let signature = verification::parse(&request).map_err(|error| error.to_string())?;
     let canonical = authority(context.origin());
     let hosts = [info.host.as_str(), canonical.as_str()];
     verification::check(
@@ -67,7 +82,7 @@ pub(super) async fn verify<D: Clone + Send + Sync + 'static>(context: &Context<D
         &Policy::new(&hosts),
         chrono::Utc::now().timestamp(),
     )
-    .ok()?;
+    .map_err(|error| error.to_string())?;
 
     let cache_key = ["feder", "key", signature.key_id.as_str()];
     match settings.kv.get(&cache_key).await {
@@ -75,14 +90,16 @@ pub(super) async fn verify<D: Clone + Send + Sync + 'static>(context: &Context<D
             if let Some(published) = Published::from_json(&cached)
                 && check(&signature, &request, &published)
             {
-                return Some(published.actor);
+                return Ok(published.actor);
             }
         }
         Ok(None) => {}
         Err(error) => context.report(&Error::from(error)),
     }
 
-    let published = fetch_key(context, settings, &signature).await?;
+    let published = fetch_key(context, settings, &signature)
+        .await
+        .ok_or_else(|| format!("no key {} published by its actor", signature.key_id))?;
     if let Err(error) = settings
         .kv
         .set(&cache_key, published.to_json(), Some(settings.key_ttl))
@@ -90,7 +107,66 @@ pub(super) async fn verify<D: Clone + Send + Sync + 'static>(context: &Context<D
     {
         context.report(&Error::from(error));
     }
-    check(&signature, &request, &published).then_some(published.actor)
+    if check(&signature, &request, &published) {
+        Ok(published.actor)
+    } else {
+        Err("the signature does not verify".into())
+    }
+}
+
+/// Who an FEP-8b32 integrity proof on `document` says made it: the actor
+/// `actor`, when the proof verifies with a key the actor lists as an
+/// `assertionMethod` and that key is on the actor's origin.
+pub(super) async fn prove<D: Clone + Send + Sync + 'static>(
+    context: &Context<D>,
+    document: &Value,
+    actor: &str,
+) -> Result<Url, String> {
+    use feder_runtime::integrity;
+
+    let settings = context
+        .inner
+        .federation
+        .signed_fetch
+        .as_ref()
+        .ok_or("signed fetches are not configured")?;
+    let (proof, _, method) =
+        integrity::extract_integrity_proof(document).ok_or("no usable integrity proof")?;
+    if !feder_core::origin::same_origin(&method, actor) {
+        return Err(format!("proof key {method} is not on {actor}'s origin"));
+    }
+    let actor_url = Url::parse(actor).map_err(|error| error.to_string())?;
+    let key = match (settings.key)(context.clone()).await {
+        Ok(key) => key,
+        Err(error) => {
+            context.report(&error);
+            None
+        }
+    };
+    let fetched = settings
+        .fetcher
+        .document(&actor_url, key.as_ref())
+        .await
+        .map_err(|error| error.to_string())?;
+    let multibase = assertion_method(&fetched.json, &method)
+        .ok_or_else(|| format!("{actor} does not list {method} as an assertionMethod"))?;
+    let public_key = integrity::decode_multikey(&multibase).map_err(|error| error.to_string())?;
+    integrity::verify_object_integrity_proof(document, &proof, &public_key)
+        .map_err(|error| error.to_string())?;
+    Url::parse(&fetched.id).map_err(|error| error.to_string())
+}
+
+/// The `publicKeyMultibase` of the `assertionMethod` `method` an actor lists.
+fn assertion_method(actor: &Value, method: &str) -> Option<String> {
+    let methods = match actor.get("assertionMethod")? {
+        Value::Array(items) => items.iter().collect(),
+        item => vec![item],
+    };
+    methods.into_iter().find_map(|item| {
+        (item.get("id").and_then(Value::as_str) == Some(method))
+            .then(|| item.get("publicKeyMultibase")?.as_str().map(str::to_owned))
+            .flatten()
+    })
 }
 
 fn check(signature: &Signature, request: &Request<'_>, published: &Published) -> bool {

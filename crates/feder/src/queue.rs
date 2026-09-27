@@ -282,6 +282,94 @@ impl Queue for MemoryQueue {
     }
 }
 
+type BoxFuture<'a, T> = std::pin::Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// A [`Queue`] behind a pointer, for where the backend is chosen at run time:
+/// an application with a database per tenant hands Feder a different queue
+/// for each request. Any [`Queue`] is one; [`shared`] makes a [`SharedQueue`].
+pub trait DynQueue: Send + Sync {
+    /// [`Queue::enqueue`].
+    fn enqueue<'a>(
+        &'a self,
+        queue: &'a str,
+        payloads: Vec<Value>,
+    ) -> BoxFuture<'a, Result<(), QueueError>>;
+    /// [`Queue::claim`].
+    fn claim<'a>(
+        &'a self,
+        queue: &'a str,
+        limit: usize,
+        lease: Duration,
+    ) -> BoxFuture<'a, Result<Vec<Job>, QueueError>>;
+    /// [`Queue::complete`].
+    fn complete<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<(), QueueError>>;
+    /// [`Queue::retry`].
+    fn retry<'a>(
+        &'a self,
+        id: &'a str,
+        delay: Duration,
+        error: &'a str,
+    ) -> BoxFuture<'a, Result<(), QueueError>>;
+    /// [`Queue::fail`].
+    fn fail<'a>(&'a self, id: &'a str, error: &'a str) -> BoxFuture<'a, Result<(), QueueError>>;
+    /// [`Queue::next_due`].
+    fn next_due<'a>(
+        &'a self,
+        queue: &'a str,
+    ) -> BoxFuture<'a, Result<Option<Duration>, QueueError>>;
+}
+
+impl<Q: Queue> DynQueue for Q {
+    fn enqueue<'a>(
+        &'a self,
+        queue: &'a str,
+        payloads: Vec<Value>,
+    ) -> BoxFuture<'a, Result<(), QueueError>> {
+        Box::pin(Queue::enqueue(self, queue, payloads))
+    }
+
+    fn claim<'a>(
+        &'a self,
+        queue: &'a str,
+        limit: usize,
+        lease: Duration,
+    ) -> BoxFuture<'a, Result<Vec<Job>, QueueError>> {
+        Box::pin(Queue::claim(self, queue, limit, lease))
+    }
+
+    fn complete<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<(), QueueError>> {
+        Box::pin(Queue::complete(self, id))
+    }
+
+    fn retry<'a>(
+        &'a self,
+        id: &'a str,
+        delay: Duration,
+        error: &'a str,
+    ) -> BoxFuture<'a, Result<(), QueueError>> {
+        Box::pin(Queue::retry(self, id, delay, error))
+    }
+
+    fn fail<'a>(&'a self, id: &'a str, error: &'a str) -> BoxFuture<'a, Result<(), QueueError>> {
+        Box::pin(Queue::fail(self, id, error))
+    }
+
+    fn next_due<'a>(
+        &'a self,
+        queue: &'a str,
+    ) -> BoxFuture<'a, Result<Option<Duration>, QueueError>> {
+        Box::pin(Queue::next_due(self, queue))
+    }
+}
+
+/// A queue shared behind a pointer; see [`DynQueue`].
+pub type SharedQueue = std::sync::Arc<dyn DynQueue>;
+
+/// `queue` as a [`SharedQueue`].
+pub fn shared(queue: impl Queue) -> SharedQueue {
+    std::sync::Arc::new(queue)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

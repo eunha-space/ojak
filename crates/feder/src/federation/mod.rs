@@ -11,12 +11,14 @@
 //! under any server framework; *feder-axum* adapts it to axum.
 
 mod collection;
+mod inbox;
 mod negotiate;
 mod nodeinfo;
 mod signer;
 mod webfinger;
 
 pub use collection::{Collection, First, Page};
+pub use inbox::{InboxWorker, InboxWorkerConfig, MAX_BODY as MAX_INBOX_BODY, Received};
 pub use nodeinfo::{NodeInfo, Software, Usage};
 
 use crate::fetch::Fetcher;
@@ -239,6 +241,12 @@ struct Inner<D> {
     nodeinfo: Option<NodeInfoFn<D>>,
     signed_fetch: Option<signer::SignedFetch<D>>,
     on_error: Option<ErrorFn>,
+    inboxes: Vec<(String, Template)>,
+    shared_inbox: Option<Template>,
+    listeners: std::collections::HashMap<&'static str, inbox::ListenerFn<D>>,
+    blocked: Option<inbox::BlockedFn<D>>,
+    on_unverified: Option<inbox::UnverifiedFn<D>>,
+    inbox_queue: Option<inbox::QueueFn<D>>,
 }
 
 /// Everything Feder serves, and the URIs it builds. Cheap to clone.
@@ -281,6 +289,12 @@ pub struct Builder<D> {
     nodeinfo: Option<NodeInfoFn<D>>,
     signed_fetch: Option<signer::SignedFetch<D>>,
     on_error: Option<ErrorFn>,
+    inboxes: Vec<(String, String)>,
+    shared_inbox: Option<String>,
+    listeners: std::collections::HashMap<&'static str, inbox::ListenerFn<D>>,
+    blocked: Option<inbox::BlockedFn<D>>,
+    on_unverified: Option<inbox::UnverifiedFn<D>>,
+    inbox_queue: Option<inbox::QueueFn<D>>,
     errors: Vec<String>,
 }
 
@@ -298,6 +312,12 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             nodeinfo: None,
             signed_fetch: None,
             on_error: None,
+            inboxes: Vec::new(),
+            shared_inbox: None,
+            listeners: std::collections::HashMap::new(),
+            blocked: None,
+            on_unverified: None,
+            inbox_queue: None,
             errors: Vec::new(),
         }
     }
@@ -317,9 +337,71 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
         }
     }
 
-    /// Answer `request`, or say why it is not Feder's to answer.
+    /// The inbox `path` is, if it is one: `Some(Some(actor))` for an actor's,
+    /// `Some(None)` for the shared inbox.
+    fn inbox_at(&self, path: &str) -> Option<Option<ActorRef>> {
+        if self
+            .inner
+            .shared_inbox
+            .as_ref()
+            .is_some_and(|shared| shared.matches(path).is_some())
+        {
+            return Some(None);
+        }
+        self.inner.inboxes.iter().find_map(|(kind, template)| {
+            let values = template.matches(path)?;
+            Some(Some(ActorRef::new(
+                kind.clone(),
+                values.single().unwrap_or_default(),
+            )))
+        })
+    }
+
+    /// Whether `path` is an inbox, whose POSTs [`Federation::handle_with_body`]
+    /// answers: what an adapter asks before reading a request's body.
+    #[must_use]
+    pub fn is_inbox(&self, path: &str) -> bool {
+        self.inbox_at(path).is_some()
+    }
+
+    /// Answer `request` with its `body`: an activity POSTed to an inbox is
+    /// received; anything else is answered as [`Federation::handle`] does.
+    pub async fn handle_with_body(
+        &self,
+        request: &http::request::Parts,
+        body: &[u8],
+        data: D,
+    ) -> Handled {
+        let Some(recipient) = self.inbox_at(request.uri.path()) else {
+            return self.handle(request, data).await;
+        };
+        let host = request_host(request);
+        let Some(origin) = self.origin_for(&host, &data) else {
+            return Handled::NotFound;
+        };
+        if request.method != Method::POST {
+            let mut response = empty(StatusCode::METHOD_NOT_ALLOWED);
+            response
+                .headers_mut()
+                .insert(header::ALLOW, HeaderValue::from_static("POST"));
+            return Handled::Response(response);
+        }
+        let context = Context::new(
+            self.inner.clone(),
+            data,
+            origin,
+            Some(RequestInfo::of(request, host)),
+        );
+        Handled::Response(inbox::receive(context, recipient, body).await)
+    }
+
+    /// Answer `request`, or say why it is not Feder's to answer. An inbox's
+    /// POST needs its body: [`Federation::handle_with_body`].
     pub async fn handle(&self, request: &http::request::Parts, data: D) -> Handled {
         let path = request.uri.path();
+        if self.is_inbox(path) {
+            return Box::pin(self.handle_with_body(request, b"", data)).await;
+        }
         let special = self.special(path);
         let matched = if special.is_some() {
             None
@@ -643,6 +725,88 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         self
     }
 
+    /// Receive activities at `template`, the inbox of the actors of `kind`,
+    /// whose one expression is the actor's identifier.
+    #[must_use]
+    pub fn inbox(mut self, kind: &str, template: &str) -> Self {
+        self.inboxes.push((kind.to_owned(), template.to_owned()));
+        self
+    }
+
+    /// Receive activities at `path`, the shared inbox.
+    #[must_use]
+    pub fn shared_inbox(mut self, path: &str) -> Self {
+        self.shared_inbox = Some(path.to_owned());
+        self
+    }
+
+    /// Run `listen` for every activity of type `T` an inbox receives from a
+    /// sender Feder has authenticated. Types with no listener are accepted
+    /// and dropped.
+    #[must_use]
+    pub fn on<T, F, Fut, E>(mut self, listen: F) -> Self
+    where
+        T: feder_vocab::json::Typed
+            + feder_vocab::json::FromJson
+            + feder_vocab::json::ToJson
+            + Send
+            + 'static,
+        F: Fn(Context<D>, Received<T>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<(), E>> + Send + 'static,
+        E: Into<Error>,
+    {
+        if self
+            .listeners
+            .insert(T::TYPE, inbox::listener(listen))
+            .is_some()
+        {
+            self.errors.push(format!("two listeners for {}", T::TYPE));
+        }
+        self
+    }
+
+    /// Whether activities from `host` are refused, asked before any key is
+    /// fetched for them. A refused activity is answered 202 and dropped.
+    #[must_use]
+    pub fn blocked<F, Fut, E>(mut self, blocked: F) -> Self
+    where
+        F: Fn(Context<D>, String) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<bool, E>> + Send + 'static,
+        E: Into<Error>,
+    {
+        let blocked = boxed(move |(context, host)| blocked(context, host));
+        self.blocked = Some(Arc::new(move |context, host| blocked((context, host))));
+        self
+    }
+
+    /// See every activity whose sender could not be authenticated, which is
+    /// where an application removes an actor whose Delete it could not
+    /// verify because the actor, key and all, is gone.
+    #[must_use]
+    pub fn on_unverified<F, Fut>(mut self, hook: F) -> Self
+    where
+        F: Fn(Context<D>, Value) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        self.on_unverified = Some(Arc::new(move |context, document| {
+            Box::pin(hook(context, document))
+        }));
+        self
+    }
+
+    /// The queue activities wait in for an [`InboxWorker`], for the data of a
+    /// request: an application with a database per tenant has a queue per
+    /// tenant. Without one, or when it gives `None`, listeners run inside the
+    /// request.
+    #[must_use]
+    pub fn inbox_queue(
+        mut self,
+        queue: impl Fn(&D) -> Option<crate::queue::SharedQueue> + Send + Sync + 'static,
+    ) -> Self {
+        self.inbox_queue = Some(Arc::new(queue));
+        self
+    }
+
     /// See every error a dispatcher returns, which is otherwise a bare 500.
     #[must_use]
     pub fn on_error(mut self, report: impl Fn(&Error) + Send + Sync + 'static) -> Self {
@@ -695,6 +859,73 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                 }
             }
         }
+        let mut inboxes = Vec::new();
+        for (kind, template) in std::mem::take(&mut self.inboxes) {
+            match Template::parse(&template) {
+                Ok(template) => {
+                    if template.names().count() != 1 {
+                        errors.push(format!(
+                            "inbox {}: has to name its actor in one expression",
+                            template.as_str()
+                        ));
+                    }
+                    if !self.entries.iter().any(|entry| {
+                        entry.kind == kind && matches!(entry.dispatcher, Dispatcher::Actor(_))
+                    }) {
+                        errors.push(format!("inbox for {kind:?}, which is no actor kind"));
+                    }
+                    inboxes.push((kind, template));
+                }
+                Err(error) => errors.push(error.to_string()),
+            }
+        }
+        let shared_inbox = match self.shared_inbox.take().map(|path| Template::parse(&path)) {
+            Some(Ok(template)) if template.names().count() == 0 => Some(template),
+            Some(Ok(template)) => {
+                errors.push(format!(
+                    "shared inbox {} has an expression",
+                    template.as_str()
+                ));
+                None
+            }
+            Some(Err(error)) => {
+                errors.push(error.to_string());
+                None
+            }
+            None => None,
+        };
+        let inbox_templates: Vec<&Template> = inboxes
+            .iter()
+            .map(|(_, template)| template)
+            .chain(shared_inbox.as_ref())
+            .collect();
+        for (n, template) in inbox_templates.iter().enumerate() {
+            for other in self
+                .entries
+                .iter()
+                .map(|entry| &entry.template)
+                .chain(inbox_templates[n + 1..].iter().copied())
+            {
+                if template.overlaps(other) {
+                    errors.push(format!(
+                        "{} and {} could match one path",
+                        template.as_str(),
+                        other.as_str()
+                    ));
+                }
+            }
+            for reserved in RESERVED {
+                if template.matches(reserved).is_some() {
+                    errors.push(format!(
+                        "{} claims {reserved}, which Feder serves",
+                        template.as_str()
+                    ));
+                }
+            }
+        }
+        if !inbox_templates.is_empty() && self.signed_fetch.is_none() {
+            errors.push("an inbox needs signed_fetch, to fetch and cache senders' keys".into());
+        }
         for (kind, authorize) in std::mem::take(&mut self.authorize) {
             match self.entries.iter_mut().find(|entry| entry.kind == kind) {
                 Some(entry) => entry.authorize = Some(authorize),
@@ -713,6 +944,12 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     nodeinfo: self.nodeinfo,
                     signed_fetch: self.signed_fetch,
                     on_error: self.on_error,
+                    inboxes,
+                    shared_inbox,
+                    listeners: self.listeners,
+                    blocked: self.blocked,
+                    on_unverified: self.on_unverified,
+                    inbox_queue: self.inbox_queue,
                 }),
             }),
             _ => Err(BuildError(errors)),
@@ -1091,6 +1328,13 @@ trait DynKv: Send + Sync {
         value: Value,
         ttl: Option<Duration>,
     ) -> BoxFuture<'a, Result<(), KvError>>;
+    fn insert<'a>(
+        &'a self,
+        key: &'a [&'a str],
+        value: Value,
+        ttl: Option<Duration>,
+    ) -> BoxFuture<'a, Result<bool, KvError>>;
+    fn delete<'a>(&'a self, key: &'a [&'a str]) -> BoxFuture<'a, Result<(), KvError>>;
 }
 
 impl<K: KvStore> DynKv for K {
@@ -1105,6 +1349,19 @@ impl<K: KvStore> DynKv for K {
         ttl: Option<Duration>,
     ) -> BoxFuture<'a, Result<(), KvError>> {
         Box::pin(KvStore::set(self, key, value, ttl))
+    }
+
+    fn insert<'a>(
+        &'a self,
+        key: &'a [&'a str],
+        value: Value,
+        ttl: Option<Duration>,
+    ) -> BoxFuture<'a, Result<bool, KvError>> {
+        Box::pin(KvStore::insert(self, key, value, ttl))
+    }
+
+    fn delete<'a>(&'a self, key: &'a [&'a str]) -> BoxFuture<'a, Result<(), KvError>> {
+        Box::pin(KvStore::delete(self, key))
     }
 }
 

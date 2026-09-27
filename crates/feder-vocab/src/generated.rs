@@ -122,6 +122,10 @@ impl Accept {
     pub const TYPE: &'static str = "Accept";
 }
 
+impl json::Typed for Accept {
+    const TYPE: &'static str = "Accept";
+}
+
 impl FromJson for Accept {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -366,6 +370,10 @@ impl Activity {
     pub const TYPE: &'static str = "Activity";
 }
 
+impl json::Typed for Activity {
+    const TYPE: &'static str = "Activity";
+}
+
 impl FromJson for Activity {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -594,6 +602,10 @@ impl Add {
     pub const TYPE: &'static str = "Add";
 }
 
+impl json::Typed for Add {
+    const TYPE: &'static str = "Add";
+}
+
 impl FromJson for Add {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -813,6 +825,10 @@ impl Agreement {
     pub const TYPE_IRI: &'static str = "https://w3id.org/valueflows/ont/vf#Agreement";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Agreement";
+}
+
+impl json::Typed for Agreement {
+    const TYPE: &'static str = "Agreement";
 }
 
 impl FromJson for Agreement {
@@ -1036,6 +1052,10 @@ impl Announce {
     pub const TYPE: &'static str = "Announce";
 }
 
+impl json::Typed for Announce {
+    const TYPE: &'static str = "Announce";
+}
+
 impl FromJson for Announce {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -1253,6 +1273,10 @@ impl AnnounceAuthorization {
     pub const TYPE_IRI: &'static str = "https://gotosocial.org/ns#AnnounceAuthorization";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "AnnounceAuthorization";
+}
+
+impl json::Typed for AnnounceAuthorization {
+    const TYPE: &'static str = "AnnounceAuthorization";
 }
 
 impl FromJson for AnnounceAuthorization {
@@ -1479,6 +1503,10 @@ impl AnnounceRequest {
     pub const TYPE_IRI: &'static str = "https://gotosocial.org/ns#AnnounceRequest";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "AnnounceRequest";
+}
+
+impl json::Typed for AnnounceRequest {
+    const TYPE: &'static str = "AnnounceRequest";
 }
 
 impl FromJson for AnnounceRequest {
@@ -1799,6 +1827,10 @@ impl Application {
     pub const TYPE: &'static str = "Application";
 }
 
+impl json::Typed for Application {
+    const TYPE: &'static str = "Application";
+}
+
 impl FromJson for Application {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -2075,6 +2107,10 @@ impl Arrive {
     pub const TYPE: &'static str = "Arrive";
 }
 
+impl json::Typed for Arrive {
+    const TYPE: &'static str = "Arrive";
+}
+
 impl FromJson for Arrive {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -2296,6 +2332,10 @@ impl Article {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Article";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Article";
+}
+
+impl json::Typed for Article {
+    const TYPE: &'static str = "Article";
 }
 
 impl FromJson for Article {
@@ -2527,6 +2567,10 @@ impl Audio {
     pub const TYPE: &'static str = "Audio";
 }
 
+impl json::Typed for Audio {
+    const TYPE: &'static str = "Audio";
+}
+
 impl FromJson for Audio {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -2753,6 +2797,10 @@ impl Block {
     pub const TYPE: &'static str = "Block";
 }
 
+impl json::Typed for Block {
+    const TYPE: &'static str = "Block";
+}
+
 impl FromJson for Block {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -2977,6 +3025,10 @@ impl ChatMessage {
     pub const TYPE_IRI: &'static str = "http://litepub.social/ns#ChatMessage";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "ChatMessage";
+}
+
+impl json::Typed for ChatMessage {
+    const TYPE: &'static str = "ChatMessage";
 }
 
 impl FromJson for ChatMessage {
@@ -3225,6 +3277,10 @@ impl Collection {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Collection";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Collection";
+}
+
+impl json::Typed for Collection {
+    const TYPE: &'static str = "Collection";
 }
 
 impl FromJson for Collection {
@@ -3521,6 +3577,10 @@ impl CollectionPage {
     pub const TYPE: &'static str = "CollectionPage";
 }
 
+impl json::Typed for CollectionPage {
+    const TYPE: &'static str = "CollectionPage";
+}
+
 impl FromJson for CollectionPage {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -3720,6 +3780,10 @@ impl Commitment {
     pub const TYPE: &'static str = "Commitment";
 }
 
+impl json::Typed for Commitment {
+    const TYPE: &'static str = "Commitment";
+}
+
 impl FromJson for Commitment {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -3847,6 +3911,10 @@ impl Create {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Create";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Create";
+}
+
+impl json::Typed for Create {
+    const TYPE: &'static str = "Create";
 }
 
 impl FromJson for Create {
@@ -4012,6 +4080,10 @@ impl CryptographicKey {
     pub const TYPE: &'static str = "CryptographicKey";
 }
 
+impl json::Typed for CryptographicKey {
+    const TYPE: &'static str = "CryptographicKey";
+}
+
 impl FromJson for CryptographicKey {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -4059,6 +4131,10 @@ impl DataIntegrityProof {
     pub const TYPE_IRI: &'static str = "https://w3id.org/security#DataIntegrityProof";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "DataIntegrityProof";
+}
+
+impl json::Typed for DataIntegrityProof {
+    const TYPE: &'static str = "DataIntegrityProof";
 }
 
 impl FromJson for DataIntegrityProof {
@@ -4195,6 +4271,10 @@ impl Delete {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Delete";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Delete";
+}
+
+impl json::Typed for Delete {
+    const TYPE: &'static str = "Delete";
 }
 
 impl FromJson for Delete {
@@ -4344,6 +4424,10 @@ impl DidService {
     pub const TYPE: &'static str = "https://www.w3.org/ns/did#Service";
 }
 
+impl json::Typed for DidService {
+    const TYPE: &'static str = "https://www.w3.org/ns/did#Service";
+}
+
 impl FromJson for DidService {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -4467,6 +4551,10 @@ impl Dislike {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Dislike";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Dislike";
+}
+
+impl json::Typed for Dislike {
+    const TYPE: &'static str = "Dislike";
 }
 
 impl FromJson for Dislike {
@@ -4692,6 +4780,10 @@ impl Document {
     pub const TYPE: &'static str = "Document";
 }
 
+impl json::Typed for Document {
+    const TYPE: &'static str = "Document";
+}
+
 impl FromJson for Document {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -4899,6 +4991,10 @@ impl Emoji {
     pub const TYPE_IRI: &'static str = "http://joinmastodon.org/ns#Emoji";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Emoji";
+}
+
+impl json::Typed for Emoji {
+    const TYPE: &'static str = "Emoji";
 }
 
 impl FromJson for Emoji {
@@ -5112,6 +5208,10 @@ impl EmojiReact {
     pub const TYPE_IRI: &'static str = "http://litepub.social/ns#EmojiReact";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "EmojiReact";
+}
+
+impl json::Typed for EmojiReact {
+    const TYPE: &'static str = "EmojiReact";
 }
 
 impl FromJson for EmojiReact {
@@ -5422,6 +5522,10 @@ impl Event {
     pub const TYPE: &'static str = "Event";
 }
 
+impl json::Typed for Event {
+    const TYPE: &'static str = "Event";
+}
+
 impl FromJson for Event {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -5551,6 +5655,10 @@ impl Export {
     pub const TYPE: &'static str = "https://w3id.org/fep/9091#Export";
 }
 
+impl json::Typed for Export {
+    const TYPE: &'static str = "https://w3id.org/fep/9091#Export";
+}
+
 impl FromJson for Export {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -5676,6 +5784,10 @@ impl Flag {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Flag";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Flag";
+}
+
+impl json::Typed for Flag {
+    const TYPE: &'static str = "Flag";
 }
 
 impl FromJson for Flag {
@@ -5904,6 +6016,10 @@ impl Follow {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Follow";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Follow";
+}
+
+impl json::Typed for Follow {
+    const TYPE: &'static str = "Follow";
 }
 
 impl FromJson for Follow {
@@ -6228,6 +6344,10 @@ impl Group {
     pub const TYPE: &'static str = "Group";
 }
 
+impl json::Typed for Group {
+    const TYPE: &'static str = "Group";
+}
+
 impl FromJson for Group {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -6438,6 +6558,10 @@ impl Hashtag {
     pub const TYPE: &'static str = "Hashtag";
 }
 
+impl json::Typed for Hashtag {
+    const TYPE: &'static str = "Hashtag";
+}
+
 impl FromJson for Hashtag {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -6571,6 +6695,10 @@ impl Ignore {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Ignore";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Ignore";
+}
+
+impl json::Typed for Ignore {
+    const TYPE: &'static str = "Ignore";
 }
 
 impl FromJson for Ignore {
@@ -6794,6 +6922,10 @@ impl Image {
     pub const TYPE: &'static str = "Image";
 }
 
+impl json::Typed for Image {
+    const TYPE: &'static str = "Image";
+}
+
 impl FromJson for Image {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -6937,6 +7069,10 @@ impl Intent {
     pub const TYPE_IRI: &'static str = "https://w3id.org/valueflows/ont/vf#Intent";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Intent";
+}
+
+impl json::Typed for Intent {
+    const TYPE: &'static str = "Intent";
 }
 
 impl FromJson for Intent {
@@ -7184,6 +7320,10 @@ impl IntransitiveActivity {
     pub const TYPE: &'static str = "IntransitiveActivity";
 }
 
+impl json::Typed for IntransitiveActivity {
+    const TYPE: &'static str = "IntransitiveActivity";
+}
+
 impl FromJson for IntransitiveActivity {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -7408,6 +7548,10 @@ impl Invite {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Invite";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Invite";
+}
+
+impl json::Typed for Invite {
+    const TYPE: &'static str = "Invite";
 }
 
 impl FromJson for Invite {
@@ -7636,6 +7780,10 @@ impl Join {
     pub const TYPE: &'static str = "Join";
 }
 
+impl json::Typed for Join {
+    const TYPE: &'static str = "Join";
+}
+
 impl FromJson for Join {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -7860,6 +8008,10 @@ impl Leave {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Leave";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Leave";
+}
+
+impl json::Typed for Leave {
+    const TYPE: &'static str = "Leave";
 }
 
 impl FromJson for Leave {
@@ -8088,6 +8240,10 @@ impl Like {
     pub const TYPE: &'static str = "Like";
 }
 
+impl json::Typed for Like {
+    const TYPE: &'static str = "Like";
+}
+
 impl FromJson for Like {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -8304,6 +8460,10 @@ impl LikeAuthorization {
     pub const TYPE_IRI: &'static str = "https://gotosocial.org/ns#LikeApproval";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "LikeAuthorization";
+}
+
+impl json::Typed for LikeAuthorization {
+    const TYPE: &'static str = "LikeAuthorization";
 }
 
 impl FromJson for LikeAuthorization {
@@ -8531,6 +8691,10 @@ impl LikeRequest {
     pub const TYPE: &'static str = "LikeRequest";
 }
 
+impl json::Typed for LikeRequest {
+    const TYPE: &'static str = "LikeRequest";
+}
+
 impl FromJson for LikeRequest {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -8698,6 +8862,10 @@ impl Link {
     pub const TYPE: &'static str = "Link";
 }
 
+impl json::Typed for Link {
+    const TYPE: &'static str = "Link";
+}
+
 impl FromJson for Link {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -8830,6 +8998,10 @@ impl Listen {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Listen";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Listen";
+}
+
+impl json::Typed for Listen {
+    const TYPE: &'static str = "Listen";
 }
 
 impl FromJson for Listen {
@@ -8995,6 +9167,10 @@ impl Measure {
     pub const TYPE: &'static str = "om2:Measure";
 }
 
+impl json::Typed for Measure {
+    const TYPE: &'static str = "om2:Measure";
+}
+
 impl FromJson for Measure {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -9047,6 +9223,10 @@ impl Mention {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Mention";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Mention";
+}
+
+impl json::Typed for Mention {
+    const TYPE: &'static str = "Mention";
 }
 
 impl FromJson for Mention {
@@ -9183,6 +9363,10 @@ impl Move {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Move";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Move";
+}
+
+impl json::Typed for Move {
+    const TYPE: &'static str = "Move";
 }
 
 impl FromJson for Move {
@@ -9329,6 +9513,10 @@ impl Multikey {
     pub const TYPE: &'static str = "Multikey";
 }
 
+impl json::Typed for Multikey {
+    const TYPE: &'static str = "Multikey";
+}
+
 impl FromJson for Multikey {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -9455,6 +9643,10 @@ impl Note {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Note";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Note";
+}
+
+impl json::Typed for Note {
+    const TYPE: &'static str = "Note";
 }
 
 impl FromJson for Note {
@@ -9742,6 +9934,10 @@ impl Object {
     pub const TYPE: &'static str = "Object";
 }
 
+impl json::Typed for Object {
+    const TYPE: &'static str = "Object";
+}
+
 impl FromJson for Object {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -9955,6 +10151,10 @@ impl Offer {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Offer";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Offer";
+}
+
+impl json::Typed for Offer {
+    const TYPE: &'static str = "Offer";
 }
 
 impl FromJson for Offer {
@@ -10196,6 +10396,10 @@ impl OrderedCollection {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#OrderedCollection";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "OrderedCollection";
+}
+
+impl json::Typed for OrderedCollection {
+    const TYPE: &'static str = "OrderedCollection";
 }
 
 impl FromJson for OrderedCollection {
@@ -10494,6 +10698,10 @@ impl OrderedCollectionPage {
         "https://www.w3.org/ns/activitystreams#OrderedCollectionPage";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "OrderedCollectionPage";
+}
+
+impl json::Typed for OrderedCollectionPage {
+    const TYPE: &'static str = "OrderedCollectionPage";
 }
 
 impl FromJson for OrderedCollectionPage {
@@ -10868,6 +11076,10 @@ impl Organization {
     pub const TYPE: &'static str = "Organization";
 }
 
+impl json::Typed for Organization {
+    const TYPE: &'static str = "Organization";
+}
+
 impl FromJson for Organization {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -11141,6 +11353,10 @@ impl Page {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Page";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Page";
+}
+
+impl json::Typed for Page {
+    const TYPE: &'static str = "Page";
 }
 
 impl FromJson for Page {
@@ -11467,6 +11683,10 @@ impl Person {
     pub const TYPE: &'static str = "Person";
 }
 
+impl json::Typed for Person {
+    const TYPE: &'static str = "Person";
+}
+
 impl FromJson for Person {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -11753,6 +11973,10 @@ impl Place {
     pub const TYPE: &'static str = "Place";
 }
 
+impl json::Typed for Place {
+    const TYPE: &'static str = "Place";
+}
+
 impl FromJson for Place {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -11973,6 +12197,10 @@ impl Profile {
     pub const TYPE: &'static str = "Profile";
 }
 
+impl json::Typed for Profile {
+    const TYPE: &'static str = "Profile";
+}
+
 impl FromJson for Profile {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -12104,6 +12332,10 @@ impl PropertyValue {
     pub const TYPE: &'static str = "PropertyValue";
 }
 
+impl json::Typed for PropertyValue {
+    const TYPE: &'static str = "PropertyValue";
+}
+
 impl FromJson for PropertyValue {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -12223,6 +12455,10 @@ impl Proposal {
     pub const TYPE_IRI: &'static str = "https://w3id.org/valueflows/ont/vf#Proposal";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Proposal";
+}
+
+impl json::Typed for Proposal {
+    const TYPE: &'static str = "Proposal";
 }
 
 impl FromJson for Proposal {
@@ -12470,6 +12706,10 @@ impl Question {
     pub const TYPE: &'static str = "Question";
 }
 
+impl json::Typed for Question {
+    const TYPE: &'static str = "Question";
+}
+
 impl FromJson for Question {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -12710,6 +12950,10 @@ impl QuoteAuthorization {
     pub const TYPE: &'static str = "QuoteAuthorization";
 }
 
+impl json::Typed for QuoteAuthorization {
+    const TYPE: &'static str = "QuoteAuthorization";
+}
+
 impl FromJson for QuoteAuthorization {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -12936,6 +13180,10 @@ impl QuoteRequest {
     pub const TYPE: &'static str = "QuoteRequest";
 }
 
+impl json::Typed for QuoteRequest {
+    const TYPE: &'static str = "QuoteRequest";
+}
+
 impl FromJson for QuoteRequest {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -13159,6 +13407,10 @@ impl Read {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Read";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Read";
+}
+
+impl json::Typed for Read {
+    const TYPE: &'static str = "Read";
 }
 
 impl FromJson for Read {
@@ -13387,6 +13639,10 @@ impl Reject {
     pub const TYPE: &'static str = "Reject";
 }
 
+impl json::Typed for Reject {
+    const TYPE: &'static str = "Reject";
+}
+
 impl FromJson for Reject {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -13613,6 +13869,10 @@ impl Relationship {
     pub const TYPE: &'static str = "Relationship";
 }
 
+impl json::Typed for Relationship {
+    const TYPE: &'static str = "Relationship";
+}
+
 impl FromJson for Relationship {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -13833,6 +14093,10 @@ impl Remove {
     pub const TYPE: &'static str = "Remove";
 }
 
+impl json::Typed for Remove {
+    const TYPE: &'static str = "Remove";
+}
+
 impl FromJson for Remove {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -14049,6 +14313,10 @@ impl ReplyAuthorization {
     pub const TYPE_IRI: &'static str = "https://gotosocial.org/ns#ReplyAuthorization";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "ReplyAuthorization";
+}
+
+impl json::Typed for ReplyAuthorization {
+    const TYPE: &'static str = "ReplyAuthorization";
 }
 
 impl FromJson for ReplyAuthorization {
@@ -14274,6 +14542,10 @@ impl ReplyRequest {
     pub const TYPE_IRI: &'static str = "https://gotosocial.org/ns#ReplyRequest";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "ReplyRequest";
+}
+
+impl json::Typed for ReplyRequest {
+    const TYPE: &'static str = "ReplyRequest";
 }
 
 impl FromJson for ReplyRequest {
@@ -14594,6 +14866,10 @@ impl Service {
     pub const TYPE: &'static str = "Service";
 }
 
+impl json::Typed for Service {
+    const TYPE: &'static str = "Service";
+}
+
 impl FromJson for Service {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -14904,6 +15180,10 @@ impl TentativeAccept {
     pub const TYPE: &'static str = "TentativeAccept";
 }
 
+impl json::Typed for TentativeAccept {
+    const TYPE: &'static str = "TentativeAccept";
+}
+
 impl FromJson for TentativeAccept {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -15130,6 +15410,10 @@ impl TentativeReject {
     pub const TYPE: &'static str = "TentativeReject";
 }
 
+impl json::Typed for TentativeReject {
+    const TYPE: &'static str = "TentativeReject";
+}
+
 impl FromJson for TentativeReject {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -15351,6 +15635,10 @@ impl Tombstone {
     pub const TYPE: &'static str = "Tombstone";
 }
 
+impl json::Typed for Tombstone {
+    const TYPE: &'static str = "Tombstone";
+}
+
 impl FromJson for Tombstone {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -15569,6 +15857,10 @@ impl Travel {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Travel";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Travel";
+}
+
+impl json::Typed for Travel {
+    const TYPE: &'static str = "Travel";
 }
 
 impl FromJson for Travel {
@@ -15800,6 +16092,10 @@ impl Undo {
     pub const TYPE: &'static str = "Undo";
 }
 
+impl json::Typed for Undo {
+    const TYPE: &'static str = "Undo";
+}
+
 impl FromJson for Undo {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -16027,6 +16323,10 @@ impl Update {
     pub const TYPE: &'static str = "Update";
 }
 
+impl json::Typed for Update {
+    const TYPE: &'static str = "Update";
+}
+
 impl FromJson for Update {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
@@ -16249,6 +16549,10 @@ impl Video {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#Video";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "Video";
+}
+
+impl json::Typed for Video {
+    const TYPE: &'static str = "Video";
 }
 
 impl FromJson for Video {
@@ -16476,6 +16780,10 @@ impl View {
     pub const TYPE_IRI: &'static str = "https://www.w3.org/ns/activitystreams#View";
     /// The type's `type` in a normalised document.
     pub const TYPE: &'static str = "View";
+}
+
+impl json::Typed for View {
+    const TYPE: &'static str = "View";
 }
 
 impl FromJson for View {

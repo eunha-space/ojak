@@ -470,6 +470,7 @@ dependencies = [
  "axum",
  "chrono",
  "feder-core",
+ "feder-jsonld",
  "feder-runtime",
  "feder-vocab",
  "futures-util",

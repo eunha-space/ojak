@@ -3,7 +3,8 @@
 //! [`wrap`] puts the federation in front of an application's router: a
 //! request Feder answers is answered, and every other one, including a
 //! request to one of Feder's routes that asked for a page rather than
-//! ActivityPub, goes on to the application.
+//! ActivityPub, goes on to the application. An inbox's POST is read, up to
+//! [`MAX_INBOX_BODY`], and received.
 //!
 //! ~~~~ ignore
 //! let app = feder_axum::wrap(app, federation, |parts| {
@@ -18,10 +19,11 @@
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{Request, State};
+use axum::http::StatusCode;
 use axum::http::request::Parts;
 use axum::middleware::{self, Next};
-use axum::response::Response;
-use feder::federation::{Federation, Handled};
+use axum::response::{IntoResponse, Response};
+use feder::federation::{Federation, Handled, MAX_INBOX_BODY};
 use std::sync::Arc;
 
 type DataFn<D> = Arc<dyn Fn(&Parts) -> Option<D> + Send + Sync>;
@@ -67,9 +69,24 @@ async fn serve<D: Clone + Send + Sync + 'static>(
     next: Next,
 ) -> Response {
     let (parts, body) = request.into_parts();
-    if let Some(data) = (serving.data)(&parts)
-        && let Handled::Response(response) = serving.federation.handle(&parts, data).await
-    {
+    let Some(data) = (serving.data)(&parts) else {
+        return next.run(Request::from_parts(parts, body)).await;
+    };
+    if serving.federation.is_inbox(parts.uri.path()) {
+        // An inbox's POST is read here, bounded, and the body is Feder's.
+        let Ok(body) = axum::body::to_bytes(body, MAX_INBOX_BODY).await else {
+            return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+        };
+        return match serving
+            .federation
+            .handle_with_body(&parts, &body, data)
+            .await
+        {
+            Handled::Response(response) => response.map(Body::from),
+            _ => next.run(Request::from_parts(parts, Body::from(body))).await,
+        };
+    }
+    if let Handled::Response(response) = serving.federation.handle(&parts, data).await {
         return response.map(Body::from);
     }
     next.run(Request::from_parts(parts, body)).await

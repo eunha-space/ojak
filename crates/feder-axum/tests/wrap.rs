@@ -65,3 +65,49 @@ async fn feder_answers_activitypub_and_the_application_the_rest() {
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
 }
+
+#[tokio::test]
+async fn an_inbox_post_is_read_and_received() {
+    use feder::client::{Client, ClientConfig};
+    use feder::delivery::Scheme;
+    use feder::fetch::Fetcher;
+    use feder::kv::MemoryKvStore;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    let federation = Federation::builder()
+        .origin("https://oeee.test".parse().unwrap())
+        .actor("person", "/ap/users/{id}", |_, _: String| async move {
+            Ok::<_, String>(Found::NotFound)
+        })
+        .shared_inbox("/ap/inbox")
+        .signed_fetch(
+            Arc::new(Fetcher::new(
+                Client::new(ClientConfig::default()).unwrap(),
+                Scheme::DraftCavage,
+            )),
+            MemoryKvStore::new(),
+            Duration::from_secs(60),
+            |_| async { Ok::<_, String>(None) },
+        )
+        .build()
+        .unwrap();
+    let app = feder_axum::wrap(Router::new(), federation, |_| Some(()));
+    let post = |body: Vec<u8>| {
+        app.clone().oneshot(
+            Request::post("/ap/inbox")
+                .header("host", "oeee.test")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+    };
+
+    let unsigned = post(br#"{"type":"Follow","actor":"https://a.test/users/a"}"#.to_vec())
+        .await
+        .unwrap();
+    assert_eq!(unsigned.status(), StatusCode::UNAUTHORIZED);
+    let huge = post(vec![b' '; feder::federation::MAX_INBOX_BODY + 1])
+        .await
+        .unwrap();
+    assert_eq!(huge.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}

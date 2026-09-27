@@ -33,6 +33,13 @@ pub trait FromJson: Sized {
     fn from_json(value: &Value) -> Result<Self, JsonError>;
 }
 
+/// A type documents name in their `type`: what an inbox listener is
+/// registered for.
+pub trait Typed {
+    /// The type's `type` in a normalised document, such as `Create`.
+    const TYPE: &'static str;
+}
+
 /// A value that can be written into a document in Feder's spelling.
 pub trait ToJson {
     /// Write `self`.

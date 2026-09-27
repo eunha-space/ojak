@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 feder-core = { path = "../feder-core" }
+feder-jsonld.workspace = true
 feder-runtime = { path = "../feder-runtime" }
 feder-vocab = { path = "../feder-vocab" }
 chrono.workspace = true

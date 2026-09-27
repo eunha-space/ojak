@@ -479,7 +479,7 @@ next to what they have now.
     NodeInfo, which only answer GET requests. *serving.md* has the design.
 5.  *The inbox.* Late, because it is where a mistake is a security problem.
     Eunha's handlers become listeners; what they do to the database does not
-    change.
+    change. *inbox.md* has the design.
 6.  *Generated vocabulary.* Vendor the schemas, write the generator, and move
     *feder-vocab* onto its output once the generated types read the same
     documents the hand-written ones do. It can run beside the steps above;

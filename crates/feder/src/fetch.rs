@@ -123,7 +123,7 @@ pub struct Typed<T> {
 }
 
 /// The contexts documents are read over, parsed once.
-static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::bundled);
+pub(crate) static REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::bundled);
 
 /// Fetches from other servers. Cheap to share; one per process is enough.
 #[derive(Debug)]

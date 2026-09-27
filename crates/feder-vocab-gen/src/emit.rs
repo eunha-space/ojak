@@ -197,6 +197,13 @@ fn emit_struct(
         let _ = writeln!(out, "    pub const TYPE: &'static str = {term:?};");
     }
     let _ = writeln!(out, "}}\n");
+    if let Some(term) = &t.type_term {
+        let _ = writeln!(
+            out,
+            "impl json::Typed for {} {{\n    const TYPE: &'static str = {term:?};\n}}\n",
+            t.name
+        );
+    }
 
     let _ = writeln!(out, "impl FromJson for {} {{", t.name);
     let _ = writeln!(
