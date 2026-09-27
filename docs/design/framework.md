@@ -99,6 +99,16 @@ deployments. An application with its own tables implements the trait over
 them. Eunha's queue tables stay exactly as they are; the loops around them
 move into Feder.
 
+The queue is a store, not a channel. Where Fedify's message queue hands a
+message to a listener, Feder's worker *claims* deliveries from the store for a
+lease, reports each one delivered, to be retried after a delay, or failed,
+and asks when the next one is due. Claiming for a lease is what lets any
+number of workers in any number of processes share one store: the two colours
+of a blue/green deploy both run one, and what a colour was holding when it
+stopped is handed out again when its lease lapses rather than lost. It is
+also exactly what eunha's tables already do with `FOR UPDATE SKIP LOCKED`, so
+they implement it without changing.
+
 The pure functions in `feder-core` stay, and become the rest of that crate:
 given the local actor, the remote actor and a Follow, what should happen,
 including the locked-account path that yields a follow request instead of a

@@ -1,0 +1,24 @@
+[package]
+name = "feder"
+description = "An ActivityPub application framework over feder's protocol crates"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+feder-runtime = { path = "../feder-runtime" }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+ipnet = "2"
+reqwest.workspace = true
+serde_json.workspace = true
+tokio = { version = "1", features = ["net", "sync", "time", "macros"] }
+url.workspace = true
+
+[dev-dependencies]
+axum = "0.8"
+reqwest.workspace = true
+feder-runtime = { path = "../feder-runtime" }
+tokio = { version = "1", features = ["net", "sync", "time", "macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true
