@@ -381,3 +381,64 @@ async fn run_until_returns_when_stopped_and_not_before_the_batch_is_done() {
     assert!(run.is_ok(), "the loop returned once stopped");
     assert!(deliverer.queue().records()[0].complete);
 }
+
+/// A batch finishes by its deadline: a server that keeps failing is given
+/// up on rather than retried for as long as the policy allows, and what is
+/// claimed after the deadline is not sent at all.
+#[tokio::test]
+async fn a_batch_is_given_up_on_at_its_deadline() {
+    use feder::deliverer::Batch;
+    use std::time::SystemTime;
+
+    let inbox = Inbox::answering([Answer::Status(503); 10]);
+    let url = serve(inbox.clone()).await;
+    let failures: Arc<Mutex<Vec<DeliveryFailure>>> = Arc::default();
+    let seen = failures.clone();
+    // Retries a minute apart, twelve of them: without a deadline, this
+    // delivery would take hours to give up on.
+    let config = DelivererConfig {
+        retry: RetryPolicy {
+            initial: Duration::from_secs(60),
+            max_delay: Duration::from_secs(3600),
+            max_attempts: 12,
+        },
+        ..DelivererConfig::default()
+    };
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), config)
+        .on_failure(move |failure| seen.lock().unwrap().push(failure.clone()));
+
+    let batch = Batch {
+        tag: Some("move:1".into()),
+        deadline: Some(SystemTime::now() + Duration::from_secs(30)),
+    };
+    deliverer
+        .send_batch("alice", &json!({}), [url.clone()], &batch)
+        .await
+        .unwrap();
+    drain(&deliverer, 1).await;
+
+    assert_eq!(inbox.received().len(), 1, "tried once");
+    let records = deliverer.queue().records();
+    assert!(records[0].failed, "its next try would be past the deadline");
+    assert_eq!(records[0].job.payload["tag"], "move:1");
+    {
+        let failures = failures.lock().unwrap();
+        assert_eq!(failures.len(), 1);
+        assert!(failures[0].deadline);
+        assert_eq!(failures[0].tag.as_deref(), Some("move:1"));
+        assert_eq!(failures[0].status, Some(503));
+    }
+
+    // Claimed after its deadline, a delivery is not sent.
+    let late = Batch {
+        tag: Some("move:2".into()),
+        deadline: Some(SystemTime::now() - Duration::from_secs(1)),
+    };
+    deliverer
+        .send_batch("alice", &json!({}), [url], &late)
+        .await
+        .unwrap();
+    drain(&deliverer, 1).await;
+    assert_eq!(inbox.received().len(), 1, "nothing sent past the deadline");
+    assert_eq!(failures.lock().unwrap().len(), 2);
+}

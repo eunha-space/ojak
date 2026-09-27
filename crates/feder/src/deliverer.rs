@@ -6,6 +6,12 @@
 //! uses — Feder does not spawn tasks of its own. Any number of loops may run,
 //! in any number of processes, over one queue.
 //!
+//! A batch, such as moving every account's followers, has to finish:
+//! [`Deliverer::send_batch`] tags each delivery so that the batch can be
+//! followed, and gives it a deadline, past which it is given up on rather
+//! than retried, so that one server that is down or too slow does not hold
+//! the batch open for as long as the retry policy would.
+//!
 //! A portable inbox (FEP-ef61) has no host of its own, only the gateways its
 //! actor lists; [`Deliverer::send_portable`] queues it with them, and one
 //! attempt tries each in order until one accepts.
@@ -42,6 +48,11 @@ pub struct DeliveryFailure {
     /// the inbox, or its whole server, is gone for good.
     pub status: Option<u16>,
     pub error: String,
+    /// The tag of the batch it was sent in, if any.
+    pub tag: Option<String>,
+    /// Whether it was given up on for its batch's deadline, rather than for
+    /// the retry policy or an answer that will not change.
+    pub deadline: bool,
 }
 
 /// How the delivery loop behaves.
@@ -95,6 +106,19 @@ pub struct PortableInbox {
     pub gateways: Vec<Url>,
 }
 
+/// What a batch of deliveries shares: a tag to find them by, and when to
+/// give up on the ones that have not gone through.
+#[derive(Clone, Debug, Default)]
+pub struct Batch {
+    /// Kept with each delivery, as `tag` in its payload, for the application
+    /// to follow the batch by.
+    pub tag: Option<String>,
+    /// A delivery that has not gone through by then is given up on, reported
+    /// to the failure handler with [`DeliveryFailure::deadline`] set. One that
+    /// would next be tried after it is given up on at once.
+    pub deadline: Option<std::time::SystemTime>,
+}
+
 /// One delivery, as it waits in the queue.
 struct Delivery {
     activity: Value,
@@ -104,9 +128,28 @@ struct Delivery {
     /// portable inbox at each of its gateways.
     via: Vec<Url>,
     sender: String,
+    tag: Option<String>,
+    /// Seconds since the Unix epoch.
+    deadline: Option<u64>,
 }
 
 impl Delivery {
+    fn new(activity: &Value, inbox: Url, via: Vec<Url>, sender: &str, batch: &Batch) -> Self {
+        Self {
+            activity: activity.clone(),
+            inbox,
+            via,
+            sender: sender.to_owned(),
+            tag: batch.tag.clone(),
+            deadline: batch.deadline.map(unix),
+        }
+    }
+
+    /// Whether the deadline, if there is one, is past at `now`.
+    fn expired(&self, now: std::time::SystemTime) -> bool {
+        self.deadline.is_some_and(|deadline| unix(now) >= deadline)
+    }
+
     fn payload(&self) -> Value {
         let mut payload = json!({
             "activity": self.activity,
@@ -115,6 +158,12 @@ impl Delivery {
         });
         if !self.via.is_empty() {
             payload["via"] = self.via.iter().map(Url::as_str).collect::<Vec<_>>().into();
+        }
+        if let Some(tag) = &self.tag {
+            payload["tag"] = tag.as_str().into();
+        }
+        if let Some(deadline) = self.deadline {
+            payload["deadline"] = deadline.into();
         }
         payload
     }
@@ -132,6 +181,11 @@ impl Delivery {
             inbox: Url::parse(payload.get("inbox")?.as_str()?).ok()?,
             via,
             sender: payload.get("sender")?.as_str()?.to_owned(),
+            tag: payload
+                .get("tag")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            deadline: payload.get("deadline").and_then(Value::as_u64),
         })
     }
 
@@ -201,21 +255,30 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         activity: &Value,
         inboxes: impl IntoIterator<Item = Url>,
     ) -> Result<(), QueueError> {
+        self.send_batch(sender, activity, inboxes, &Batch::default())
+            .await
+    }
+
+    /// [`Deliverer::send`], in `batch`: tagged, and given up on at its
+    /// deadline.
+    ///
+    /// # Errors
+    ///
+    /// When the backend cannot queue them.
+    pub async fn send_batch(
+        &self,
+        sender: &str,
+        activity: &Value,
+        inboxes: impl IntoIterator<Item = Url>,
+        batch: &Batch,
+    ) -> Result<(), QueueError> {
         let inboxes: BTreeSet<Url> = inboxes.into_iter().collect();
         if inboxes.is_empty() {
             return Ok(());
         }
         let payloads = inboxes
             .into_iter()
-            .map(|inbox| {
-                Delivery {
-                    activity: activity.clone(),
-                    inbox,
-                    via: Vec::new(),
-                    sender: sender.to_owned(),
-                }
-                .payload()
-            })
+            .map(|inbox| Delivery::new(activity, inbox, Vec::new(), sender, batch).payload())
             .collect();
         self.queue.enqueue(&self.config.queue, payloads).await?;
         self.wake.notify_one();
@@ -250,15 +313,8 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             if via.is_empty() {
                 continue;
             }
-            payloads.push(
-                Delivery {
-                    activity: activity.clone(),
-                    inbox: encoded,
-                    via,
-                    sender: sender.to_owned(),
-                }
-                .payload(),
-            );
+            payloads
+                .push(Delivery::new(activity, encoded, via, sender, &Batch::default()).payload());
         }
         if payloads.is_empty() {
             return Ok(());
@@ -341,6 +397,20 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             let _ = self.queue.fail(&job.id, "not a delivery").await;
             return;
         };
+        // Past its batch's deadline, it is given up on unsent: the batch is
+        // to have finished by now.
+        if delivery.expired(std::time::SystemTime::now()) {
+            let _ = self
+                .give_up(
+                    &job,
+                    &delivery,
+                    None,
+                    "the batch's deadline passed before it was sent",
+                    true,
+                )
+                .await;
+            return;
+        }
         let outcome = self.attempt(&delivery).await;
         // A backend error here leaves the job claimed; its lease lapses and it
         // is tried again, which is the safe way to be wrong.
@@ -434,21 +504,51 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         match delay {
             Some(delay) => {
                 let delay = error.retry_after().map_or(delay, |asked| asked.max(delay));
+                // A retry that would come after the batch's deadline is not
+                // made: the batch finishes on time, not when the server
+                // comes back.
+                if delivery.expired(std::time::SystemTime::now() + delay) {
+                    let message = format!("the batch's deadline passed: {message}");
+                    return self
+                        .give_up(job, delivery, error.status(), &message, true)
+                        .await;
+                }
                 self.queue.retry(&job.id, delay, &message).await
             }
             None => {
-                if let Some(handler) = &self.on_failure {
-                    handler(&DeliveryFailure {
-                        inbox: delivery.inbox.clone(),
-                        sender: delivery.sender.clone(),
-                        status: error.status(),
-                        error: message.clone(),
-                    });
-                }
-                self.queue.fail(&job.id, &message).await
+                self.give_up(job, delivery, error.status(), &message, false)
+                    .await
             }
         }
     }
+
+    /// Fail `job` for good, and tell the failure handler.
+    async fn give_up(
+        &self,
+        job: &Job,
+        delivery: &Delivery,
+        status: Option<u16>,
+        message: &str,
+        deadline: bool,
+    ) -> Result<(), QueueError> {
+        if let Some(handler) = &self.on_failure {
+            handler(&DeliveryFailure {
+                inbox: delivery.inbox.clone(),
+                sender: delivery.sender.clone(),
+                status,
+                error: message.to_owned(),
+                tag: delivery.tag.clone(),
+                deadline,
+            });
+        }
+        self.queue.fail(&job.id, message).await
+    }
+}
+
+/// `time` as whole seconds since the Unix epoch.
+fn unix(time: std::time::SystemTime) -> u64 {
+    time.duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
 }
 
 /// `duration`, up to a quarter shorter at random.
