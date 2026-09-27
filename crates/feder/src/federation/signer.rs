@@ -19,6 +19,8 @@ type KeyFn<D> =
     Arc<dyn Fn(Context<D>) -> BoxFuture<'static, Result<Option<SenderKey>, Error>> + Send + Sync>;
 
 pub(super) type FetcherFn<D> = Arc<dyn Fn(&D) -> Arc<Fetcher> + Send + Sync>;
+pub(super) type KeyFetchedFn<D> =
+    Arc<dyn Fn(Context<D>, Value) -> BoxFuture<'static, ()> + Send + Sync>;
 pub(super) type KnownKeyFn<D> = Arc<
     dyn Fn(Context<D>, String) -> BoxFuture<'static, Result<Option<KnownKey>, Error>> + Send + Sync,
 >;
@@ -30,6 +32,7 @@ pub(super) struct SignedFetch<D> {
     pub(super) key: KeyFn<D>,
     pub(super) fetcher_for: Option<FetcherFn<D>>,
     pub(super) known_key: Option<KnownKeyFn<D>>,
+    pub(super) key_fetched: Option<KeyFetchedFn<D>>,
 }
 
 impl<D> SignedFetch<D> {
@@ -50,10 +53,12 @@ pub struct KnownKey {
     pub actor: Url,
 }
 
-/// A key, as it is cached: its PEM and the actor that publishes it.
+/// A key, as it is cached: its PEM and the actor that publishes it, and
+/// the actor's document when it was just fetched.
 struct Published {
     pem: String,
     actor: Url,
+    document: Option<Value>,
 }
 
 impl Published {
@@ -65,6 +70,7 @@ impl Published {
         Some(Self {
             pem: value.get("pem")?.as_str()?.to_owned(),
             actor: Url::parse(value.get("actor")?.as_str()?).ok()?,
+            document: None,
         })
     }
 }
@@ -117,6 +123,7 @@ pub(super) async fn authenticate<D: Clone + Send + Sync + 'static>(
                 let published = Published {
                     pem: known.pem,
                     actor: known.actor,
+                    document: None,
                 };
                 if check(&signature, &request, &published) {
                     return Ok(published.actor);
@@ -151,6 +158,12 @@ pub(super) async fn authenticate<D: Clone + Send + Sync + 'static>(
         context.report(&Error::from(error));
     }
     if check(&signature, &request, &published) {
+        // The actor's document, fetched for its key and established as served
+        // from its own origin: an application that stores actors stores this
+        // one now rather than fetching it again.
+        if let (Some(hook), Some(document)) = (&settings.key_fetched, published.document) {
+            hook(context.clone(), document).await;
+        }
         Ok(published.actor)
     } else {
         Err("the signature does not verify".into())
@@ -240,5 +253,6 @@ async fn fetch_key<D: Clone + Send + Sync + 'static>(
     Some(Published {
         pem,
         actor: Url::parse(&document.id).ok()?,
+        document: Some(document.json),
     })
 }

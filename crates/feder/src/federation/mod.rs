@@ -727,6 +727,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
             key: boxed(key),
             fetcher_for: None,
             known_key: None,
+            key_fetched: None,
         });
         self
     }
@@ -764,6 +765,27 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     Some(Arc::new(move |context, key_id| known((context, key_id))));
             }
             None => self.errors.push("known_key before signed_fetch".into()),
+        }
+        self
+    }
+
+    /// See the document of an actor Feder fetched for its key, once the key
+    /// has verified a request: an application that stores actors stores this
+    /// one, so a new actor's first activity does not fetch it twice. Call
+    /// after `signed_fetch`.
+    #[must_use]
+    pub fn key_fetched<F, Fut>(mut self, hook: F) -> Self
+    where
+        F: Fn(Context<D>, Value) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        match &mut self.signed_fetch {
+            Some(settings) => {
+                settings.key_fetched = Some(Arc::new(move |context, document| {
+                    Box::pin(hook(context, document))
+                }));
+            }
+            None => self.errors.push("key_fetched before signed_fetch".into()),
         }
         self
     }

@@ -260,6 +260,36 @@ async fn an_authenticated_activity_reaches_its_listener_typed() {
     );
 }
 
+/// The actor document fetched for a key is handed over once it verifies.
+#[tokio::test]
+async fn the_actor_fetched_for_a_key_is_handed_over() {
+    let bob = serve_remote(Remote::default()).await;
+    let key_id = format!("{bob}#main-key");
+    let documents: Arc<Mutex<Vec<Value>>> = Arc::default();
+    let seen = documents.clone();
+    let federation = federation(move |b| {
+        let seen = seen.clone();
+        b.key_fetched(move |_, document| {
+            let seen = seen.clone();
+            async move { seen.lock().unwrap().push(document) }
+        })
+    });
+    let store = App::default();
+    let activity = follow(&bob, 1);
+    assert_eq!(
+        deliver(
+            &federation,
+            &store,
+            post("/ap/inbox", &key_id, &activity, &activity)
+        )
+        .await,
+        202
+    );
+    let documents = documents.lock().unwrap();
+    assert_eq!(documents.len(), 1);
+    assert_eq!(documents[0]["id"], bob);
+}
+
 #[tokio::test]
 async fn what_is_not_authenticated_reaches_no_listener() {
     let bob = serve_remote(Remote::default()).await;
