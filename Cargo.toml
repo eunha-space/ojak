@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/feder",
+  "crates/feder-axum",
   "crates/feder-core",
   "crates/feder-jsonld",
   "crates/feder-postgres",

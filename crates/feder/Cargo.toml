@@ -8,8 +8,11 @@ license.workspace = true
 [dependencies]
 feder-core = { path = "../feder-core" }
 feder-runtime = { path = "../feder-runtime" }
+chrono.workspace = true
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+http = "1"
 ipnet = "2"
+percent-encoding = "2"
 reqwest.workspace = true
 serde_json.workspace = true
 tokio = { version = "1", features = ["net", "sync", "time", "macros"] }
@@ -20,6 +23,8 @@ url.workspace = true
 testing = []
 
 [dev-dependencies]
+chrono.workspace = true
+http = "1"
 axum = "0.8"
 reqwest.workspace = true
 feder-runtime = { path = "../feder-runtime" }

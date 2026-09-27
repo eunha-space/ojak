@@ -55,10 +55,11 @@ match federation.handle(request, data).await {
 ~~~~
 
 `request` is an `http::Request` and `data` is the application's `D`, the value
-every callback's context carries. The *feder-axum* adapter is a layer that
-does exactly the above, taking `D` from a function over the request's parts,
-which is how eunha passes the tenant's state that its dispatch put in the
-extensions.
+every callback's context carries. The *feder-axum* adapter, `feder_axum::wrap(app,
+federation, data)`, puts the federation in front of an application's router
+and does exactly the above, taking `D` from a function over the request's
+parts, which is how eunha passes the tenant's state that its dispatch put in
+the extensions.
 
 ### The origin is the canonical one, from the request
 
@@ -201,8 +202,10 @@ async fn load_note(ctx: &Context<D>, values: &Values) -> Result<Found<Value>, Er
 }
 ~~~~
 
-`ctx.signer()` runs the checks of *framework.md*'s inbox pipeline that apply
-to a GET: the signature's shape, host and age, then the key, from the
+Signed fetches are configured with the fetcher, a key-value store, how long
+a key is kept, and the key Feder signs its own key fetches with, for peers in
+secure mode. `ctx.signer()` runs the checks of *framework.md*'s inbox pipeline
+that apply to a GET: the signature's shape, host and age, then the key, from the
 key-value store or fetched with the fetcher, and the key owner's origin. It
 returns the verified actor's IRI, once per request however often it is asked.
 The key cache it fills is the one the inbox will use.
@@ -217,15 +220,16 @@ request is 401.
 
 ~~~~ rust
 .handle(|ctx, username| async move { ctx.data().actor_by_handle(username).await })
-// -> Option<(kind, identifier)>
-.handle_hosts(|host, data| data.is_one_of_our_hosts(host))
-.webfinger_links(|ctx, actor| vec![subscribe_template(ctx, actor)])
+// -> Option<ActorRef>
+.map_alias(|ctx, url| async move { ctx.data().actor_by_page(url).await })
+.webfinger_links(|ctx, actor, document| vec![subscribe_template(ctx, actor)])
 ~~~~
 
 Feder serves `/.well-known/webfinger` for:
 
- -  `acct:user@host`, where `host` is the canonical origin's or one
-    `handle_hosts` accepts, looked up through `handle`;
+ -  `acct:user@host`, where `host` is the canonical origin's or an alias of
+    it, looked up through `handle`. An alias is a host the origin function
+    maps to the same canonical origin, so no second list of hosts is kept;
  -  the URI of any registered actor, looked up through `parse_uri`;
  -  any other `https` URL on our origin, through an optional `map_alias`,
     for profile pages such as `/@alice`.
@@ -254,8 +258,10 @@ the 2.0 document being the 2.1 one without what 2.0 lacks.
 ### Content negotiation
 
 A request to a matched route is ActivityPub when its `Accept` names
-`application/activity+json`, or `application/ld+json` with the
-ActivityStreams profile, with a quality above zero. Anything else, including
+`application/activity+json` or `application/ld+json`, with a quality above
+zero. Reading is strict about the ActivityStreams profile, since it decides
+what is trusted; asking is not, since it decides only which representation
+of our own document is sent. Anything else, including
 a bare `*/*` or a browser's `text/html`, is `NotAcceptable`, and the
 application serves the page at that URL or answers 406 itself. This lets an
 application keep one URL for a post, if it wants that, and an unrouted path

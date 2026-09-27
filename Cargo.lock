@@ -468,14 +468,28 @@ name = "feder"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "chrono",
  "feder-core",
  "feder-runtime",
  "futures-util",
+ "http",
  "ipnet",
+ "percent-encoding",
  "reqwest",
  "serde_json",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "feder-axum"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "feder",
+ "serde_json",
+ "tokio",
+ "tower",
 ]
 
 [[package]]

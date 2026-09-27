@@ -5,13 +5,16 @@
 //! in the order the design record gives: so far, the guarded HTTP client
 //! every outgoing request goes through, delivery of activities through a
 //! queue the application provides, fetching documents from other servers,
-//! and the key-value store Feder keeps its caches in.
+//! the key-value store Feder keeps its caches in, and serving actors,
+//! objects, collections, WebFinger and NodeInfo.
 
 pub mod client;
 pub mod deliverer;
 pub mod delivery;
+pub mod federation;
 pub mod fetch;
 pub mod kv;
 pub mod queue;
+pub mod template;
 #[cfg(feature = "testing")]
 pub mod testing;
