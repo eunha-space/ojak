@@ -3,6 +3,7 @@ members = [
   "crates/feder",
   "crates/feder-core",
   "crates/feder-jsonld",
+  "crates/feder-postgres",
   "crates/feder-runtime",
   "crates/feder-vocab",
   "crates/feder-vocab-gen",

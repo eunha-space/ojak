@@ -94,20 +94,26 @@ application provides:
  -  a message queue, for deliveries and for incoming activities waiting to be
     handled.
 
-Both are traits with an in-memory implementation in Feder for tests and small
-deployments. An application with its own tables implements the trait over
-them. Eunha's queue tables stay exactly as they are; the loops around them
-move into Feder.
+Both are traits, and as in Fedify their backends are pluggable: an
+application picks one rather than writing one. Feder ships an in-memory
+backend for tests and small deployments, *feder-postgres* keeps the queue in
+a table of its own that it creates on first use, and more backends can follow
+the same trait. Every backend runs one set of conformance checks, so they
+agree on the parts that lose work when they are wrong. An application with
+tables for the purpose already implements the trait over them instead: eunha's
+queue tables stay exactly as they are, and the loops around them move into
+Feder.
 
-The queue is a store, not a channel. Where Fedify's message queue hands a
-message to a listener, Feder's worker *claims* deliveries from the store for a
-lease, reports each one delivered, to be retried after a delay, or failed,
-and asks when the next one is due. Claiming for a lease is what lets any
-number of workers in any number of processes share one store: the two colours
-of a blue/green deploy both run one, and what a colour was holding when it
-stopped is handed out again when its lease lapses rather than lost. It is
-also exactly what eunha's tables already do with `FOR UPDATE SKIP LOCKED`, so
-they implement it without changing.
+The queue is claimed from, not listened to. Where Fedify's message queue hands
+a message to a listener, Feder's worker *claims* jobs from a named queue for a
+lease, reports each one done, to be retried after a delay, or failed, and asks
+when the next one is due. One backend holds every named queue, so deliveries
+and incoming activities can share a table without one starving the other.
+Claiming for a lease is what lets any number of workers in any number of
+processes share one store: the two colours of a blue/green deploy both run one,
+and what a colour was holding when it stopped is handed out again when its
+lease lapses rather than lost. It is also exactly what eunha's tables already
+do with `FOR UPDATE SKIP LOCKED`, so they implement it without changing.
 
 The pure functions in `feder-core` stay, and become the rest of that crate:
 given the local actor, the remote actor and a Follow, what should happen,
@@ -433,7 +439,7 @@ An application can allow specific private addresses for development.
  -  *feder*: the framework. The builder, routing, contexts, the inbox pipeline,
     delivery, fetching, gateways, the key-value and queue traits and their
     in-memory implementations, and the axum integration.
- -  Backend crates for stores and queues, starting with Postgres.
+ -  Backend crates for stores and queues: *feder-postgres* first.
 
 *feder-runtime* is folded into the other two as its pieces move: what is pure
 into *feder-core*, what does I/O into *feder*.

@@ -8,7 +8,7 @@ use axum::routing::post;
 use feder::client::{Client, ClientConfig, RequestError};
 use feder::deliverer::{Deliverer, DelivererConfig, DeliveryFailure, SenderKeys};
 use feder::delivery::{self, DeliveryError, Scheme, SenderKey};
-use feder::queue::{MemoryStore, RetryPolicy, StoreError};
+use feder::queue::{MemoryQueue, QueueError, RetryPolicy};
 use feder_runtime::signature::{self, PrivateKey};
 use serde_json::json;
 use std::collections::VecDeque;
@@ -140,7 +140,7 @@ fn key() -> SenderKey {
 struct Keys;
 
 impl SenderKeys for Keys {
-    async fn key(&self, sender: &str) -> Result<Option<SenderKey>, StoreError> {
+    async fn key(&self, sender: &str) -> Result<Option<SenderKey>, QueueError> {
         Ok((sender == "alice").then(key))
     }
 }
@@ -157,7 +157,7 @@ fn fast() -> DelivererConfig {
 }
 
 /// Run the delivery loop until nothing is due or `rounds` batches have run.
-async fn drain(deliverer: &Deliverer<MemoryStore, Keys>, rounds: usize) {
+async fn drain(deliverer: &Deliverer<MemoryQueue, Keys>, rounds: usize) {
     for _ in 0..rounds {
         tokio::time::sleep(Duration::from_millis(5)).await;
         deliverer.run_once().await.unwrap();
@@ -199,7 +199,7 @@ async fn a_refused_scheme_is_retried_in_the_other() {
 async fn a_host_that_took_the_other_scheme_is_sent_it_first_next_time() {
     let inbox = Inbox::answering([Answer::OnlyRfc9421]);
     let url = serve(inbox.clone()).await;
-    let deliverer = Deliverer::new(MemoryStore::new(), Keys, client(), fast());
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), fast());
 
     deliverer
         .send("alice", &json!({"n": 1}), [url.clone()])
@@ -223,14 +223,14 @@ async fn a_host_that_took_the_other_scheme_is_sent_it_first_next_time() {
 async fn a_server_error_is_retried_until_it_passes() {
     let inbox = Inbox::answering([Answer::Status(503), Answer::Status(502)]);
     let url = serve(inbox.clone()).await;
-    let deliverer = Deliverer::new(MemoryStore::new(), Keys, client(), fast());
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), fast());
 
     deliverer.send("alice", &json!({}), [url]).await.unwrap();
     drain(&deliverer, 5).await;
 
-    let records = deliverer.store().records();
-    assert!(records[0].delivered);
-    assert_eq!(records[0].delivery.attempts, 2);
+    let records = deliverer.queue().records();
+    assert!(records[0].complete);
+    assert_eq!(records[0].job.attempts, 2);
     assert_eq!(inbox.received().len(), 3);
 }
 
@@ -240,7 +240,7 @@ async fn gone_is_given_up_on_at_once_and_reported() {
     let url = serve(inbox.clone()).await;
     let failures: Arc<Mutex<Vec<DeliveryFailure>>> = Arc::default();
     let seen = failures.clone();
-    let deliverer = Deliverer::new(MemoryStore::new(), Keys, client(), fast())
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), fast())
         .on_failure(move |failure| seen.lock().unwrap().push(failure.clone()));
 
     deliverer
@@ -250,7 +250,7 @@ async fn gone_is_given_up_on_at_once_and_reported() {
     drain(&deliverer, 3).await;
 
     assert_eq!(inbox.received().len(), 1, "a 410 is not retried");
-    let records = deliverer.store().records();
+    let records = deliverer.queue().records();
     assert!(records[0].failed);
     let failures = failures.lock().unwrap();
     assert_eq!(failures.len(), 1);
@@ -262,12 +262,12 @@ async fn gone_is_given_up_on_at_once_and_reported() {
 async fn retries_stop_at_the_policy_limit() {
     let inbox = Inbox::answering([Answer::Status(500); 10]);
     let url = serve(inbox.clone()).await;
-    let deliverer = Deliverer::new(MemoryStore::new(), Keys, client(), fast());
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), fast());
 
     deliverer.send("alice", &json!({}), [url]).await.unwrap();
     drain(&deliverer, 6).await;
 
-    let records = deliverer.store().records();
+    let records = deliverer.queue().records();
     assert!(records[0].failed);
     assert_eq!(inbox.received().len(), 3, "max_attempts is 3");
 }
@@ -276,7 +276,7 @@ async fn retries_stop_at_the_policy_limit() {
 async fn one_inbox_named_twice_is_sent_once() {
     let inbox = Inbox::default();
     let url = serve(inbox.clone()).await;
-    let deliverer = Deliverer::new(MemoryStore::new(), Keys, client(), fast());
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), fast());
 
     deliverer
         .send("alice", &json!({}), [url.clone(), url])
@@ -291,13 +291,13 @@ async fn one_inbox_named_twice_is_sent_once() {
 async fn an_unknown_sender_is_given_up_on() {
     let inbox = Inbox::default();
     let url = serve(inbox.clone()).await;
-    let deliverer = Deliverer::new(MemoryStore::new(), Keys, client(), fast());
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), fast());
 
     deliverer.send("mallory", &json!({}), [url]).await.unwrap();
     drain(&deliverer, 2).await;
 
     assert!(inbox.received().is_empty());
-    assert!(deliverer.store().records()[0].failed);
+    assert!(deliverer.queue().records()[0].failed);
 }
 
 #[tokio::test]

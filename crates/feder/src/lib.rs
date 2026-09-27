@@ -10,3 +10,5 @@ pub mod client;
 pub mod deliverer;
 pub mod delivery;
 pub mod queue;
+#[cfg(feature = "testing")]
+pub mod testing;

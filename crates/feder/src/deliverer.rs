@@ -4,14 +4,14 @@
 //! [`Deliverer::run`] is the loop that sends what is queued, and the
 //! application spawns it on whatever runtime and in whatever task context it
 //! uses — Feder does not spawn tasks of its own. Any number of loops may run,
-//! in any number of processes, over one store.
+//! in any number of processes, over one queue.
 
 use crate::client::Client;
 use crate::delivery::{self, DeliveryError, Scheme, SenderKey};
-use crate::queue::{Delivery, DeliveryStore, NewDelivery, RetryPolicy, StoreError};
+use crate::queue::{Job, Queue, QueueError, RetryPolicy};
 use futures_util::StreamExt as _;
 use futures_util::stream;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
@@ -25,7 +25,7 @@ pub trait SenderKeys: Send + Sync + 'static {
     fn key(
         &self,
         sender: &str,
-    ) -> impl Future<Output = Result<Option<SenderKey>, StoreError>> + Send;
+    ) -> impl Future<Output = Result<Option<SenderKey>, QueueError>> + Send;
 }
 
 /// A delivery that will not be tried again.
@@ -42,6 +42,8 @@ pub struct DeliveryFailure {
 /// How the delivery loop behaves.
 #[derive(Clone, Debug)]
 pub struct DelivererConfig {
+    /// The queue deliveries wait in, within the backend.
+    pub queue: String,
     pub retry: RetryPolicy,
     /// How many deliveries one claim takes.
     pub batch: usize,
@@ -61,6 +63,7 @@ pub struct DelivererConfig {
 impl Default for DelivererConfig {
     fn default() -> Self {
         Self {
+            queue: "delivery".to_owned(),
             retry: RetryPolicy::default(),
             batch: 64,
             lease: Duration::from_secs(300),
@@ -72,11 +75,36 @@ impl Default for DelivererConfig {
     }
 }
 
+/// One delivery, as it waits in the queue.
+struct Delivery {
+    activity: Value,
+    inbox: Url,
+    sender: String,
+}
+
+impl Delivery {
+    fn payload(&self) -> Value {
+        json!({
+            "activity": self.activity,
+            "inbox": self.inbox.as_str(),
+            "sender": self.sender,
+        })
+    }
+
+    fn from_payload(payload: &Value) -> Option<Self> {
+        Some(Self {
+            activity: payload.get("activity")?.clone(),
+            inbox: Url::parse(payload.get("inbox")?.as_str()?).ok()?,
+            sender: payload.get("sender")?.as_str()?.to_owned(),
+        })
+    }
+}
+
 type FailureHandler = Arc<dyn Fn(&DeliveryFailure) + Send + Sync>;
 
 /// Queues activities and sends them.
-pub struct Deliverer<S, K> {
-    store: S,
+pub struct Deliverer<Q, K> {
+    queue: Q,
     keys: K,
     client: Client,
     config: DelivererConfig,
@@ -87,10 +115,10 @@ pub struct Deliverer<S, K> {
     on_failure: Option<FailureHandler>,
 }
 
-impl<S: DeliveryStore, K: SenderKeys> Deliverer<S, K> {
-    pub fn new(store: S, keys: K, client: Client, config: DelivererConfig) -> Self {
+impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
+    pub fn new(queue: Q, keys: K, client: Client, config: DelivererConfig) -> Self {
         Self {
-            store,
+            queue,
             keys,
             client,
             config,
@@ -112,42 +140,45 @@ impl<S: DeliveryStore, K: SenderKeys> Deliverer<S, K> {
         self
     }
 
-    /// The store deliveries are queued in.
-    pub fn store(&self) -> &S {
-        &self.store
+    /// The queue backend deliveries wait in.
+    pub fn queue(&self) -> &Q {
+        &self.queue
     }
 
     /// Queue `activity`, signed by `sender`, for each of `inboxes`, once each.
     ///
     /// # Errors
     ///
-    /// When the store cannot queue them.
+    /// When the backend cannot queue them.
     pub async fn send(
         &self,
         sender: &str,
         activity: &Value,
         inboxes: impl IntoIterator<Item = Url>,
-    ) -> Result<(), StoreError> {
+    ) -> Result<(), QueueError> {
         let inboxes: BTreeSet<Url> = inboxes.into_iter().collect();
         if inboxes.is_empty() {
             return Ok(());
         }
-        let deliveries = inboxes
+        let payloads = inboxes
             .into_iter()
-            .map(|inbox| NewDelivery {
-                activity: activity.clone(),
-                inbox,
-                sender: sender.to_owned(),
+            .map(|inbox| {
+                Delivery {
+                    activity: activity.clone(),
+                    inbox,
+                    sender: sender.to_owned(),
+                }
+                .payload()
             })
             .collect();
-        self.store.enqueue(deliveries).await?;
+        self.queue.enqueue(&self.config.queue, payloads).await?;
         self.wake.notify_one();
         Ok(())
     }
 
     /// Send what is queued, forever.
     ///
-    /// A store error is waited out and retried, never returned: the loop is
+    /// A backend error is waited out and retried, never returned: the loop is
     /// what keeps federation going, and a database that is briefly away should
     /// not stop it.
     pub async fn run(&self) {
@@ -164,21 +195,21 @@ impl<S: DeliveryStore, K: SenderKeys> Deliverer<S, K> {
     ///
     /// # Errors
     ///
-    /// When the store cannot be read.
-    pub async fn run_once(&self) -> Result<usize, StoreError> {
+    /// When the backend cannot be read.
+    pub async fn run_once(&self) -> Result<usize, QueueError> {
         let batch = self
-            .store
-            .claim(self.config.batch, self.config.lease)
+            .queue
+            .claim(&self.config.queue, self.config.batch, self.config.lease)
             .await?;
         let count = batch.len();
         stream::iter(batch)
-            .for_each_concurrent(self.config.concurrency, |delivery| self.process(delivery))
+            .for_each_concurrent(self.config.concurrency, |job| self.process(job))
             .await;
         Ok(count)
     }
 
     async fn idle(&self) {
-        let due = self.store.next_due().await.ok().flatten();
+        let due = self.queue.next_due(&self.config.queue).await.ok().flatten();
         let sleep = due.map_or(self.config.idle_poll, |due| due.min(self.config.idle_poll));
         tokio::select! {
             () = tokio::time::sleep(sleep) => {}
@@ -186,13 +217,17 @@ impl<S: DeliveryStore, K: SenderKeys> Deliverer<S, K> {
         }
     }
 
-    async fn process(&self, delivery: Delivery) {
+    async fn process(&self, job: Job) {
+        let Some(delivery) = Delivery::from_payload(&job.payload) else {
+            let _ = self.queue.fail(&job.id, "not a delivery").await;
+            return;
+        };
         let outcome = self.attempt(&delivery).await;
-        // A store error here leaves the delivery claimed; its lease lapses
-        // and it is tried again, which is the safe way to be wrong.
+        // A backend error here leaves the job claimed; its lease lapses and it
+        // is tried again, which is the safe way to be wrong.
         let _ = match outcome {
-            Ok(()) => self.store.delivered(&delivery.id).await,
-            Err(error) => self.record_failure(&delivery, &error).await,
+            Ok(()) => self.queue.complete(&job.id).await,
+            Err(error) => self.record_failure(&job, &delivery, &error).await,
         };
     }
 
@@ -243,10 +278,11 @@ impl<S: DeliveryStore, K: SenderKeys> Deliverer<S, K> {
 
     async fn record_failure(
         &self,
+        job: &Job,
         delivery: &Delivery,
         error: &DeliveryError,
-    ) -> Result<(), StoreError> {
-        let attempts = delivery.attempts + 1;
+    ) -> Result<(), QueueError> {
+        let attempts = job.attempts + 1;
         let delay = if error.is_permanent() {
             None
         } else {
@@ -256,7 +292,7 @@ impl<S: DeliveryStore, K: SenderKeys> Deliverer<S, K> {
         match delay {
             Some(delay) => {
                 let delay = error.retry_after().map_or(delay, |asked| asked.max(delay));
-                self.store.retry(&delivery.id, delay, &message).await
+                self.queue.retry(&job.id, delay, &message).await
             }
             None => {
                 if let Some(handler) = &self.on_failure {
@@ -267,7 +303,7 @@ impl<S: DeliveryStore, K: SenderKeys> Deliverer<S, K> {
                         error: message.clone(),
                     });
                 }
-                self.store.failed(&delivery.id, &message).await
+                self.queue.fail(&job.id, &message).await
             }
         }
     }

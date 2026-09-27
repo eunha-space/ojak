@@ -1,0 +1,20 @@
+[package]
+name = "feder-postgres"
+description = "A PostgreSQL queue backend for feder"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+feder = { path = "../feder" }
+serde_json.workspace = true
+# The runtime without a TLS backend: an application's own sqlx features add
+# the one it connects with, and Cargo unifies them.
+sqlx = { version = "0.8", default-features = false, features = ["postgres", "json", "runtime-tokio"] }
+
+[dev-dependencies]
+feder = { path = "../feder", features = ["testing"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true
