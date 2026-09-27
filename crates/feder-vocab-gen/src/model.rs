@@ -178,7 +178,8 @@ impl Vocabulary {
             let mut properties: Vec<Property> = Vec::new();
             for ancestor in chain.iter().rev() {
                 for property in &ancestor.properties {
-                    let property = analyse(property, ancestor, &by_uri, registry, &context)
+                    let property =
+                        analyse(property, ancestor, schema, &by_uri, registry, &context)
                         .with_context(|| format!("{}.{}", ancestor.name, property.singular_name))?;
                     match properties
                         .iter_mut()
@@ -259,6 +260,7 @@ fn ancestry<'a>(
 fn analyse(
     property: &PropertySchema,
     declared_by: &TypeSchema,
+    owner: &TypeSchema,
     by_uri: &BTreeMap<&str, &TypeSchema>,
     registry: &Registry,
     context: &Value,
@@ -315,11 +317,14 @@ fn analyse(
         Some(plural) if !text_only => plural,
         _ => &property.singular_name,
     };
-    let key = compact_property(&property.uri, takes_objects, registry, context)?;
+    let owner_type = (!owner.typeless).then_some(owner.uri.as_str());
+    let key = compact_property(owner_type, &property.uri, takes_objects, registry, context)?;
     let redundant_keys = property
         .redundant_properties
         .iter()
-        .map(|redundant| compact_property(&redundant.uri, takes_objects, registry, context))
+        .map(|redundant| {
+            compact_property(owner_type, &redundant.uri, takes_objects, registry, context)
+        })
         .collect::<Result<_>>()?;
     Ok(Property {
         uri: property.uri.clone(),
@@ -335,13 +340,17 @@ fn analyse(
     })
 }
 
-/// The key `iri` has once a document is compacted into Feder's context.
+/// The key `iri` has on an object of type `owner` once a document is
+/// compacted into Feder's context.
 ///
 /// Worked out by compacting a one-property document rather than by looking
 /// the IRI up in the context, so that it is the key `feder_vocab::read`
 /// produces by construction: a term defined with `"@type": "@id"` only
-/// matches a reference, and one without only a value.
+/// matches a reference, one without only a value, and a term a context
+/// scopes to a type, as data-integrity's `proofValue` is scoped to
+/// `DataIntegrityProof`, only applies on an object of that type.
 fn compact_property(
+    owner: Option<&str>,
     iri: &str,
     takes_objects: bool,
     registry: &Registry,
@@ -352,15 +361,18 @@ fn compact_property(
     } else {
         json!({"@value": "sample"})
     };
-    let expanded = json!([{ iri: [sample] }]);
-    let compacted = feder_jsonld::compact(registry, &expanded, context)
+    let mut node = json!({ iri: [sample] });
+    if let Some(owner) = owner {
+        node["@type"] = json!([owner]);
+    }
+    let compacted = feder_jsonld::compact(registry, &json!([node]), context)
         .map_err(|error| anyhow::anyhow!("compact {iri}: {error}"))?;
     let keys: Vec<&String> = compacted
         .document()
         .as_object()
         .context("compaction produced no object")?
         .keys()
-        .filter(|key| !key.starts_with('@'))
+        .filter(|key| !key.starts_with('@') && key.as_str() != "type")
         .collect();
     let [key] = keys.as_slice() else {
         bail!("compacting {iri} produced keys {keys:?}");
