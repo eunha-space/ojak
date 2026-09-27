@@ -12,7 +12,8 @@ use feder::client::{Client, ClientConfig};
 use feder::deliverer::{Deliverer, DelivererConfig, PortableInbox, SenderKeys};
 use feder::delivery::{Scheme, SenderKey};
 use feder::federation::{
-    ActorRef, Context, Federation, Forward, Found, GatewayInbox, Handled, PORTABLE_JSON, Received,
+    ActorRef, Context, Federation, Forward, ForwardTo, Found, GatewayInbox, Handled, PORTABLE_JSON,
+    Received,
 };
 use feder::fetch::{FetchError, Fetcher};
 use feder::kv::MemoryKvStore;
@@ -442,12 +443,15 @@ async fn what_arrives_at_a_gateway_is_forwarded_to_the_others_once() {
     let forwarded = store.forwarded.lock().unwrap().clone();
     assert_eq!(forwarded.len(), 1);
     assert_eq!(forwarded[0].activity, proven);
+    let ForwardTo::Gateways(to) = &forwarded[0].to else {
+        panic!("forwarded to the gateways: {:?}", forwarded[0].to);
+    };
     assert_eq!(
-        forwarded[0].to.inbox,
+        to.inbox,
         ApUri::parse(&format!("ap://{}/actor/inbox", alice.did())).unwrap()
     );
     assert_eq!(
-        forwarded[0].to.gateways,
+        to.gateways,
         [Url::parse("https://server2.example").unwrap()],
         "this gateway is left out"
     );

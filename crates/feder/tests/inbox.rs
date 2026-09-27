@@ -8,7 +8,8 @@ use axum::routing;
 use feder::client::{Client, ClientConfig};
 use feder::delivery::Scheme;
 use feder::federation::{
-    ActorRef, Context, Federation, Found, Handled, InboxWorker, InboxWorkerConfig, Received,
+    ActorRef, CollectionRef, Context, Federation, Forward, ForwardTo, Found, Handled, InboxWorker,
+    InboxWorkerConfig, Received,
 };
 use feder::fetch::Fetcher;
 use feder::kv::MemoryKvStore;
@@ -43,6 +44,7 @@ struct Store {
     queue: Option<SharedQueue>,
     /// Listener calls to fail before succeeding.
     failures: AtomicUsize,
+    forwarded: Mutex<Vec<Forward>>,
 }
 
 type App = Arc<Store>;
@@ -687,5 +689,93 @@ async fn a_known_key_and_the_catch_all() {
     assert_eq!(
         caught[0].1["type"], "Announce",
         "in the sender's own spelling"
+    );
+}
+
+/// A reply to a post of ours, addressed to its author's followers, is
+/// forwarded to them, once; what concerns nothing of ours, or is not
+/// addressed to a collection of ours, is not.
+#[tokio::test]
+async fn a_reply_to_our_post_is_forwarded_to_its_authors_followers() {
+    use feder::federation::{Collection, Page};
+
+    let bob = serve_remote(Remote::default()).await;
+    let key_id = format!("{bob}#main-key");
+    let federation = federation(|b| {
+        b.object("post", "/ap/posts/{post_id}", |_, _| async {
+            Ok::<_, String>(Found::NotFound)
+        })
+        .collection(
+            "followers",
+            "/ap/users/{user_id}/followers",
+            Collection::new(|_, _, _| async { Ok::<_, String>(None::<Page>) }),
+        )
+        .forward(|ctx: Context<App>, forward| async move {
+            ctx.data().forwarded.lock().unwrap().push(forward);
+            Ok::<_, String>(())
+        })
+    });
+    let store = App::default();
+    let followers = format!("https://{HOST}/ap/users/1/followers");
+    let reply = |n: u32, in_reply_to: &str, cc: &str| {
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("{bob}/notes/{n}/activity"),
+            "type": "Create",
+            "actor": bob,
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [cc],
+            "object": {
+                "id": format!("{bob}/notes/{n}"),
+                "type": "Note",
+                "attributedTo": bob,
+                "inReplyTo": in_reply_to,
+                "content": "a reply",
+            },
+        })
+    };
+    let ours = format!("https://{HOST}/ap/posts/1");
+    let send = |activity: Value| post("/ap/inbox", &key_id, &activity, &activity);
+
+    let activity = reply(1, &ours, &followers);
+    assert_eq!(
+        deliver(&federation, &store, send(activity.clone())).await,
+        202
+    );
+    assert_eq!(
+        deliver(&federation, &store, send(activity.clone())).await,
+        202
+    );
+    assert_eq!(
+        deliver(
+            &federation,
+            &store,
+            send(reply(2, "https://elsewhere.test/notes/1", &followers))
+        )
+        .await,
+        202
+    );
+    assert_eq!(
+        deliver(
+            &federation,
+            &store,
+            send(reply(3, &ours, &format!("{bob}/followers")))
+        )
+        .await,
+        202
+    );
+
+    let forwarded = store.forwarded.lock().unwrap().clone();
+    assert_eq!(forwarded.len(), 1, "{forwarded:?}");
+    assert_eq!(forwarded[0].activity, activity);
+    let ForwardTo::Collections(collections) = &forwarded[0].to else {
+        panic!("forwarded to a collection: {:?}", forwarded[0].to);
+    };
+    assert_eq!(
+        collections,
+        &[CollectionRef {
+            kind: "followers".into(),
+            identifier: "1".into()
+        }]
     );
 }

@@ -124,6 +124,23 @@ answered 500, so the sender retries.
 An activity processed once is not processed again: its `id` goes into the
 key-value store, under the canonical origin it arrived at, for a day.
 
+### Forwarding
+
+A reply to a post of ours reaches the servers its author sent it to, and
+not the followers of the post's author, who would see half a conversation.
+ActivityPub (§7.1.2) has the server that owns the post pass it on: an
+activity seen for the first time, addressed to a collection of ours, that
+concerns something of ours in its `object`, `target`, `inReplyTo` or `tag`,
+or in those of the object it embeds. Feder decides that, and calls the
+application's `forward` with the activity and the collections; the
+application sends it to their members, signed by the collection's owner,
+as Mastodon does. Whether it was forwarded is kept in the key-value store
+under its `id`, so it is forwarded once.
+
+What is forwarded is the activity as it was authenticated here, whose proof,
+if it has one, still holds; a server receiving it without one fetches it
+from its origin, as above.
+
 ### Errors and responses
 
 | Outcome                                   | Status |
@@ -154,7 +171,5 @@ fallback to a proof and the `Delete` rule are Feder's.
 Not in this step
 ----------------
 
- -  *Inbox forwarding* of replies to the addressees' followers. Receiving what
-    others forward is here (step 7 above); sending it on is not.
  -  *Portable objects* (FEP-ef61), which are step 7.
  -  *Relays.*

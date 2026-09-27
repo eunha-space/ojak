@@ -19,7 +19,8 @@ mod webfinger;
 
 pub use collection::{Collection, First, Page};
 pub use inbox::{
-    Forward, GatewayInbox, InboxWorker, InboxWorkerConfig, MAX_BODY as MAX_INBOX_BODY, Received,
+    CollectionRef, Forward, ForwardTo, GatewayInbox, InboxWorker, InboxWorkerConfig,
+    MAX_BODY as MAX_INBOX_BODY, Received,
 };
 pub use nodeinfo::{NodeInfo, Software, Usage};
 pub use signer::KnownKey;
@@ -1012,11 +1013,12 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         self
     }
 
-    /// Send what arrives at a portable inbox on to the actor's other
-    /// gateways, as FEP-ef61 asks: `forward` is called once for each
-    /// activity, however many times it arrives, with the gateways to send it
-    /// to, and sends it, usually with `Deliverer::send_portable`. Without
-    /// it, nothing is forwarded.
+    /// Forward what arrives to where it has to go on to: a portable actor's
+    /// other gateways, as FEP-ef61 asks, and the members of collections of
+    /// ours an activity concerning something of ours is addressed to, as
+    /// ActivityPub asks (§7.1.2). `forward` is called once for each activity
+    /// and kind of forward, however many times it arrives, and sends it.
+    /// Without it, nothing is forwarded.
     #[must_use]
     pub fn forward<F, Fut, E>(mut self, forward: F) -> Self
     where

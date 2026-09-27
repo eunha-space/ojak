@@ -84,14 +84,34 @@ pub struct GatewayInbox {
     pub gateways: Vec<Url>,
 }
 
-/// An activity to forward to a portable actor's other gateways, as FEP-ef61
-/// asks of the gateway it arrived at: the activity as it arrived, and the
-/// inbox with the gateways to send it to, this one left out. The
-/// application sends it, with `Deliverer::send_portable`.
+/// An activity to forward, as it was authenticated here: the receiver
+/// establishes it for itself, from its proof or from its origin, since the
+/// signature on the forward is this server's.
 #[derive(Clone, Debug)]
 pub struct Forward {
     pub activity: Value,
-    pub to: PortableInbox,
+    pub to: ForwardTo,
+}
+
+/// Where an activity is forwarded.
+#[derive(Clone, Debug)]
+pub enum ForwardTo {
+    /// A portable actor's other gateways, as FEP-ef61 asks of the gateway it
+    /// arrived at, this one left out: sent with `Deliverer::send_portable`.
+    Gateways(PortableInbox),
+    /// The members of collections of this server's that the activity is
+    /// addressed to, as ActivityPub asks (§7.1.2) when it concerns something
+    /// of this server's: a reply to a local post, addressed to its author's
+    /// followers, is sent on to those followers, signed by the collection's
+    /// owner.
+    Collections(Vec<CollectionRef>),
+}
+
+/// A collection of this server's, as the application registered it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CollectionRef {
+    pub kind: String,
+    pub identifier: String,
 }
 
 /// How long an activity's forwarding is remembered: once is the rule.
@@ -298,9 +318,6 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
     };
 
     let portable = ApUri::parse(&actor);
-    // What arrived, which is what is forwarded: the next gateway establishes
-    // it for itself.
-    let forwarded = document.clone();
 
     // A blocked server costs nothing: no key is fetched for it. A portable
     // actor has no server, and is blocked by its DID.
@@ -422,8 +439,26 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
     // Forwarded before anything else is decided, whether or not a listener
     // wants it: the other gateways keep the actor's data too.
     let origin = context.origin().to_string();
-    if let (Some((inbox, gateways)), Some(id)) = (gateway, &id) {
-        forward(&context, &origin, id, forwarded, inbox, gateways).await;
+    if let Some(id) = &id {
+        if let Some((inbox, gateways)) = gateway {
+            let ours = context.origin().clone();
+            let others: Vec<Url> = gateways
+                .into_iter()
+                .filter(|gateway| !same_origin(gateway.as_str(), ours.as_str()))
+                .collect();
+            if !others.is_empty() {
+                let to = ForwardTo::Gateways(PortableInbox {
+                    inbox,
+                    gateways: others,
+                });
+                forward(&context, &origin, id, &document, to).await;
+            }
+        }
+        let collections = forwarded_to(&context, &document);
+        if !collections.is_empty() {
+            let to = ForwardTo::Collections(collections);
+            forward(&context, &origin, id, &document, to).await;
+        }
     }
 
     if listener_for(&inner, &normalized).is_none() {
@@ -495,54 +530,90 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
     }
 }
 
-/// Hand `activity`, which arrived at `inbox` here, to the application to
-/// send to the actor's other gateways: once, however many times it arrives,
-/// so that gateways forwarding to each other stop.
+/// Hand `activity` to the application to forward `to` where it says: once
+/// for each kind of forward, however many times the activity arrives, so
+/// that servers forwarding to each other stop.
 async fn forward<D: Clone + Send + Sync + 'static>(
     context: &Context<D>,
     origin: &str,
     id: &str,
-    activity: Value,
-    inbox: ApUri,
-    gateways: Vec<Url>,
+    activity: &Value,
+    to: ForwardTo,
 ) {
     let inner = &context.inner.federation;
-    let Some(hook) = &inner.forward else {
+    let (Some(hook), Some(settings)) = (&inner.forward, &inner.signed_fetch) else {
         return;
     };
-    let ours = context.origin();
-    let others: Vec<Url> = gateways
-        .into_iter()
-        .filter(|gateway| !same_origin(gateway.as_str(), ours.as_str()))
-        .collect();
-    if others.is_empty() {
-        return;
+    let kind = match to {
+        ForwardTo::Gateways(_) => "gateways",
+        ForwardTo::Collections(_) => "collections",
+    };
+    let key = ["feder", "forwarded", kind, origin, id];
+    match settings
+        .kv
+        .insert(&key, Value::Bool(true), Some(FORWARDED_FOR))
+        .await
+    {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(error) => {
+            // Not knowing whether it was forwarded, it is not forwarded
+            // again: once is the rule, and the others forward too.
+            context.report(&Error::from(error));
+            return;
+        }
     }
-    if let Some(settings) = &inner.signed_fetch {
-        let key = ["feder", "forwarded", origin, id];
-        match settings
-            .kv
-            .insert(&key, Value::Bool(true), Some(FORWARDED_FOR))
-            .await
-        {
-            Ok(true) => {}
-            Ok(false) => return,
-            Err(error) => {
-                // Not knowing whether it was forwarded, it is not forwarded
-                // again: once is a MUST, and each gateway forwards too.
-                context.report(&Error::from(error));
-                return;
+    let forward = Forward {
+        activity: activity.clone(),
+        to,
+    };
+    if let Err(error) = hook(context.clone(), forward).await {
+        context.report(&error);
+    }
+}
+
+/// The collections of ours `activity` is to be forwarded to (ActivityPub
+/// §7.1.2): those it is addressed to, when it concerns something of ours,
+/// in its `object`, `target`, `inReplyTo` or `tag`, or in those of an object
+/// it embeds.
+fn forwarded_to<D: Clone + Send + Sync + 'static>(
+    context: &Context<D>,
+    activity: &Value,
+) -> Vec<CollectionRef> {
+    if context.inner.federation.forward.is_none() {
+        return Vec::new();
+    }
+    let mut collections = Vec::new();
+    for key in ["to", "cc", "audience"] {
+        for iri in ids(activity.get(key)) {
+            if let Some(super::Route::Collection { kind, identifier }) = context.parse_uri(iri) {
+                let collection = CollectionRef { kind, identifier };
+                if !collections.contains(&collection) {
+                    collections.push(collection);
+                }
             }
         }
-    } else {
-        return;
     }
-    let to = PortableInbox {
-        inbox,
-        gateways: others,
+    if collections.is_empty() {
+        return collections;
+    }
+    let concerning = |value: &Value| {
+        ["object", "target", "inReplyTo", "tag"]
+            .iter()
+            .flat_map(|key| ids(value.get(*key)))
+            .any(|iri| context.parse_uri(iri).is_some())
     };
-    if let Err(error) = hook(context.clone(), Forward { activity, to }).await {
-        context.report(&error);
+    let embedded = match activity.get("object") {
+        Some(Value::Array(items)) => items
+            .iter()
+            .any(|item| item.is_object() && concerning(item)),
+        Some(item @ Value::Object(_)) => concerning(item),
+        _ => false,
+    };
+    if concerning(activity) || embedded {
+        collections
+    } else {
+        Vec::new()
     }
 }
 
