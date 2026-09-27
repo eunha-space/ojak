@@ -43,6 +43,8 @@ type CountFn<D> =
 type FirstFn<D> = Arc<
     dyn Fn(Context<D>, String) -> BoxFuture<'static, Result<Option<First>, Error>> + Send + Sync,
 >;
+type UriFn<D> =
+    Arc<dyn Fn(Context<D>, String) -> BoxFuture<'static, Result<Option<Url>, Error>> + Send + Sync>;
 type LastFn<D> = Arc<
     dyn Fn(Context<D>, String) -> BoxFuture<'static, Result<Option<String>, Error>> + Send + Sync,
 >;
@@ -53,6 +55,7 @@ pub struct Collection<D> {
     count: Option<CountFn<D>>,
     first: Option<FirstFn<D>>,
     last: Option<LastFn<D>>,
+    uri: Option<UriFn<D>>,
 }
 
 impl<D: Clone + Send + Sync + 'static> Collection<D> {
@@ -74,6 +77,7 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
             count: None,
             first: None,
             last: None,
+            uri: None,
         }
     }
 
@@ -123,6 +127,25 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
         self
     }
 
+    /// The collection's own URI, when it is not the one it was asked at: an
+    /// actor served under two templates, as Mastodon serves an account at
+    /// `/users/{username}` and `/ap/users/{id}`, names each of its collections
+    /// by one of them. `None` keeps the URI of the template it was asked at.
+    /// The collection and its pages are named, and linked, by this URI.
+    #[must_use]
+    pub fn uri<F, Fut, E>(mut self, uri: F) -> Self
+    where
+        F: Fn(Context<D>, String) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<Url>, E>> + Send + 'static,
+        E: Into<Error>,
+    {
+        let uri = boxed(move |(context, identifier)| uri(context, identifier));
+        self.uri = Some(Arc::new(move |context, identifier| {
+            uri((context, identifier))
+        }));
+        self
+    }
+
     pub(super) async fn serve(
         &self,
         context: &Context<D>,
@@ -130,7 +153,14 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
         identifier: &str,
         query: Option<&str>,
     ) -> Result<http::Response<Vec<u8>>, Error> {
-        let uri = context.collection_uri(kind, identifier)?;
+        let own = match &self.uri {
+            Some(uri) => uri(context.clone(), identifier.to_owned()).await?,
+            None => None,
+        };
+        let uri = match own {
+            Some(uri) => uri,
+            None => context.collection_uri(kind, identifier)?,
+        };
         let cursor = query.and_then(|query| {
             url::form_urlencoded::parse(query.as_bytes())
                 .find(|(name, _)| name == "cursor")

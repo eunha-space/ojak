@@ -148,6 +148,14 @@ fn followers() -> Collection<App> {
     .last_cursor(|_, _| async move { Ok::<_, String>(Some("4".into())) })
 }
 
+/// Featured, named by the canonical `/ap/users/{id}` form even when it is
+/// asked for under the handle form.
+fn featured_by_handle() -> Collection<App> {
+    featured().uri(|ctx: Context<App>, handle: String| async move {
+        Ok::<_, String>((handle == "alice").then(|| ctx.collection_uri("featured", "1").unwrap()))
+    })
+}
+
 fn featured() -> Collection<App> {
     Collection::new(
         |ctx: Context<App>, _id: String, _cursor: Option<String>| async move {
@@ -175,6 +183,11 @@ fn builder() -> feder::federation::Builder<App> {
         .object("note", "/ap/posts/{post_id}", note)
         .collection("followers", "/ap/users/{user_id}/followers", followers())
         .collection("featured", "/ap/users/{user_id}/featured", featured())
+        .collection(
+            "featured_by_handle",
+            "/users/{handle}/featured",
+            featured_by_handle(),
+        )
         .key_pairs(|ctx: Context<App>, actor: ActorRef| async move {
             let id = ctx.actor_uri(&actor.kind, &actor.identifier).unwrap();
             Ok::<_, String>(vec![PublicKey::Rsa {
@@ -407,6 +420,12 @@ async fn an_unpaged_collection_is_one_document() {
         featured["orderedItems"],
         json!(["https://oeee.test/ap/posts/10"])
     );
+}
+
+#[tokio::test]
+async fn a_collection_asked_for_under_another_template_is_named_by_its_own_uri() {
+    let featured = get(&federation(), "/users/alice/featured").await.json();
+    assert_eq!(featured["id"], "https://oeee.test/ap/users/1/featured");
 }
 
 #[tokio::test]
