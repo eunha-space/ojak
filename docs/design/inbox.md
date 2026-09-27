@@ -141,6 +141,16 @@ What is forwarded is the activity as it was authenticated here, whose proof,
 if it has one, still holds; a server receiving it without one fetches it
 from its origin, as above.
 
+### Relays
+
+A relay passes public activities between the servers subscribed to it,
+signed by the relay, so what it sends on is forwarded and is established as
+any forwarded activity is. `feder_core::relay` builds the subscription in
+either convention, Mastodon's follow of `as:Public` or LitePub's follow of
+the relay's actor, recognises the relay's answer, and says which outgoing
+activities go to the relays; the application keeps its subscriptions and
+adds the relays' inboxes to a public activity's deliveries.
+
 ### Errors and responses
 
 | Outcome                                   | Status |
@@ -172,4 +182,3 @@ Not in this step
 ----------------
 
  -  *Portable objects* (FEP-ef61), which are step 7.
- -  *Relays.*

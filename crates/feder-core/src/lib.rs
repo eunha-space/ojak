@@ -6,7 +6,8 @@
 //! happen to it. Addressing and visibility ([`addressing`]), what to do with
 //! a Follow ([`inbound`]), what a post or reaction means where the fediverse
 //! says it several ways ([`meaning`]), where an identifier's authority
-//! comes from ([`origin`]), and portable objects' identifiers ([`portable`]).
+//! comes from ([`origin`]), portable objects' identifiers ([`portable`]),
+//! and subscribing to relays ([`relay`]).
 
 extern crate alloc;
 
@@ -17,3 +18,4 @@ pub mod inbound;
 pub mod meaning;
 pub mod origin;
 pub mod portable;
+pub mod relay;
