@@ -56,8 +56,14 @@ pub struct DelivererConfig {
     /// The scheme a host is tried in until it has accepted one.
     pub first_scheme: Scheme,
     /// The longest the loop sleeps with nothing due, so that deliveries
-    /// queued by another process are picked up.
+    /// queued by another process are picked up. Each sleep is up to a quarter
+    /// shorter, at random, so that the loops of many servers in one process
+    /// do not all wake at once.
     pub idle_poll: Duration,
+    /// A limit on deliveries in flight shared with other deliverers, such as
+    /// every tenant's in a process that serves several; a delivery holds one
+    /// of its permits while it is being sent.
+    pub shared_limit: Option<Arc<Semaphore>>,
 }
 
 impl Default for DelivererConfig {
@@ -71,6 +77,7 @@ impl Default for DelivererConfig {
             per_host: 2,
             first_scheme: Scheme::DraftCavage,
             idle_poll: Duration::from_secs(30),
+            shared_limit: None,
         }
     }
 }
@@ -210,7 +217,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
 
     async fn idle(&self) {
         let due = self.queue.next_due(&self.config.queue).await.ok().flatten();
-        let sleep = due.map_or(self.config.idle_poll, |due| due.min(self.config.idle_poll));
+        let sleep = jitter(due.map_or(self.config.idle_poll, |due| due.min(self.config.idle_poll)));
         tokio::select! {
             () = tokio::time::sleep(sleep) => {}
             () = self.wake.notified() => {}
@@ -248,6 +255,10 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         };
         let host = delivery.inbox.host_str().unwrap_or_default().to_owned();
         let permit = self.host_semaphore(&host).acquire_owned().await;
+        let shared_permit = match &self.config.shared_limit {
+            Some(limit) => Some(limit.clone().acquire_owned().await),
+            None => None,
+        };
         let first = self
             .schemes
             .lock()
@@ -258,6 +269,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         let body = serde_json::to_vec(&delivery.activity)
             .map_err(|error| DeliveryError::Signing(error.to_string()))?;
         let result = delivery::deliver(&self.client, &delivery.inbox, &body, &key, first).await;
+        drop(shared_permit);
         drop(permit);
         let accepted = result?;
         self.schemes
@@ -305,6 +317,33 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                 }
                 self.queue.fail(&job.id, &message).await
             }
+        }
+    }
+}
+
+/// `duration`, up to a quarter shorter at random.
+fn jitter(duration: Duration) -> Duration {
+    use std::hash::{BuildHasher as _, RandomState};
+
+    // A fresh RandomState is seeded from the operating system's randomness,
+    // which is all a wake-up time needs; no random-number crate for this.
+    let random = RandomState::new().hash_one(std::time::SystemTime::now());
+    let quarter = duration / 4;
+    let cut = quarter.mul_f64((random % 1_000_000) as f64 / 1_000_000.0);
+    duration.saturating_sub(cut)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::jitter;
+    use std::time::Duration;
+
+    #[test]
+    fn jitter_shortens_by_at_most_a_quarter() {
+        let base = Duration::from_secs(300);
+        for _ in 0..100 {
+            let slept = jitter(base);
+            assert!(slept <= base && slept >= base * 3 / 4, "{slept:?}");
         }
     }
 }

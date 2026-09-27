@@ -66,15 +66,30 @@ impl PostgresQueue {
     /// Create the table and its index if they do not exist.
     ///
     /// Safe to run from every process at start-up, including both colours of
-    /// a blue/green deploy at once.
+    /// a blue/green deploy at once. An application that changes its schema
+    /// only through its own migrations creates the table there instead, from
+    /// [`PostgresQueue::schema`].
     ///
     /// # Errors
     ///
     /// When the database refuses.
     pub async fn initialize(&self) -> Result<(), QueueError> {
-        let table = &self.table;
+        for statement in Self::schema(&self.table) {
+            sqlx::query(&statement)
+                .execute(&self.pool)
+                .await
+                .map_err(error)?;
+        }
+        Ok(())
+    }
+
+    /// The statements that create a queue table named `table` and its index,
+    /// each safe to run again. What [`PostgresQueue::initialize`] runs, for an
+    /// application to put in a migration of its own.
+    #[must_use]
+    pub fn schema(table: &str) -> Vec<String> {
         let index = format!("{}_due", table.replace('.', "_"));
-        let statements = [
+        vec![
             format!(
                 "CREATE TABLE IF NOT EXISTS {table} (
                     id BIGSERIAL PRIMARY KEY,
@@ -91,14 +106,7 @@ impl PostgresQueue {
                 "CREATE INDEX IF NOT EXISTS {index} ON {table} (queue, run_at) \
                  WHERE failed_at IS NULL"
             ),
-        ];
-        for statement in statements {
-            sqlx::query(&statement)
-                .execute(&self.pool)
-                .await
-                .map_err(error)?;
-        }
-        Ok(())
+        ]
     }
 
     /// Delete jobs given up on more than `age` ago.

@@ -330,3 +330,27 @@ async fn a_name_that_resolves_to_loopback_is_refused() {
 
     assert!(matches!(error, RequestError::Refused(_)), "{error}");
 }
+
+#[tokio::test]
+async fn a_shared_limit_lets_every_delivery_through_in_turn() {
+    let inbox = Inbox::default();
+    let url = serve(inbox.clone()).await;
+    let limit = Arc::new(tokio::sync::Semaphore::new(1));
+    let config = DelivererConfig {
+        shared_limit: Some(limit.clone()),
+        ..fast()
+    };
+    let first = Deliverer::new(MemoryQueue::new(), Keys, client(), config.clone());
+    let second = Deliverer::new(MemoryQueue::new(), Keys, client(), config);
+
+    first
+        .send("alice", &json!({"n": 1}), [url.clone()])
+        .await
+        .unwrap();
+    second.send("alice", &json!({"n": 2}), [url]).await.unwrap();
+    let (a, b) = tokio::join!(first.run_once(), second.run_once());
+    assert_eq!((a.unwrap(), b.unwrap()), (1, 1));
+
+    assert_eq!(inbox.received().len(), 2);
+    assert_eq!(limit.available_permits(), 1, "every permit is returned");
+}
