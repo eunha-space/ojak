@@ -7,14 +7,16 @@
 
 extern crate alloc;
 
-use alloc::{boxed::Box, string::String, vec::Vec};
-use core::fmt;
+use alloc::{boxed::Box, collections::BTreeMap, string::String, vec, vec::Vec};
 use iri_string::types::IriString;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
-    de::{IgnoredAny, SeqAccess, Visitor},
     ser::{SerializeMap, SerializeSeq},
 };
+
+mod read;
+
+pub use read::{Read, ReadError, Registry, read};
 
 /// The canonical Activity Streams JSON-LD context URL.
 pub const ACTIVITYSTREAMS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
@@ -52,6 +54,11 @@ enum ContextExtension {
 /// A top-level `@context` value. Serializes as the bare ActivityStreams IRI
 /// string when there is no extension, or as `[as2_iri, { terms… }]` when a
 /// consent vocabulary is attached.
+///
+/// It is written, never read. Which extension a document needs follows from
+/// its `type`, so the consent types set it from that when they are
+/// deserialized; what a sender's `@context` said has already been resolved by
+/// [`read`] into the `type` itself.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Context {
     extension: Option<ContextExtension>,
@@ -142,67 +149,6 @@ impl Serialize for IdTyped {
         map.serialize_entry("@id", self.0)?;
         map.serialize_entry("@type", "@id")?;
         map.end()
-    }
-}
-
-/// Presence of the distinguishing type keys in a deserialized term map, used to
-/// recover which [`ContextExtension`] an incoming `@context` array carried.
-#[derive(Deserialize)]
-struct TermSignature {
-    #[serde(rename = "QuoteRequest", default)]
-    quote_request: Option<IgnoredAny>,
-    #[serde(rename = "FeatureRequest", default)]
-    feature_request: Option<IgnoredAny>,
-    #[serde(rename = "QuoteAuthorization", default)]
-    quote_authorization: Option<IgnoredAny>,
-    #[serde(rename = "FeatureAuthorization", default)]
-    feature_authorization: Option<IgnoredAny>,
-}
-
-impl TermSignature {
-    fn extension(&self) -> Option<ContextExtension> {
-        if self.quote_request.is_some() {
-            Some(ContextExtension::QuoteRequest)
-        } else if self.feature_request.is_some() {
-            Some(ContextExtension::FeatureRequest)
-        } else if self.quote_authorization.is_some() {
-            Some(ContextExtension::QuoteAuthorization)
-        } else if self.feature_authorization.is_some() {
-            Some(ContextExtension::FeatureAuthorization)
-        } else {
-            None
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Context {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct ContextVisitor;
-
-        impl<'de> Visitor<'de> for ContextVisitor {
-            type Value = Context;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("an @context IRI string or [iri, terms] array")
-            }
-
-            fn visit_str<E>(self, _value: &str) -> Result<Context, E> {
-                Ok(Context { extension: None })
-            }
-
-            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Context, A::Error> {
-                // First element is the base ActivityStreams IRI; the term map (if
-                // any) follows. Identify the extension by the type key it defines.
-                let _base: Option<IgnoredAny> = seq.next_element()?;
-                let signature: Option<TermSignature> = seq.next_element()?;
-                while seq.next_element::<IgnoredAny>()?.is_some() {}
-                Ok(Context {
-                    extension: signature.and_then(|s| s.extension()),
-                })
-            }
-        }
-
-        deserializer.deserialize_any(ContextVisitor)
     }
 }
 
@@ -297,6 +243,82 @@ enum OneOrMany<T> {
     Many(Vec<T>),
 }
 
+/// Deserializes a property that may hold one value or several into a `Vec`.
+///
+/// JSON-LD does not distinguish `"x"` from `["x"]`, and compaction writes a
+/// single value without the array, so a one-element `to` arrives as a string.
+fn one_or_many<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(value) => vec![value],
+        OneOrMany::Many(values) => values,
+    })
+}
+
+/// A natural-language property as it may arrive: a plain string, a JSON-LD
+/// value object, or an array of those.
+///
+/// A sender writes `content` and `contentMap` as two properties, but they are
+/// one property to JSON-LD, and [`read`] hands them back merged under
+/// `content`: the untagged value as a string and each tagged one as
+/// `{"@value": …, "@language": …}`.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TextInput {
+    Plain(String),
+    Value {
+        #[serde(rename = "@value")]
+        value: String,
+        #[serde(rename = "@language", default)]
+        language: Option<String>,
+    },
+    Many(Vec<TextInput>),
+}
+
+/// Split a natural-language property into its untagged value and its values
+/// per language, from either spelling of it.
+fn split_text(
+    input: Option<TextInput>,
+    map: Option<BTreeMap<String, String>>,
+) -> (Option<String>, BTreeMap<String, String>) {
+    fn collect(
+        input: TextInput,
+        plain: &mut Option<String>,
+        languages: &mut BTreeMap<String, String>,
+    ) {
+        match input {
+            TextInput::Plain(value)
+            | TextInput::Value {
+                value,
+                language: None,
+            } => {
+                plain.get_or_insert(value);
+            }
+            TextInput::Value {
+                value,
+                language: Some(language),
+            } => {
+                languages.entry(language).or_insert(value);
+            }
+            TextInput::Many(values) => {
+                for value in values {
+                    collect(value, plain, languages);
+                }
+            }
+        }
+    }
+
+    let mut plain = None;
+    let mut languages = map.unwrap_or_default();
+    if let Some(input) = input {
+        collect(input, &mut plain, &mut languages);
+    }
+    (plain, languages)
+}
+
 impl<T> Serialize for References<T>
 where
     T: Serialize,
@@ -366,6 +388,7 @@ pub enum ActorType {
 
 /// A minimal ActivityPub actor.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(from = "ActorFields")]
 pub struct Actor {
     #[serde(rename = "@context", skip_serializing_if = "Option::is_none")]
     pub context: Option<Iri>,
@@ -378,6 +401,43 @@ pub struct Actor {
     pub preferred_username: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// `name` per language, as `nameMap`.
+    #[serde(rename = "nameMap", skip_serializing_if = "BTreeMap::is_empty")]
+    pub name_map: BTreeMap<String, String>,
+}
+
+/// [`Actor`] as it is read, with `name` in either of its spellings.
+#[derive(Deserialize)]
+struct ActorFields {
+    #[serde(rename = "@context", default)]
+    context: Option<Iri>,
+    #[serde(rename = "type")]
+    kind: ActorType,
+    id: Iri,
+    inbox: Iri,
+    outbox: Iri,
+    #[serde(rename = "preferredUsername", default)]
+    preferred_username: Option<String>,
+    #[serde(default)]
+    name: Option<TextInput>,
+    #[serde(rename = "nameMap", default)]
+    name_map: Option<BTreeMap<String, String>>,
+}
+
+impl From<ActorFields> for Actor {
+    fn from(fields: ActorFields) -> Self {
+        let (name, name_map) = split_text(fields.name, fields.name_map);
+        Self {
+            context: fields.context,
+            kind: fields.kind,
+            id: fields.id,
+            inbox: fields.inbox,
+            outbox: fields.outbox,
+            preferred_username: fields.preferred_username,
+            name,
+            name_map,
+        }
+    }
 }
 
 impl Actor {
@@ -400,12 +460,14 @@ impl Actor {
             outbox,
             preferred_username: None,
             name: None,
+            name_map: BTreeMap::new(),
         }
     }
 }
 
 /// A minimal ActivityStreams Note object.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(from = "NoteFields")]
 pub struct Note {
     #[serde(rename = "@context", skip_serializing_if = "Option::is_none")]
     pub context: Option<Iri>,
@@ -416,8 +478,14 @@ pub struct Note {
     pub attributed_to: Option<Reference<Actor>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    /// `summary` per language, as `summaryMap`.
+    #[serde(rename = "summaryMap", skip_serializing_if = "BTreeMap::is_empty")]
+    pub summary_map: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    /// `content` per language, as `contentMap`.
+    #[serde(rename = "contentMap", skip_serializing_if = "BTreeMap::is_empty")]
+    pub content_map: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sensitive: Option<bool>,
     #[serde(rename = "inReplyTo", skip_serializing_if = "Option::is_none")]
@@ -432,6 +500,62 @@ pub struct Note {
     pub published: Option<String>,
 }
 
+/// [`Note`] as it is read: natural-language properties in either spelling,
+/// and addressing as one value or several.
+#[derive(Deserialize)]
+struct NoteFields {
+    #[serde(rename = "@context", default)]
+    context: Option<Iri>,
+    #[serde(rename = "type")]
+    kind: NoteType,
+    id: Iri,
+    #[serde(rename = "attributedTo", default)]
+    attributed_to: Option<Reference<Actor>>,
+    #[serde(default)]
+    summary: Option<TextInput>,
+    #[serde(rename = "summaryMap", default)]
+    summary_map: Option<BTreeMap<String, String>>,
+    #[serde(default)]
+    content: Option<TextInput>,
+    #[serde(rename = "contentMap", default)]
+    content_map: Option<BTreeMap<String, String>>,
+    #[serde(default)]
+    sensitive: Option<bool>,
+    #[serde(rename = "inReplyTo", default)]
+    in_reply_to: Option<Iri>,
+    #[serde(default)]
+    url: Option<Iri>,
+    #[serde(default, deserialize_with = "one_or_many")]
+    to: Vec<Iri>,
+    #[serde(default, deserialize_with = "one_or_many")]
+    cc: Vec<Iri>,
+    #[serde(default)]
+    published: Option<String>,
+}
+
+impl From<NoteFields> for Note {
+    fn from(fields: NoteFields) -> Self {
+        let (summary, summary_map) = split_text(fields.summary, fields.summary_map);
+        let (content, content_map) = split_text(fields.content, fields.content_map);
+        Self {
+            context: fields.context,
+            kind: fields.kind,
+            id: fields.id,
+            attributed_to: fields.attributed_to,
+            summary,
+            summary_map,
+            content,
+            content_map,
+            sensitive: fields.sensitive,
+            in_reply_to: fields.in_reply_to,
+            url: fields.url,
+            to: fields.to,
+            cc: fields.cc,
+            published: fields.published,
+        }
+    }
+}
+
 impl Note {
     #[must_use]
     pub fn new(id: Iri) -> Self {
@@ -441,7 +565,9 @@ impl Note {
             id,
             attributed_to: None,
             summary: None,
+            summary_map: BTreeMap::new(),
             content: None,
+            content_map: BTreeMap::new(),
             sensitive: None,
             in_reply_to: None,
             url: None,
@@ -519,9 +645,17 @@ pub struct Create<T> {
     pub kind: CreateType,
     pub id: Iri,
     pub actor: Reference<Actor>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub to: Vec<Iri>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub cc: Vec<Iri>,
     pub object: Reference<T>,
 }
@@ -602,9 +736,17 @@ pub struct Announce {
     pub actor: Reference<Actor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub published: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub to: Vec<Iri>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub cc: Vec<Iri>,
     pub object: Iri,
 }
@@ -783,6 +925,7 @@ pub enum AuthorizationType {
 /// quote post, or the collection doing the featuring). `id` is the request's
 /// own activity URI, later referenced by the [`ConsentAccept`]/[`ConsentReject`].
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(from = "ConsentRequestFields")]
 pub struct ConsentRequest {
     #[serde(rename = "@context", skip_serializing_if = "Option::is_none")]
     pub context: Option<Context>,
@@ -793,6 +936,27 @@ pub struct ConsentRequest {
     pub actor: Option<Reference<Actor>>,
     pub object: Iri,
     pub instrument: Iri,
+}
+
+/// [`ConsentRequest`] as it is read. Its `@context` follows from its `type`.
+#[derive(Deserialize)]
+struct ConsentRequestFields {
+    #[serde(rename = "type")]
+    kind: RequestType,
+    id: Iri,
+    #[serde(default)]
+    actor: Option<Reference<Actor>>,
+    object: Iri,
+    instrument: Iri,
+}
+
+impl From<ConsentRequestFields> for ConsentRequest {
+    fn from(fields: ConsentRequestFields) -> Self {
+        Self {
+            actor: fields.actor,
+            ..Self::new(fields.kind, fields.id, fields.object, fields.instrument)
+        }
+    }
 }
 
 impl ConsentRequest {
@@ -873,6 +1037,7 @@ impl ConsentReject {
 /// `interacting_object` is the requesting object (quote post / collection) and
 /// `interaction_target` is the consented-to object (quoted status / account).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(from = "AuthorizationFields")]
 pub struct Authorization {
     #[serde(rename = "@context", skip_serializing_if = "Option::is_none")]
     pub context: Option<Context>,
@@ -885,6 +1050,34 @@ pub struct Authorization {
     pub interacting_object: Iri,
     #[serde(rename = "interactionTarget")]
     pub interaction_target: Iri,
+}
+
+/// [`Authorization`] as it is read. Its `@context` follows from its `type`.
+#[derive(Deserialize)]
+struct AuthorizationFields {
+    #[serde(rename = "type")]
+    kind: AuthorizationType,
+    id: Iri,
+    #[serde(rename = "attributedTo", default)]
+    attributed_to: Option<Reference<Actor>>,
+    #[serde(rename = "interactingObject")]
+    interacting_object: Iri,
+    #[serde(rename = "interactionTarget")]
+    interaction_target: Iri,
+}
+
+impl From<AuthorizationFields> for Authorization {
+    fn from(fields: AuthorizationFields) -> Self {
+        Self {
+            attributed_to: fields.attributed_to,
+            ..Self::new(
+                fields.kind,
+                fields.id,
+                fields.interacting_object,
+                fields.interaction_target,
+            )
+        }
+    }
 }
 
 impl Authorization {

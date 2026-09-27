@@ -327,6 +327,7 @@ dependencies = [
 name = "feder-vocab"
 version = "0.1.0"
 dependencies = [
+ "feder-jsonld",
  "iri-string",
  "serde",
  "serde_json",

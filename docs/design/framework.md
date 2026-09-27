@@ -182,11 +182,12 @@ look through the `@context` for a familiar key.
 Normalisation resolves only the contexts *feder-jsonld* bundles. It fetches
 nothing: it runs on documents from anyone who can reach an inbox, before any
 signature is checked, and a loader that fetches what those documents name is a
-request-forgery primitive. A term from a context Feder does not ship does not
-expand and is dropped from the normalised form, and the context is reported,
-so an application can log a peer whose documents come back emptier than
-expected. Documents that use `@graph`, `@included` or `@reverse` are refused,
-because they let one graph be written as trees that say different things.
+request-forgery primitive. A term from a context Feder does not ship is not
+resolved: it keeps the sender's spelling, which no field of Feder's types
+matches, and the context is reported, so an application can log a peer whose
+documents come back emptier than expected. Documents that use `@graph`,
+`@included` or `@reverse` are refused, because they let one graph be written as
+trees that say different things.
 
 Documents Feder writes are compacted into Feder's context, so the `@context`
 of every type is declared once, next to the type, and never repeated as a
