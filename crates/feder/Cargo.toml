@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+feder-core = { path = "../feder-core" }
 feder-runtime = { path = "../feder-runtime" }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 ipnet = "2"
@@ -29,4 +30,8 @@ workspace = true
 
 [[test]]
 name = "memory_queue"
+required-features = ["testing"]
+
+[[test]]
+name = "memory_kv"
 required-features = ["testing"]

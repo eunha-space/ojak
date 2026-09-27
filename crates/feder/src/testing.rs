@@ -1,9 +1,10 @@
-//! Checks every [`Queue`] backend has to pass.
+//! Checks every [`Queue`] and [`KvStore`] backend has to pass.
 //!
 //! A backend that is right about the easy cases and wrong about a lease is
 //! the kind of bug that loses deliveries once a week, so each backend runs
-//! [`check_queue`] in its own tests, over its own storage.
+//! [`check_queue`] or [`check_kv`] in its own tests, over its own storage.
 
+use crate::kv::KvStore;
 use crate::queue::{Job, Queue};
 use serde_json::json;
 use std::time::Duration;
@@ -121,4 +122,129 @@ pub async fn check_queue(queue: &impl Queue) {
         None,
         "an empty queue has nothing due"
     );
+}
+
+/// Run every check against `store`, which must be empty.
+///
+/// # Panics
+///
+/// When the backend breaks a rule, naming the rule.
+pub async fn check_kv(store: &impl KvStore) {
+    let ttl = Duration::from_millis(300);
+    // What a peer can put in a document, NUL included, comes back as it was.
+    let value = json!({"nested": {"list": [1, "two", null]}, "text": "안녕\u{0}"});
+
+    assert_eq!(
+        store.get(&["a"]).await.expect("get missing"),
+        None,
+        "nothing is there before it is set"
+    );
+    store
+        .set(&["a", "b"], value.clone(), None)
+        .await
+        .expect("set");
+    assert_eq!(
+        store.get(&["a", "b"]).await.expect("get"),
+        Some(value.clone()),
+        "a value comes back as it was set"
+    );
+
+    // Keys are lists, and lists that would join to one string are distinct.
+    for other in [&["a/b"][..], &["a", "b", ""], &["ab"], &["a"], &["b", "a"]] {
+        assert_eq!(
+            store.get(other).await.expect("get other"),
+            None,
+            "{other:?} is not [\"a\", \"b\"]"
+        );
+    }
+    let odd: &[&str] = &["", "with\u{0}nul", "안녕", "\"quoted\""];
+    store.set(odd, json!(1), None).await.expect("set odd key");
+    assert_eq!(
+        store.get(odd).await.expect("get odd key"),
+        Some(json!(1)),
+        "any string is a key segment"
+    );
+
+    store
+        .set(&["a", "b"], json!("replaced"), None)
+        .await
+        .expect("replace");
+    assert_eq!(
+        store.get(&["a", "b"]).await.expect("get replaced"),
+        Some(json!("replaced")),
+        "set replaces"
+    );
+
+    // Expiry.
+    store
+        .set(&["expiring"], json!(true), Some(ttl))
+        .await
+        .expect("set expiring");
+    assert_eq!(
+        store.get(&["expiring"]).await.expect("get before expiry"),
+        Some(json!(true)),
+        "an entry is there until it expires"
+    );
+
+    // Insert puts only where nothing is.
+    assert!(
+        store
+            .insert(&["once"], json!(1), Some(ttl))
+            .await
+            .expect("insert"),
+        "insert into nothing puts"
+    );
+    assert!(
+        !store
+            .insert(&["once"], json!(2), None)
+            .await
+            .expect("insert again"),
+        "insert over something does not"
+    );
+    assert_eq!(
+        store.get(&["once"]).await.expect("get once"),
+        Some(json!(1)),
+        "a refused insert leaves the value alone"
+    );
+
+    tokio::time::sleep(ttl + Duration::from_millis(200)).await;
+    assert_eq!(
+        store.get(&["expiring"]).await.expect("get after expiry"),
+        None,
+        "an expired entry is absent"
+    );
+    assert!(
+        store
+            .insert(&["once"], json!(3), None)
+            .await
+            .expect("insert over expired"),
+        "insert over an expired entry puts"
+    );
+    assert_eq!(
+        store.get(&["once"]).await.expect("get reinserted"),
+        Some(json!(3)),
+        "and what it put is there, without expiry"
+    );
+
+    // Of inserts at once, exactly one puts.
+    let racers =
+        futures_util::future::join_all((0..8).map(|n| store.insert(&["race"], json!(n), None)))
+            .await;
+    let won = racers
+        .into_iter()
+        .map(|result| result.expect("racing insert"))
+        .filter(|put| *put)
+        .count();
+    assert_eq!(won, 1, "exactly one of several inserts puts");
+
+    store.delete(&["a", "b"]).await.expect("delete");
+    store.delete(&["never set"]).await.expect("delete missing");
+    assert_eq!(
+        store.get(&["a", "b"]).await.expect("get deleted"),
+        None,
+        "a deleted entry is absent"
+    );
+    for key in [odd, &["once"], &["race"]] {
+        store.delete(key).await.expect("clean up");
+    }
 }

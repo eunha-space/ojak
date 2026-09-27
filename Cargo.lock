@@ -468,6 +468,7 @@ name = "feder"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "feder-core",
  "feder-runtime",
  "futures-util",
  "ipnet",

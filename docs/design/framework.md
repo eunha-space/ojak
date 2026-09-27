@@ -96,8 +96,8 @@ application provides:
 
 Both are traits, and as in Fedify their backends are pluggable: an
 application picks one rather than writing one. Feder ships an in-memory
-backend for tests and small deployments, *feder-postgres* keeps the queue in
-a table of its own that it creates on first use, and more backends can follow
+backend for tests and small deployments, *feder-postgres* keeps the queue and
+the store each in a table of its own that it creates on first use, and more backends can follow
 the same trait. Every backend runs one set of conformance checks, so they
 agree on the parts that lose work when they are wrong. An application with
 tables for the purpose already implements the trait over them instead: eunha's
@@ -423,7 +423,12 @@ Fetching an object returns its bytes together with the URL it was finally
 served from. Feder's own lookups then establish it the same way the inbox does:
 an `https` object whose `id` is on another origin than the URL it came from is
 not trusted as that object without a proof, and a portable object is not
-trusted without one at all.
+trusted without one at all. A lookup, as Mastodon's does, fetches such an
+object once more from its own `id`, and trusts what the owner of the `id`
+serves there; a second disagreement is refused. What counts as ActivityPub is
+Mastodon's rule too: `application/activity+json`, or `application/ld+json`
+with the ActivityStreams profile, and never plain JSON, which a server that
+takes uploads would otherwise serve in its own name.
 
 An application can allow specific private addresses for development.
 

@@ -93,7 +93,8 @@ pub struct Response {
 #[derive(Clone, Debug)]
 pub struct Client {
     get: reqwest::Client,
-    post: reqwest::Client,
+    /// Follows no redirect.
+    direct: reqwest::Client,
     config: Arc<ClientConfig>,
 }
 
@@ -131,11 +132,17 @@ impl Client {
             .map_err(RequestError::Network)?;
         // A delivery is not redirected: the inbox is where the signature says
         // it is going, and a redirected POST would carry the body elsewhere.
-        let post = builder()
+        // A signed GET follows its redirects itself, signing each hop for
+        // where it goes.
+        let direct = builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(RequestError::Network)?;
-        Ok(Self { get, post, config })
+        Ok(Self {
+            get,
+            direct,
+            config,
+        })
     }
 
     /// The configuration the client was built with.
@@ -162,6 +169,27 @@ impl Client {
         self.read(response).await
     }
 
+    /// GET `url` without following a redirect: a 3xx is the response.
+    ///
+    /// # Errors
+    ///
+    /// As [`Client::get`].
+    pub async fn get_direct(
+        &self,
+        url: &Url,
+        headers: HeaderMap,
+    ) -> Result<Response, RequestError> {
+        check_url(url, &self.config.allow_private)?;
+        let response = self
+            .direct
+            .get(url.clone())
+            .headers(headers)
+            .send()
+            .await
+            .map_err(classify)?;
+        self.read(response).await
+    }
+
     /// POST `body` to `url`, without following redirects.
     ///
     /// # Errors
@@ -175,7 +203,7 @@ impl Client {
     ) -> Result<Response, RequestError> {
         check_url(url, &self.config.allow_private)?;
         let response = self
-            .post
+            .direct
             .post(url.clone())
             .headers(headers)
             .body(body)
