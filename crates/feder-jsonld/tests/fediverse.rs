@@ -333,6 +333,34 @@ fn integrity_proof_fields_expand_under_their_scoped_context() {
 }
 
 #[test]
+fn an_integrity_proof_normalises_back_to_the_terms_it_was_written_in() {
+    // Compaction has to apply the same type-scoped context expansion did, or a
+    // proof comes back as `sec:proofValue` wrapped in a typed value object,
+    // which is the same statement in a shape no reader expects.
+    let proof = json!({
+        "type": "DataIntegrityProof",
+        "cryptosuite": "eddsa-jcs-2022",
+        "created": "2026-01-01T00:00:00Z",
+        "proofPurpose": "assertionMethod",
+        "verificationMethod": "https://remote.example/users/bob#ed25519-key",
+        "proofValue": "z3sMTQ"
+    });
+    let document = json!({
+        "@context": [
+            "https://www.w3.org/ns/activitystreams",
+            "https://w3id.org/security/data-integrity/v1"
+        ],
+        "id": "https://remote.example/activities/1",
+        "type": "Create",
+        "proof": proof
+    });
+
+    let normalized = normalize(&registry(), &document).expect("normalize");
+
+    assert_eq!(normalized.document()["proof"], proof);
+}
+
+#[test]
 fn a_term_may_be_defined_before_the_prefix_it_uses() {
     // litepub's context defines `"Emoji": "toot:Emoji"` several lines above
     // `"toot"`. A term map is a set, not a sequence, so key order must not

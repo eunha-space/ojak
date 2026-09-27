@@ -17,7 +17,7 @@ use serde_json::{Map, Value};
 
 use crate::{
     Error,
-    context::{ActiveContext, Session, TermDefinition, TypeMapping},
+    context::{ActiveContext, Session, TermDefinition, TypeMapping, process},
 };
 
 /// The terms of an active context, indexed by the IRI they expand to.
@@ -82,7 +82,12 @@ fn score(definition: &TermDefinition, values: &[Value]) -> i32 {
     if all_lists && definition.container.list {
         score += 4;
     }
-    if all_node_refs && matches!(definition.type_mapping, Some(TypeMapping::Id)) {
+    if all_node_refs
+        && matches!(
+            definition.type_mapping,
+            Some(TypeMapping::Id | TypeMapping::Vocab)
+        )
+    {
         score += 4;
     }
     if let Some(datatype) = datatype
@@ -228,19 +233,59 @@ fn compact_element(
             compact_element(active, inverse, property, &items, session, depth + 1)
         }
         Value::Object(object) => {
-            // A bare node reference under an `@id`-typed term is just its IRI.
-            if is_node_reference(value)
-                && matches!(
-                    property.and_then(|d| d.type_mapping.as_ref()),
-                    Some(TypeMapping::Id)
-                )
-            {
-                return Ok(object["@id"].clone());
+            // A bare node reference under an `@id`-typed term is just its IRI,
+            // and under a `@vocab`-typed one it is the term the IRI has, which
+            // is how `proofPurpose` says `assertionMethod`.
+            if is_node_reference(value) {
+                match property.and_then(|d| d.type_mapping.as_ref()) {
+                    Some(TypeMapping::Id) => return Ok(object["@id"].clone()),
+                    Some(TypeMapping::Vocab) => {
+                        if let Some(iri) = object["@id"].as_str() {
+                            return Ok(Value::String(compact_iri(active, inverse, iri)));
+                        }
+                    }
+                    _ => {}
+                }
             }
             compact_node(active, inverse, object, session, depth)
         }
         other => Ok(other.clone()),
     }
+}
+
+/// The context `node`'s types scope to it, if any of them scope one.
+///
+/// The mirror of expansion's type-scoped contexts: `DataIntegrityProof` is
+/// what gives `proofValue` and `cryptosuite` their terms, so a proof compacted
+/// without it would come back as `sec:proofValue` wrapped in a typed value.
+/// Types are compacted against the enclosing context to find their terms, and
+/// scoped contexts are applied in lexicographic order of those terms, as
+/// expansion applies them.
+fn type_scoped_context(
+    active: &ActiveContext,
+    inverse: &Inverse<'_>,
+    node: &Map<String, Value>,
+    session: &mut Session<'_>,
+) -> Result<Option<ActiveContext>, Error> {
+    let mut terms: Vec<String> = match node.get("@type") {
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(Value::as_str)
+            .map(|iri| compact_iri(active, inverse, iri))
+            .collect(),
+        Some(Value::String(iri)) => Vec::from([compact_iri(active, inverse, iri)]),
+        _ => return Ok(None),
+    };
+    terms.sort_unstable();
+    let mut scoped: Option<ActiveContext> = None;
+    for term in &terms {
+        let Some(local) = active.term(term).and_then(|d| d.scoped.as_deref()) else {
+            continue;
+        };
+        let base = scoped.as_ref().unwrap_or(active);
+        scoped = Some(process(base, local, session, &mut Vec::new())?);
+    }
+    Ok(scoped)
 }
 
 /// Compact an expanded node object.
@@ -252,6 +297,16 @@ fn compact_node(
     depth: usize,
 ) -> Result<Value, Error> {
     session.charge_node()?;
+
+    // A type-scoped context applies to the node carrying the type, and to
+    // what is nested in it, exactly as in expansion.
+    let type_scoped = type_scoped_context(active, inverse, node, session)?;
+    let type_scoped_inverse = type_scoped.as_ref().map(Inverse::build);
+    let (active, inverse) = match (&type_scoped, &type_scoped_inverse) {
+        (Some(scoped), Some(scoped_inverse)) => (scoped, scoped_inverse),
+        _ => (active, inverse),
+    };
+
     let mut result = Map::new();
 
     for (key, value) in node {
@@ -298,12 +353,25 @@ fn compact_node(
                     continue;
                 }
 
+                // A property-scoped context applies to this property's values
+                // only, again as in expansion.
+                let property_scoped = match definition.and_then(|d| d.scoped.as_deref()) {
+                    Some(local) => Some(process(active, local, session, &mut Vec::new())?),
+                    None => None,
+                };
+                let property_scoped_inverse = property_scoped.as_ref().map(Inverse::build);
+                let (value_active, value_inverse) =
+                    match (&property_scoped, &property_scoped_inverse) {
+                        (Some(scoped), Some(scoped_inverse)) => (scoped, scoped_inverse),
+                        _ => (active, inverse),
+                    };
+
                 let is_list = items.len() == 1 && items[0].get("@list").is_some();
                 let mut compacted = Vec::with_capacity(items.len());
                 for item in &items {
                     compacted.push(compact_element(
-                        active,
-                        inverse,
+                        value_active,
+                        value_inverse,
                         definition,
                         item,
                         session,
