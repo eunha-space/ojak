@@ -46,6 +46,12 @@ const BUNDLED: &[Bundled] = &[
         document: include_str!("../contexts/security-data-integrity-v1.jsonld"),
     },
     Bundled {
+        iri: "https://w3id.org/security/data-integrity/v2",
+        // Where w3id.org redirects to.
+        aliases: &["https://www.w3.org/2025/credentials/vcdi/context/v2.jsonld"],
+        document: include_str!("../contexts/security-data-integrity-v2.jsonld"),
+    },
+    Bundled {
         iri: "https://w3id.org/security/multikey/v1",
         aliases: &[],
         document: include_str!("../contexts/security-multikey-v1.jsonld"),

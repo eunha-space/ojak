@@ -1,0 +1,30 @@
+$schema: feder
+name: FeatureAuthorization
+compactName: FeatureAuthorization
+uri: "https://w3id.org/fep/7aa9#FeatureAuthorization"
+extends: "https://www.w3.org/ns/activitystreams#Object"
+entity: true
+description: |
+  Proves that an account consented to being featured in a collection
+  (FEP-7aa9). Dereferenceable, so that anyone can check a featured item was
+  consented to.
+defaultContext:
+- "https://www.w3.org/ns/activitystreams"
+properties:
+- singularName: interactingObject
+  functional: true
+  compactName: interactingObject
+  uri: "https://gotosocial.org/ns#interactingObject"
+  description: |
+    The collection the account is featured in.
+  range:
+  - "https://www.w3.org/ns/activitystreams#Object"
+
+- singularName: interactionTarget
+  functional: true
+  compactName: interactionTarget
+  uri: "https://gotosocial.org/ns#interactionTarget"
+  description: |
+    The account that consented to being featured.
+  range:
+  - "https://www.w3.org/ns/activitystreams#Object"

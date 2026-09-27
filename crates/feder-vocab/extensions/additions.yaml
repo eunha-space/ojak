@@ -1,5 +1,6 @@
 # Feder's additions to the vocabulary: properties the fediverse sends that the
-# vendored schemas in ../schemas do not describe. Those stay byte-for-byte
+# vendored schemas in ../schemas do not describe; types they do not describe
+# are in types/, in the same format as the schemas. Those stay byte-for-byte
 # Fedify's; what is here is Feder's, merged into the types it names when
 # feder-vocab-gen generates them. Each property is in the format of
 # ../schemas/format/schema.yaml, and each is here because a document in

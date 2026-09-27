@@ -1,7 +1,8 @@
 //! Reading documents as other servers write them, through `feder_vocab::read`.
 
+use feder_vocab::json::Text;
 use feder_vocab::{
-    ConsentRequest, Create, Follow, Iri, Note, ReadError, Reference, Registry, RequestType, read,
+    AnyActor, AnyObject, Create, Follow, Iri, Note, QuoteRequest, ReadError, Registry, read, write,
 };
 use serde_json::{Value, json};
 
@@ -42,21 +43,21 @@ fn a_mastodon_create_reads_into_typed_fields() {
         }
     });
 
-    let create = read::<Create<Note>>(&registry(), &document)
+    let create = read::<Create>(&registry(), &document)
         .expect("read")
         .into_value();
 
-    assert_eq!(create.to, vec![public()]);
-    assert_eq!(create.cc.len(), 1);
-    let Reference::Object(note) = create.object else {
-        panic!("the note is embedded");
+    assert_eq!(create.tos, vec![AnyObject::Iri(public())]);
+    assert_eq!(create.ccs.len(), 1);
+    let [AnyObject::Note(note)] = create.objects.as_slice() else {
+        panic!("the note is embedded: {:?}", create.objects);
     };
-    assert_eq!(note.content.as_deref(), Some("<p>hello</p>"));
-    assert_eq!(note.content_map["ko"], "<p>안녕</p>");
-    assert_eq!(note.content_map["en"], "<p>hello</p>");
+    assert_eq!(note.content.value.as_deref(), Some("<p>hello</p>"));
+    assert_eq!(note.content.languages["ko"], "<p>안녕</p>");
+    assert_eq!(note.content.languages["en"], "<p>hello</p>");
     assert_eq!(note.sensitive, Some(true));
-    assert_eq!(note.to, vec![public()]);
-    assert_eq!(note.in_reply_to, None);
+    assert_eq!(note.tos, vec![AnyObject::Iri(public())]);
+    assert!(note.reply_targets.is_empty());
 }
 
 /// The same property under a spelling Feder never uses, which a reader that
@@ -79,7 +80,7 @@ fn an_aliased_property_arrives_in_its_field() {
         .into_value();
 
     assert_eq!(note.sensitive, Some(true));
-    assert_eq!(note.content.as_deref(), Some("text"));
+    assert_eq!(note.content.value.as_deref(), Some("text"));
 }
 
 /// Text that only has language-tagged values has no untagged one to invent.
@@ -96,32 +97,37 @@ fn text_with_only_languages_leaves_the_plain_value_empty() {
         .expect("read")
         .into_value();
 
-    assert_eq!(note.content, None);
-    assert_eq!(note.content_map["ja"], "こんにちは");
+    assert_eq!(note.content.value, None);
+    assert_eq!(note.content.languages["ja"], "こんにちは");
 }
 
 /// A note Feder writes with languages reads back as the same note.
 #[test]
 fn a_note_with_languages_round_trips_through_read() {
-    let mut note = Note::new("https://feder.example/notes/1".parse().unwrap());
-    note.content = Some("hi".into());
-    note.content_map.insert("en".into(), "hi".into());
-    note.summary_map.insert("en".into(), "cw".into());
-    note.to = vec![public()];
+    let mut content = Text::plain("hi");
+    content.languages.insert("en".into(), "hi".into());
+    let mut summary = Text::default();
+    summary.languages.insert("en".into(), "cw".into());
+    let note = Note {
+        id: Some("https://feder.example/notes/1".parse().unwrap()),
+        content,
+        summary,
+        tos: vec![AnyObject::Iri(public())],
+        ..Note::default()
+    };
 
-    let written = serde_json::to_value(&note).expect("serialize");
+    let written = write(&note);
     assert_eq!(written["contentMap"], json!({"en": "hi"}));
     assert_eq!(written["summaryMap"], json!({"en": "cw"}));
 
-    let mut read_back = read::<Note>(&registry(), &written)
+    let read_back = read::<Note>(&registry(), &written)
         .expect("read")
         .into_value();
-    read_back.context = note.context.clone();
     assert_eq!(read_back, note);
 }
 
 /// A consent request is recognised by the IRI its type names, however the
-/// sender abbreviated it, and is written back with the context its type needs.
+/// sender abbreviated it, and written back under a context that names it.
 #[test]
 fn a_quote_request_is_recognised_by_iri() {
     for (context, kind) in [
@@ -147,16 +153,16 @@ fn a_quote_request_is_recognised_by_iri() {
             "instrument": "https://other.example/notes/9"
         });
 
-        let request = read::<ConsentRequest>(&registry(), &document)
+        let request = read::<QuoteRequest>(&registry(), &document)
             .unwrap_or_else(|error| panic!("read {kind}: {error}"))
             .into_value();
 
-        assert_eq!(request.kind, RequestType::QuoteRequest, "{kind}");
-        let written = serde_json::to_value(&request).expect("serialize");
-        assert_eq!(
-            written["@context"][1]["QuoteRequest"], "https://w3id.org/fep/044f#QuoteRequest",
-            "{kind}"
-        );
+        assert_eq!(request.objects.len(), 1, "{kind}");
+        // Written back under Feder's context, which names the type.
+        let written = write(&request);
+        assert_eq!(written["type"], "QuoteRequest", "{kind}");
+        let read_again = read::<QuoteRequest>(&registry(), &written).expect("read again");
+        assert_eq!(read_again.into_value(), request, "{kind}");
     }
 }
 
@@ -181,10 +187,10 @@ fn an_embedded_actor_reads_as_an_object() {
         .expect("read")
         .into_value();
 
-    let Reference::Object(actor) = follow.actor else {
-        panic!("the actor is embedded");
+    let [AnyActor::Person(actor)] = follow.actors.as_slice() else {
+        panic!("the actor is embedded: {:?}", follow.actors);
     };
-    assert_eq!(actor.name_map["en"], "Bob");
+    assert_eq!(actor.name.languages["en"], "Bob");
 }
 
 /// A context Feder does not ship is reported. Its terms are not resolved:

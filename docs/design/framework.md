@@ -483,7 +483,9 @@ next to what they have now.
 6.  *Generated vocabulary.* Vendor the schemas, write the generator, and move
     *feder-vocab* onto its output once the generated types read the same
     documents the hand-written ones do. It can run beside the steps above;
-    later steps get more types from it, not a different shape.
+    later steps get more types from it, not a different shape. Done: the
+    generated types are *feder-vocab*'s API, with Feder's own types and
+    properties in `extensions/`, and `tests/corpus` measures what they read.
 7.  *Gateways.* Serving and accepting portable objects, and the signer trait
     for keys held off the server. The rules they need are already in place by
     step 2; this step is the routes and the delivery path.

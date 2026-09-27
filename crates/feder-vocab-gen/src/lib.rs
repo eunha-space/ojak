@@ -25,6 +25,12 @@ pub fn additions_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../feder-vocab/extensions/additions.yaml")
 }
 
+/// Where Feder's own types are, in the vendored schemas' format.
+#[must_use]
+pub fn extension_types_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../feder-vocab/extensions/types")
+}
+
 /// Where the generated code goes.
 #[must_use]
 pub fn output_path() -> PathBuf {
@@ -38,6 +44,7 @@ pub fn output_path() -> PathBuf {
 /// When a schema cannot be read or represented, or `rustfmt` fails.
 pub fn render() -> Result<String> {
     let mut schemas = schema::load_dir(&schemas_dir())?;
+    schemas.extend(schema::load_dir(&extension_types_dir())?);
     schema::apply(&mut schemas, &schema::load_additions(&additions_path())?)?;
     let vocabulary = model::Vocabulary::from_schemas(&schemas, &feder_jsonld::Registry::bundled())?;
     emit::render(&vocabulary)

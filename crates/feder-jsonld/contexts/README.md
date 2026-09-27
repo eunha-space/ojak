@@ -37,6 +37,7 @@ Fetched verbatim from their canonical URLs on 2026-09-17:
 | `activitystreams.jsonld`            | <https://www.w3.org/ns/activitystreams>         |
 | `security-v1.jsonld`                | <https://w3id.org/security/v1>                  |
 | `security-data-integrity-v1.jsonld` | <https://w3id.org/security/data-integrity/v1>   |
+| `security-data-integrity-v2.jsonld` | <https://w3id.org/security/data-integrity/v2>, fetched 2026-09-27 |
 | `security-multikey-v1.jsonld`       | <https://w3id.org/security/multikey/v1>         |
 | `did-v1.jsonld`                     | <https://www.w3.org/ns/did/v1>                  |
 | `cid-v1.jsonld`                     | <https://www.w3.org/ns/cid/v1>                  |

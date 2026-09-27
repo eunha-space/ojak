@@ -1,0 +1,16 @@
+$schema: feder
+name: FeatureRequest
+compactName: FeatureRequest
+uri: "https://w3id.org/fep/7aa9#FeatureRequest"
+extends: "https://www.w3.org/ns/activitystreams#Activity"
+entity: true
+description: |
+  A request to feature an account in a collection, which needs the account's
+  consent (FEP-7aa9, as Mastodon's featured collections use it).
+
+  The `object` property is the account to feature, and the `instrument` the
+  collection featuring it. The account answers with an {@link Accept}, whose
+  `result` is a {@link FeatureAuthorization}, or a {@link Reject}.
+defaultContext:
+- "https://www.w3.org/ns/activitystreams"
+properties: []

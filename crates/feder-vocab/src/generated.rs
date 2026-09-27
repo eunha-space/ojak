@@ -5682,6 +5682,459 @@ impl ToJson for Export {
     }
 }
 
+/// Proves that an account consented to being featured in a collection
+/// (FEP-7aa9). Dereferenceable, so that anyone can check a featured item was
+/// consented to.
+///
+/// The type `https://w3id.org/fep/7aa9#FeatureAuthorization`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FeatureAuthorization {
+    /// The IRI that identifies this object.
+    pub id: Option<Iri>,
+    /// See [`Object::attachments`].
+    pub attachments: Vec<LinkOrObjectOrPropertyValue>,
+    /// See [`Object::attributions`].
+    pub attributions: Vec<AnyActor>,
+    /// See [`Object::audiences`].
+    pub audiences: Vec<AnyObject>,
+    /// See [`Object::content`].
+    pub content: Text,
+    /// See [`Object::contexts`].
+    pub contexts: Vec<LinkOrObject>,
+    /// See [`Object::name`].
+    pub name: Text,
+    /// See [`Object::end_time`].
+    pub end_time: Option<String>,
+    /// See [`Object::generators`].
+    pub generators: Vec<LinkOrObject>,
+    /// See [`Object::icons`].
+    pub icons: Vec<Reference<Image>>,
+    /// See [`Object::images`].
+    pub images: Vec<Reference<Image>>,
+    /// See [`Object::reply_targets`].
+    pub reply_targets: Vec<LinkOrObject>,
+    /// See [`Object::locations`].
+    pub locations: Vec<LinkOrObject>,
+    /// See [`Object::previews`].
+    pub previews: Vec<LinkOrObject>,
+    /// See [`Object::published`].
+    pub published: Option<String>,
+    /// See [`Object::replies`].
+    pub replies: Option<AnyCollection>,
+    /// See [`Object::shares`].
+    pub shares: Option<AnyCollection>,
+    /// See [`Object::likes`].
+    pub likes: Option<AnyCollection>,
+    /// See [`Object::emoji_reactions`].
+    pub emoji_reactions: Option<AnyCollection>,
+    /// See [`Object::start_time`].
+    pub start_time: Option<String>,
+    /// See [`Object::summary`].
+    pub summary: Text,
+    /// See [`Object::tags`].
+    pub tags: Vec<LinkOrObject>,
+    /// See [`Object::updated`].
+    pub updated: Option<String>,
+    /// See [`Object::urls`].
+    pub urls: Vec<LinkOrIri>,
+    /// See [`Object::tos`].
+    pub tos: Vec<AnyObject>,
+    /// See [`Object::btos`].
+    pub btos: Vec<AnyObject>,
+    /// See [`Object::ccs`].
+    pub ccs: Vec<AnyObject>,
+    /// See [`Object::bccs`].
+    pub bccs: Vec<AnyObject>,
+    /// See [`Object::media_type`].
+    pub media_type: Option<String>,
+    /// See [`Object::duration`].
+    pub duration: Option<String>,
+    /// See [`Object::sensitive`].
+    pub sensitive: Option<bool>,
+    /// See [`Object::source`].
+    pub source: Option<Box<Source>>,
+    /// See [`Object::proofs`].
+    pub proofs: Vec<Reference<DataIntegrityProof>>,
+    /// See [`Object::interaction_policy`].
+    pub interaction_policy: Option<Box<InteractionPolicy>>,
+    /// See [`Object::approved_by`].
+    pub approved_by: Option<Iri>,
+    /// See [`Object::like_authorization`].
+    pub like_authorization: Option<Reference<LikeAuthorization>>,
+    /// See [`Object::reply_authorization`].
+    pub reply_authorization: Option<Reference<ReplyAuthorization>>,
+    /// See [`Object::announce_authorization`].
+    pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// The collection the account is featured in.
+    pub interacting_object: Option<AnyObject>,
+    /// The account that consented to being featured.
+    pub interaction_target: Option<AnyObject>,
+}
+
+impl FeatureAuthorization {
+    /// The type's IRI.
+    pub const TYPE_IRI: &'static str = "https://w3id.org/fep/7aa9#FeatureAuthorization";
+    /// The type's `type` in a normalised document.
+    pub const TYPE: &'static str = "FeatureAuthorization";
+}
+
+impl json::Typed for FeatureAuthorization {
+    const TYPE: &'static str = "FeatureAuthorization";
+}
+
+impl FromJson for FeatureAuthorization {
+    fn from_json(value: &Value) -> Result<Self, JsonError> {
+        let object = json::object(value)?;
+        json::expect_type(object, Self::TYPE)?;
+        Ok(Self {
+            id: json::id(object),
+            attachments: json::many(object, &["attachment"]),
+            attributions: json::many(object, &["attributedTo"]),
+            audiences: json::many(object, &["audience"]),
+            content: json::text(object, "content"),
+            contexts: json::many(object, &["context"]),
+            name: json::text(object, "name"),
+            end_time: json::one(object, &["endTime"]),
+            generators: json::many(object, &["generator"]),
+            icons: json::many_mapped(object, &["icon"], json::link_to_image),
+            images: json::many_mapped(object, &["image"], json::link_to_image),
+            reply_targets: json::many(object, &["inReplyTo"]),
+            locations: json::many(object, &["location"]),
+            previews: json::many(object, &["preview"]),
+            published: json::one(object, &["published"]),
+            replies: json::one(object, &["replies"]),
+            shares: json::one(object, &["shares"]),
+            likes: json::one(object, &["likes"]),
+            emoji_reactions: json::one(object, &["emojiReactions"]),
+            start_time: json::one(object, &["startTime"]),
+            summary: json::text(object, "summary"),
+            tags: json::many(object, &["tag"]),
+            updated: json::one(object, &["updated"]),
+            urls: json::many(object, &["url"]),
+            tos: json::many(object, &["to"]),
+            btos: json::many(object, &["bto"]),
+            ccs: json::many(object, &["cc"]),
+            bccs: json::many(object, &["bcc"]),
+            media_type: json::one(object, &["mediaType"]),
+            duration: json::one(object, &["duration"]),
+            sensitive: json::one(object, &["sensitive"]),
+            source: json::one(object, &["source"]),
+            proofs: json::many(object, &["proof"]),
+            interaction_policy: json::one(object, &["interactionPolicy"]),
+            approved_by: json::one(object, &["approvedBy"]),
+            like_authorization: json::one(object, &["likeAuthorization"]),
+            reply_authorization: json::one(object, &["replyAuthorization"]),
+            announce_authorization: json::one(object, &["announceAuthorization"]),
+            interacting_object: json::one(object, &["interactingObject"]),
+            interaction_target: json::one(object, &["interactionTarget"]),
+        })
+    }
+}
+
+impl ToJson for FeatureAuthorization {
+    fn to_json(&self) -> Value {
+        let mut object = json::new_object(Some(Self::TYPE), self.id.as_ref());
+        json::put_many(&mut object, &["attachment"], &self.attachments);
+        json::put_many(&mut object, &["attributedTo"], &self.attributions);
+        json::put_many(&mut object, &["audience"], &self.audiences);
+        json::put_text(&mut object, "content", &self.content);
+        json::put_many(&mut object, &["context"], &self.contexts);
+        json::put_text(&mut object, "name", &self.name);
+        json::put_one(&mut object, &["endTime"], self.end_time.as_ref());
+        json::put_many(&mut object, &["generator"], &self.generators);
+        json::put_many(&mut object, &["icon"], &self.icons);
+        json::put_many(&mut object, &["image"], &self.images);
+        json::put_many(&mut object, &["inReplyTo"], &self.reply_targets);
+        json::put_many(&mut object, &["location"], &self.locations);
+        json::put_many(&mut object, &["preview"], &self.previews);
+        json::put_one(&mut object, &["published"], self.published.as_ref());
+        json::put_one(&mut object, &["replies"], self.replies.as_ref());
+        json::put_one(&mut object, &["shares"], self.shares.as_ref());
+        json::put_one(&mut object, &["likes"], self.likes.as_ref());
+        json::put_one(
+            &mut object,
+            &["emojiReactions"],
+            self.emoji_reactions.as_ref(),
+        );
+        json::put_one(&mut object, &["startTime"], self.start_time.as_ref());
+        json::put_text(&mut object, "summary", &self.summary);
+        json::put_many(&mut object, &["tag"], &self.tags);
+        json::put_one(&mut object, &["updated"], self.updated.as_ref());
+        json::put_many(&mut object, &["url"], &self.urls);
+        json::put_many(&mut object, &["to"], &self.tos);
+        json::put_many(&mut object, &["bto"], &self.btos);
+        json::put_many(&mut object, &["cc"], &self.ccs);
+        json::put_many(&mut object, &["bcc"], &self.bccs);
+        json::put_one(&mut object, &["mediaType"], self.media_type.as_ref());
+        json::put_one(&mut object, &["duration"], self.duration.as_ref());
+        json::put_one(&mut object, &["sensitive"], self.sensitive.as_ref());
+        json::put_one(&mut object, &["source"], self.source.as_ref());
+        json::put_many(&mut object, &["proof"], &self.proofs);
+        json::put_one(
+            &mut object,
+            &["interactionPolicy"],
+            self.interaction_policy.as_ref(),
+        );
+        json::put_one(&mut object, &["approvedBy"], self.approved_by.as_ref());
+        json::put_one(
+            &mut object,
+            &["likeAuthorization"],
+            self.like_authorization.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["replyAuthorization"],
+            self.reply_authorization.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["announceAuthorization"],
+            self.announce_authorization.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["interactingObject"],
+            self.interacting_object.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["interactionTarget"],
+            self.interaction_target.as_ref(),
+        );
+        Value::Object(object)
+    }
+}
+
+/// A request to feature an account in a collection, which needs the account's
+/// consent (FEP-7aa9, as Mastodon's featured collections use it).
+///
+/// The type `https://w3id.org/fep/7aa9#FeatureRequest`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FeatureRequest {
+    /// The IRI that identifies this object.
+    pub id: Option<Iri>,
+    /// See [`Object::attachments`].
+    pub attachments: Vec<LinkOrObjectOrPropertyValue>,
+    /// See [`Object::attributions`].
+    pub attributions: Vec<AnyActor>,
+    /// See [`Object::audiences`].
+    pub audiences: Vec<AnyObject>,
+    /// See [`Object::content`].
+    pub content: Text,
+    /// See [`Object::contexts`].
+    pub contexts: Vec<LinkOrObject>,
+    /// See [`Object::name`].
+    pub name: Text,
+    /// See [`Object::end_time`].
+    pub end_time: Option<String>,
+    /// See [`Object::generators`].
+    pub generators: Vec<LinkOrObject>,
+    /// See [`Object::icons`].
+    pub icons: Vec<Reference<Image>>,
+    /// See [`Object::images`].
+    pub images: Vec<Reference<Image>>,
+    /// See [`Object::reply_targets`].
+    pub reply_targets: Vec<LinkOrObject>,
+    /// See [`Object::locations`].
+    pub locations: Vec<LinkOrObject>,
+    /// See [`Object::previews`].
+    pub previews: Vec<LinkOrObject>,
+    /// See [`Object::published`].
+    pub published: Option<String>,
+    /// See [`Object::replies`].
+    pub replies: Option<AnyCollection>,
+    /// See [`Object::shares`].
+    pub shares: Option<AnyCollection>,
+    /// See [`Object::likes`].
+    pub likes: Option<AnyCollection>,
+    /// See [`Object::emoji_reactions`].
+    pub emoji_reactions: Option<AnyCollection>,
+    /// See [`Object::start_time`].
+    pub start_time: Option<String>,
+    /// See [`Object::summary`].
+    pub summary: Text,
+    /// See [`Object::tags`].
+    pub tags: Vec<LinkOrObject>,
+    /// See [`Object::updated`].
+    pub updated: Option<String>,
+    /// See [`Object::urls`].
+    pub urls: Vec<LinkOrIri>,
+    /// See [`Object::tos`].
+    pub tos: Vec<AnyObject>,
+    /// See [`Object::btos`].
+    pub btos: Vec<AnyObject>,
+    /// See [`Object::ccs`].
+    pub ccs: Vec<AnyObject>,
+    /// See [`Object::bccs`].
+    pub bccs: Vec<AnyObject>,
+    /// See [`Object::media_type`].
+    pub media_type: Option<String>,
+    /// See [`Object::duration`].
+    pub duration: Option<String>,
+    /// See [`Object::sensitive`].
+    pub sensitive: Option<bool>,
+    /// See [`Object::source`].
+    pub source: Option<Box<Source>>,
+    /// See [`Object::proofs`].
+    pub proofs: Vec<Reference<DataIntegrityProof>>,
+    /// See [`Object::interaction_policy`].
+    pub interaction_policy: Option<Box<InteractionPolicy>>,
+    /// See [`Object::approved_by`].
+    pub approved_by: Option<Iri>,
+    /// See [`Object::like_authorization`].
+    pub like_authorization: Option<Reference<LikeAuthorization>>,
+    /// See [`Object::reply_authorization`].
+    pub reply_authorization: Option<Reference<ReplyAuthorization>>,
+    /// See [`Object::announce_authorization`].
+    pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Activity::actors`].
+    pub actors: Vec<AnyActor>,
+    /// See [`Activity::objects`].
+    pub objects: Vec<AnyObject>,
+    /// See [`Activity::targets`].
+    pub targets: Vec<AnyObject>,
+    /// See [`Activity::results`].
+    pub results: Vec<AnyObject>,
+    /// See [`Activity::origins`].
+    pub origins: Vec<AnyObject>,
+    /// See [`Activity::instruments`].
+    pub instruments: Vec<AnyObject>,
+}
+
+impl FeatureRequest {
+    /// The type's IRI.
+    pub const TYPE_IRI: &'static str = "https://w3id.org/fep/7aa9#FeatureRequest";
+    /// The type's `type` in a normalised document.
+    pub const TYPE: &'static str = "FeatureRequest";
+}
+
+impl json::Typed for FeatureRequest {
+    const TYPE: &'static str = "FeatureRequest";
+}
+
+impl FromJson for FeatureRequest {
+    fn from_json(value: &Value) -> Result<Self, JsonError> {
+        let object = json::object(value)?;
+        json::expect_type(object, Self::TYPE)?;
+        Ok(Self {
+            id: json::id(object),
+            attachments: json::many(object, &["attachment"]),
+            attributions: json::many(object, &["attributedTo"]),
+            audiences: json::many(object, &["audience"]),
+            content: json::text(object, "content"),
+            contexts: json::many(object, &["context"]),
+            name: json::text(object, "name"),
+            end_time: json::one(object, &["endTime"]),
+            generators: json::many(object, &["generator"]),
+            icons: json::many_mapped(object, &["icon"], json::link_to_image),
+            images: json::many_mapped(object, &["image"], json::link_to_image),
+            reply_targets: json::many(object, &["inReplyTo"]),
+            locations: json::many(object, &["location"]),
+            previews: json::many(object, &["preview"]),
+            published: json::one(object, &["published"]),
+            replies: json::one(object, &["replies"]),
+            shares: json::one(object, &["shares"]),
+            likes: json::one(object, &["likes"]),
+            emoji_reactions: json::one(object, &["emojiReactions"]),
+            start_time: json::one(object, &["startTime"]),
+            summary: json::text(object, "summary"),
+            tags: json::many(object, &["tag"]),
+            updated: json::one(object, &["updated"]),
+            urls: json::many(object, &["url"]),
+            tos: json::many(object, &["to"]),
+            btos: json::many(object, &["bto"]),
+            ccs: json::many(object, &["cc"]),
+            bccs: json::many(object, &["bcc"]),
+            media_type: json::one(object, &["mediaType"]),
+            duration: json::one(object, &["duration"]),
+            sensitive: json::one(object, &["sensitive"]),
+            source: json::one(object, &["source"]),
+            proofs: json::many(object, &["proof"]),
+            interaction_policy: json::one(object, &["interactionPolicy"]),
+            approved_by: json::one(object, &["approvedBy"]),
+            like_authorization: json::one(object, &["likeAuthorization"]),
+            reply_authorization: json::one(object, &["replyAuthorization"]),
+            announce_authorization: json::one(object, &["announceAuthorization"]),
+            actors: json::many(object, &["actor"]),
+            objects: json::many(object, &["object"]),
+            targets: json::many(object, &["target"]),
+            results: json::many(object, &["result"]),
+            origins: json::many(object, &["origin"]),
+            instruments: json::many(object, &["instrument"]),
+        })
+    }
+}
+
+impl ToJson for FeatureRequest {
+    fn to_json(&self) -> Value {
+        let mut object = json::new_object(Some(Self::TYPE), self.id.as_ref());
+        json::put_many(&mut object, &["attachment"], &self.attachments);
+        json::put_many(&mut object, &["attributedTo"], &self.attributions);
+        json::put_many(&mut object, &["audience"], &self.audiences);
+        json::put_text(&mut object, "content", &self.content);
+        json::put_many(&mut object, &["context"], &self.contexts);
+        json::put_text(&mut object, "name", &self.name);
+        json::put_one(&mut object, &["endTime"], self.end_time.as_ref());
+        json::put_many(&mut object, &["generator"], &self.generators);
+        json::put_many(&mut object, &["icon"], &self.icons);
+        json::put_many(&mut object, &["image"], &self.images);
+        json::put_many(&mut object, &["inReplyTo"], &self.reply_targets);
+        json::put_many(&mut object, &["location"], &self.locations);
+        json::put_many(&mut object, &["preview"], &self.previews);
+        json::put_one(&mut object, &["published"], self.published.as_ref());
+        json::put_one(&mut object, &["replies"], self.replies.as_ref());
+        json::put_one(&mut object, &["shares"], self.shares.as_ref());
+        json::put_one(&mut object, &["likes"], self.likes.as_ref());
+        json::put_one(
+            &mut object,
+            &["emojiReactions"],
+            self.emoji_reactions.as_ref(),
+        );
+        json::put_one(&mut object, &["startTime"], self.start_time.as_ref());
+        json::put_text(&mut object, "summary", &self.summary);
+        json::put_many(&mut object, &["tag"], &self.tags);
+        json::put_one(&mut object, &["updated"], self.updated.as_ref());
+        json::put_many(&mut object, &["url"], &self.urls);
+        json::put_many(&mut object, &["to"], &self.tos);
+        json::put_many(&mut object, &["bto"], &self.btos);
+        json::put_many(&mut object, &["cc"], &self.ccs);
+        json::put_many(&mut object, &["bcc"], &self.bccs);
+        json::put_one(&mut object, &["mediaType"], self.media_type.as_ref());
+        json::put_one(&mut object, &["duration"], self.duration.as_ref());
+        json::put_one(&mut object, &["sensitive"], self.sensitive.as_ref());
+        json::put_one(&mut object, &["source"], self.source.as_ref());
+        json::put_many(&mut object, &["proof"], &self.proofs);
+        json::put_one(
+            &mut object,
+            &["interactionPolicy"],
+            self.interaction_policy.as_ref(),
+        );
+        json::put_one(&mut object, &["approvedBy"], self.approved_by.as_ref());
+        json::put_one(
+            &mut object,
+            &["likeAuthorization"],
+            self.like_authorization.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["replyAuthorization"],
+            self.reply_authorization.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["announceAuthorization"],
+            self.announce_authorization.as_ref(),
+        );
+        json::put_many(&mut object, &["actor"], &self.actors);
+        json::put_many(&mut object, &["object"], &self.objects);
+        json::put_many(&mut object, &["target"], &self.targets);
+        json::put_many(&mut object, &["result"], &self.results);
+        json::put_many(&mut object, &["origin"], &self.origins);
+        json::put_many(&mut object, &["instrument"], &self.instruments);
+        Value::Object(object)
+    }
+}
+
 /// Indicates that the `actor` is "flagging" the `object`.  Flagging is defined
 /// in the sense common to many social platforms as reporting content as being
 /// inappropriate for any number of reasons.
@@ -17261,6 +17714,8 @@ pub enum AnyObject {
     Emoji(Box<Emoji>),
     EmojiReact(Box<EmojiReact>),
     Event(Box<Event>),
+    FeatureAuthorization(Box<FeatureAuthorization>),
+    FeatureRequest(Box<FeatureRequest>),
     Flag(Box<Flag>),
     Follow(Box<Follow>),
     Group(Box<Group>),
@@ -17336,6 +17791,8 @@ impl AnyObject {
             Self::Emoji(object) => object.id.as_ref(),
             Self::EmojiReact(object) => object.id.as_ref(),
             Self::Event(object) => object.id.as_ref(),
+            Self::FeatureAuthorization(object) => object.id.as_ref(),
+            Self::FeatureRequest(object) => object.id.as_ref(),
             Self::Flag(object) => object.id.as_ref(),
             Self::Follow(object) => object.id.as_ref(),
             Self::Group(object) => object.id.as_ref(),
@@ -17528,6 +17985,18 @@ impl FromJson for AnyObject {
                     return Ok(Event::from_json(value).map_or_else(
                         |_| Self::Other(value.clone()),
                         |v| Self::Event(Box::new(v)),
+                    ));
+                }
+                if json::has_type(object, FeatureAuthorization::TYPE) {
+                    return Ok(FeatureAuthorization::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeatureAuthorization(Box::new(v)),
+                    ));
+                }
+                if json::has_type(object, FeatureRequest::TYPE) {
+                    return Ok(FeatureRequest::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeatureRequest(Box::new(v)),
                     ));
                 }
                 if json::has_type(object, Flag::TYPE) {
@@ -17803,6 +18272,8 @@ impl ToJson for AnyObject {
             Self::Emoji(v) => v.to_json(),
             Self::EmojiReact(v) => v.to_json(),
             Self::Event(v) => v.to_json(),
+            Self::FeatureAuthorization(v) => v.to_json(),
+            Self::FeatureRequest(v) => v.to_json(),
             Self::Flag(v) => v.to_json(),
             Self::Follow(v) => v.to_json(),
             Self::Group(v) => v.to_json(),
@@ -18043,6 +18514,8 @@ pub enum LinkOrObject {
     Emoji(Box<Emoji>),
     EmojiReact(Box<EmojiReact>),
     Event(Box<Event>),
+    FeatureAuthorization(Box<FeatureAuthorization>),
+    FeatureRequest(Box<FeatureRequest>),
     Flag(Box<Flag>),
     Follow(Box<Follow>),
     Group(Box<Group>),
@@ -18121,6 +18594,8 @@ impl LinkOrObject {
             Self::Emoji(object) => object.id.as_ref(),
             Self::EmojiReact(object) => object.id.as_ref(),
             Self::Event(object) => object.id.as_ref(),
+            Self::FeatureAuthorization(object) => object.id.as_ref(),
+            Self::FeatureRequest(object) => object.id.as_ref(),
             Self::Flag(object) => object.id.as_ref(),
             Self::Follow(object) => object.id.as_ref(),
             Self::Group(object) => object.id.as_ref(),
@@ -18313,6 +18788,18 @@ impl FromJson for LinkOrObject {
                     return Ok(Event::from_json(value).map_or_else(
                         |_| Self::Other(value.clone()),
                         |v| Self::Event(Box::new(v)),
+                    ));
+                }
+                if json::has_type(object, FeatureAuthorization::TYPE) {
+                    return Ok(FeatureAuthorization::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeatureAuthorization(Box::new(v)),
+                    ));
+                }
+                if json::has_type(object, FeatureRequest::TYPE) {
+                    return Ok(FeatureRequest::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeatureRequest(Box::new(v)),
                     ));
                 }
                 if json::has_type(object, Flag::TYPE) {
@@ -18604,6 +19091,8 @@ impl ToJson for LinkOrObject {
             Self::Emoji(v) => v.to_json(),
             Self::EmojiReact(v) => v.to_json(),
             Self::Event(v) => v.to_json(),
+            Self::FeatureAuthorization(v) => v.to_json(),
+            Self::FeatureRequest(v) => v.to_json(),
             Self::Flag(v) => v.to_json(),
             Self::Follow(v) => v.to_json(),
             Self::Group(v) => v.to_json(),
@@ -18682,6 +19171,8 @@ pub enum LinkOrObjectOrPropertyValue {
     Emoji(Box<Emoji>),
     EmojiReact(Box<EmojiReact>),
     Event(Box<Event>),
+    FeatureAuthorization(Box<FeatureAuthorization>),
+    FeatureRequest(Box<FeatureRequest>),
     Flag(Box<Flag>),
     Follow(Box<Follow>),
     Group(Box<Group>),
@@ -18761,6 +19252,8 @@ impl LinkOrObjectOrPropertyValue {
             Self::Emoji(object) => object.id.as_ref(),
             Self::EmojiReact(object) => object.id.as_ref(),
             Self::Event(object) => object.id.as_ref(),
+            Self::FeatureAuthorization(object) => object.id.as_ref(),
+            Self::FeatureRequest(object) => object.id.as_ref(),
             Self::Flag(object) => object.id.as_ref(),
             Self::Follow(object) => object.id.as_ref(),
             Self::Group(object) => object.id.as_ref(),
@@ -18953,6 +19446,18 @@ impl FromJson for LinkOrObjectOrPropertyValue {
                     return Ok(Event::from_json(value).map_or_else(
                         |_| Self::Other(value.clone()),
                         |v| Self::Event(Box::new(v)),
+                    ));
+                }
+                if json::has_type(object, FeatureAuthorization::TYPE) {
+                    return Ok(FeatureAuthorization::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeatureAuthorization(Box::new(v)),
+                    ));
+                }
+                if json::has_type(object, FeatureRequest::TYPE) {
+                    return Ok(FeatureRequest::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeatureRequest(Box::new(v)),
                     ));
                 }
                 if json::has_type(object, Flag::TYPE) {
@@ -19250,6 +19755,8 @@ impl ToJson for LinkOrObjectOrPropertyValue {
             Self::Emoji(v) => v.to_json(),
             Self::EmojiReact(v) => v.to_json(),
             Self::Event(v) => v.to_json(),
+            Self::FeatureAuthorization(v) => v.to_json(),
+            Self::FeatureRequest(v) => v.to_json(),
             Self::Flag(v) => v.to_json(),
             Self::Follow(v) => v.to_json(),
             Self::Group(v) => v.to_json(),
@@ -19401,6 +19908,8 @@ serde_via_json!(
     Endpoints,
     Event,
     Export,
+    FeatureAuthorization,
+    FeatureRequest,
     Flag,
     Follow,
     Group,

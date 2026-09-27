@@ -4,7 +4,6 @@ Contexts named and not bundled, which leave their terms unread:
     https://greenish.red/schemas/litepub-0.1.jsonld (2)
     https://mycrowd.ca/schemas/litepub-0.1.jsonld (1)
     https://queer.hacktivis.me/schemas/litepub-0.1.jsonld (3)
-    https://w3id.org/security/data-integrity/v2 (2)
 
 lemmy/discourse/objects/person.json: "Person" read as Person
     lost sharedInbox: "https://socialhub.activitypub.rocks/ap/users/inbox"
