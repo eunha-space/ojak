@@ -44,7 +44,9 @@ per tenant through `fetcher_for`, the remote keys it stores through
 inbox reads activities as written, `read_inbox_as_written`, and one `on_any`
 hands each activity's `vouched` form to its own `inbox_jobs` queue, which
 dispatches on the type.  Replies to its posts are forwarded to the followers
-collections they are addressed to, through `forward`.
+collections they are addressed to, through `forward`.  What to do with a Follow,
+accepting it or holding it as a request for a locked account, is eunha's own
+policy, as is the mapping between an audience and Mastodon's visibilities.
 
 *Sending.*  Deliveries go through a `Deliverer` over `PostgresQueue`, in the
 table `eunha.ojak_queue`, with a priority queue so that sends to few inboxes
