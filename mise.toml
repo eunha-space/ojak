@@ -3,6 +3,9 @@ version = "1.95.0"
 profile = "default"
 components = "rust-analyzer,rustfmt,clippy"
 
+[tools.node]
+version = "24"
+
 [tools."github:dahlia/hongdown"]
 version = "0.3.11"
 
@@ -23,3 +26,20 @@ run = [
 [tasks.fmt]
 description = "Format code and docs"
 run = ["cargo fmt", "hongdown --write", "mise fmt"]
+
+[tasks."docs:install"]
+description = "Install the documentation website's dependencies"
+dir = "docs"
+run = "npm ci"
+
+[tasks."docs:dev"]
+description = "Serve the documentation website locally"
+dir = "docs"
+depends = ["docs:install"]
+run = "npm run dev"
+
+[tasks."docs:build"]
+description = "Build the documentation website"
+dir = "docs"
+depends = ["docs:install"]
+run = "npm run build"

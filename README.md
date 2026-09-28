@@ -11,7 +11,7 @@ magpies that, in the Korean telling of the Weaver and the Herdsman, spans the
 Milky Way so that two stars kept apart can meet.  Ojak builds bridges between
 servers.
 
-Documentation is at <https://eunha-space.github.io/ojak/>.
+Documentation is at <https://ojak.dev/>.
 
 
 Motivation
