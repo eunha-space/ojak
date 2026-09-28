@@ -80,6 +80,23 @@ pub struct DelivererConfig {
     /// every tenant's in a process that serves several; a delivery holds one
     /// of its permits while it is being sent.
     pub shared_limit: Option<Arc<Semaphore>>,
+    /// A lane for sends to few inboxes — a direct message, a reply, a follow
+    /// — whose deliveries take free slots before any other's.
+    ///
+    /// Deliveries are otherwise sent in the order they were queued, so a
+    /// message to one person queued just after a post to thousands of
+    /// servers waits for every one of those: two and a half minutes behind
+    /// three posts to 9,258 servers. Off unless given.
+    pub priority: Option<Priority>,
+}
+
+/// Where sends to few inboxes go, and how few is few.
+#[derive(Clone, Debug)]
+pub struct Priority {
+    /// The queue they wait in, within the backend.
+    pub queue: String,
+    /// A send to this many inboxes or fewer goes to the priority queue.
+    pub max_inboxes: usize,
 }
 
 impl Default for DelivererConfig {
@@ -94,6 +111,7 @@ impl Default for DelivererConfig {
             first_scheme: Scheme::DraftCavage,
             idle_poll: Duration::from_secs(30),
             shared_limit: None,
+            priority: None,
         }
     }
 }
@@ -276,11 +294,12 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         if inboxes.is_empty() {
             return Ok(());
         }
+        let queue = self.queue_for(inboxes.len());
         let payloads = inboxes
             .into_iter()
             .map(|inbox| Delivery::new(activity, inbox, Vec::new(), sender, batch).payload())
             .collect();
-        self.queue.enqueue(&self.config.queue, payloads).await?;
+        self.queue.enqueue(queue, payloads).await?;
         self.wake.notify_one();
         Ok(())
     }
@@ -319,7 +338,9 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         if payloads.is_empty() {
             return Ok(());
         }
-        self.queue.enqueue(&self.config.queue, payloads).await?;
+        self.queue
+            .enqueue(self.queue_for(payloads.len()), payloads)
+            .await?;
         self.wake.notify_one();
         Ok(())
     }
@@ -373,13 +394,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                 && (in_flight.is_empty() || free >= refill)
             {
                 let asked = free.min(self.config.batch.max(1));
-                claiming = Some((
-                    asked,
-                    Box::pin(
-                        self.queue
-                            .claim(&self.config.queue, asked, self.config.lease),
-                    ),
-                ));
+                claiming = Some((asked, Box::pin(self.claim_due(asked))));
             }
             if in_flight.is_empty() && claiming.is_none() {
                 if stopping {
@@ -431,10 +446,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
     ///
     /// When the backend cannot be read.
     pub async fn run_once(&self) -> Result<usize, QueueError> {
-        let batch = self
-            .queue
-            .claim(&self.config.queue, self.config.batch, self.config.lease)
-            .await?;
+        let batch = self.claim_due(self.config.batch).await?;
         let count = batch.len();
         stream::iter(batch)
             .for_each_concurrent(self.config.concurrency, |job| self.process(job))
@@ -442,8 +454,43 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         Ok(count)
     }
 
+    /// The queue a send to `inboxes` inboxes waits in.
+    fn queue_for(&self, inboxes: usize) -> &str {
+        match &self.config.priority {
+            Some(priority) if inboxes <= priority.max_inboxes => &priority.queue,
+            _ => &self.config.queue,
+        }
+    }
+
+    /// Claim up to `limit` due deliveries, the priority queue's first.
+    async fn claim_due(&self, limit: usize) -> Result<Vec<Job>, QueueError> {
+        let mut jobs = match &self.config.priority {
+            Some(priority) => {
+                self.queue
+                    .claim(&priority.queue, limit, self.config.lease)
+                    .await?
+            }
+            None => Vec::new(),
+        };
+        if jobs.len() < limit {
+            jobs.extend(
+                self.queue
+                    .claim(&self.config.queue, limit - jobs.len(), self.config.lease)
+                    .await?,
+            );
+        }
+        Ok(jobs)
+    }
+
     async fn idle(&self) {
-        let due = self.queue.next_due(&self.config.queue).await.ok().flatten();
+        let mut due = self.queue.next_due(&self.config.queue).await.ok().flatten();
+        if let Some(priority) = &self.config.priority {
+            let first = self.queue.next_due(&priority.queue).await.ok().flatten();
+            due = match (due, first) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
+        }
         let sleep = jitter(due.map_or(self.config.idle_poll, |due| due.min(self.config.idle_poll)));
         tokio::select! {
             () = tokio::time::sleep(sleep) => {}

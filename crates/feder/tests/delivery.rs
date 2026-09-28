@@ -613,3 +613,74 @@ async fn a_claim_does_not_starve_the_deliveries_in_flight() {
             .count()
     );
 }
+
+/// With a priority lane, a send to one inbox queued behind a fan-out takes
+/// the next free slot rather than waiting for the fan-out to be sent.
+#[tokio::test]
+async fn a_send_to_one_inbox_goes_ahead_of_a_fan_out() {
+    use feder::deliverer::Priority;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Instant;
+
+    let arrived = Arc::new(AtomicBool::new(false));
+    let noting = arrived.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = Router::new()
+        .route(
+            "/slow/{n}",
+            post(|| async {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                StatusCode::ACCEPTED
+            }),
+        )
+        .route(
+            "/direct",
+            post(move || {
+                let noting = noting.clone();
+                async move {
+                    noting.store(true, Ordering::SeqCst);
+                    StatusCode::ACCEPTED
+                }
+            }),
+        );
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let config = DelivererConfig {
+        concurrency: 2,
+        per_host: 2,
+        batch: 2,
+        priority: Some(Priority {
+            queue: "delivery-priority".to_owned(),
+            max_inboxes: 4,
+        }),
+        ..fast()
+    };
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), config);
+    // Forty deliveries of 200 ms each through two slots: four seconds.
+    let fan_out: Vec<Url> = (0..40)
+        .map(|n| Url::parse(&format!("http://{address}/slow/{n}")).unwrap())
+        .collect();
+    deliverer.send("alice", &json!({}), fan_out).await.unwrap();
+    let direct = Url::parse(&format!("http://{address}/direct")).unwrap();
+    deliverer.send("alice", &json!({}), [direct]).await.unwrap();
+
+    let started = Instant::now();
+    let sent = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::select! {
+            () = deliverer.run() => {}
+            () = async {
+                while !arrived.load(Ordering::SeqCst) {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            } => {}
+        }
+    })
+    .await;
+    assert!(sent.is_ok(), "the direct send never arrived");
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "the direct send waited {:?} behind the fan-out",
+        started.elapsed()
+    );
+}
