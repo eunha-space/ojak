@@ -63,7 +63,7 @@ Project direction
 
 Ojak is still early-stage, so APIs and crate boundaries may change. The
 current direction is to build Ojak as a Rust framework for ActivityPub
-applications with a portable protocol core and platform-specific runtimes.
+applications, with what decides kept apart from what does I/O.
 
 The main architectural rule is:
 

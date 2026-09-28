@@ -1,8 +1,7 @@
 What is Ojak?
 =============
 
-Ojak is an early-stage Rust project for building ActivityPub applications from
-a portable protocol core and platform-specific runtimes.
+Ojak is an early-stage Rust framework for building ActivityPub applications.
 
 The name comes from *Ojakgyo* (오작교, 烏鵲橋), the bridge of crows and
 magpies that, in the Korean telling of the Weaver and the Herdsman, spans the
@@ -28,15 +27,16 @@ software so different parts can run on machines with very different resources.
 Approach
 --------
 
-Ojak separates ActivityPub protocol logic from platform execution.  The core
-contains federation behavior such as delivery decisions and protocol-level
-rules.  Runtimes provide platform-specific pieces such as networking, storage,
-clocks, scheduling, and execution.
-
-The main architectural rule is:
+Ojak separates ActivityPub protocol logic from platform execution, as its
+main architectural rule has it:
 
 > The core decides what should happen.  The runtime decides how it happens on
 > a specific platform.
+
+What does no I/O is kept apart from what does.  The vocabulary and JSON-LD
+crates are `no_std`, and signatures and proofs take bytes and keys rather than
+fetch them, so that the parts that decide can one day run where a full server
+cannot.
 
 The application owns its data: it says where its actors, objects and
 collections live and supplies them from its own storage, and Ojak does the

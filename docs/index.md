@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: Ojak
-  text: One ActivityPub core, many runtimes.
+  text: A bridge between your application and the fediverse.
   tagline: >-
     A Rust framework for ActivityPub applications, named for Ojakgyo
     (오작교, 烏鵲橋), the bridge of crows and magpies across the Milky Way.
@@ -26,10 +26,10 @@ features:
     details: >-
       Ojak never holds a follower, a post or an account of its own.  It asks
       the application, and does the protocol around what it is told.
-  - title: A portable core
+  - title: Strict about who said what
     details: >-
-      Protocol decisions live in crates with no I/O.  Runtimes supply
-      networking, storage, clocks and scheduling for their platform.
+      Both HTTP Signature schemes and FEP-8b32 proofs, held to one policy, and
+      nothing embedded trusted that its sender cannot vouch for.
   - title: JSON-LD read by meaning
     details: >-
       Documents are read by what their keys stand for, over contexts Ojak

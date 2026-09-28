@@ -4,7 +4,7 @@ const repository = "https://github.com/eunha-space/ojak";
 
 export default defineConfig({
   title: "Ojak",
-  description: "One ActivityPub core, many runtimes.",
+  description: "A bridge between your application and the fediverse.",
   lang: "en",
   cleanUrls: true,
   lastUpdated: true,
