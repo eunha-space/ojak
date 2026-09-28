@@ -335,33 +335,92 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
 
     /// Send what is queued until `stop` completes.
     ///
-    /// Once `stop` has completed no new batch is claimed, and the batch in
-    /// hand is finished first, so that a server shutting down does not drop
-    /// deliveries in the middle of sending them. What it had claimed and not
-    /// reached is leased, and comes back when the lease lapses.
+    /// `concurrency` deliveries are kept in flight: as each finishes, its
+    /// slot is taken by the next due delivery, claimed a few slots at a time
+    /// rather than one round trip per delivery. A slow or silent inbox holds
+    /// one slot for as long as it takes, not a whole batch — sending a batch
+    /// and waiting for all of it held every healthy delivery claimed with a
+    /// server that never answered until the client gave up on it.
+    ///
+    /// Once `stop` has completed nothing more is claimed, and what is in
+    /// flight is finished first, so that a server shutting down does not drop
+    /// deliveries in the middle of sending them.
     pub async fn run_until(&self, stop: impl Future<Output = ()>) {
         tokio::pin!(stop);
+        let concurrency = self.config.concurrency.max(1);
+        // Claim once this many slots are free, or none are busy.
+        let refill = (concurrency / 4).max(1);
+        let mut in_flight = stream::FuturesUnordered::new();
+        // A claim under way, with how many it asked for. It is polled
+        // alongside the deliveries in flight, never instead of them: they may
+        // hold the database connections it is waiting for, and a delivery not
+        // polled holds its connection for as long. Nor is it ever dropped part
+        // way, which would strand what it had claimed until the lease lapsed.
+        let mut claiming: Option<(usize, Claim<'_>)> = None;
+        let mut stopping = false;
+        // Whether the last claim found the queue with nothing more due.
+        let mut dry = false;
         loop {
-            // Between batches, a stop that has come wins.
+            let free = concurrency.saturating_sub(in_flight.len());
+            // Not after a claim that found nothing more due: until a delivery
+            // finishes, one is queued, or the idle wait ends, the next would
+            // find the same, and with nothing in flight would be asked for
+            // again at once, for ever.
+            if claiming.is_none()
+                && !stopping
+                && !dry
+                && free > 0
+                && (in_flight.is_empty() || free >= refill)
+            {
+                let asked = free.min(self.config.batch.max(1));
+                claiming = Some((
+                    asked,
+                    Box::pin(
+                        self.queue
+                            .claim(&self.config.queue, asked, self.config.lease),
+                    ),
+                ));
+            }
+            if in_flight.is_empty() && claiming.is_none() {
+                if stopping {
+                    return;
+                }
+                tokio::select! {
+                    () = &mut stop => return,
+                    () = self.idle() => {}
+                }
+                dry = false;
+                continue;
+            }
             tokio::select! {
                 biased;
-                () = &mut stop => return,
-                () = std::future::ready(()) => {}
-            }
-            match self.run_once().await {
-                Ok(0) => {
-                    tokio::select! {
-                        () = &mut stop => return,
-                        () = self.idle() => {}
+                () = &mut stop, if !stopping => stopping = true,
+                result = poll_claim(&mut claiming), if claiming.is_some() => {
+                    let (asked, _) = claiming.take().expect("a claim was under way");
+                    match result {
+                        // What a claim took after a stop is sent too: it is
+                        // claimed, and would otherwise wait out its lease.
+                        Ok(jobs) => {
+                            dry = jobs.len() < asked;
+                            for job in jobs {
+                                in_flight.push(self.process(job));
+                            }
+                        }
+                        Err(_) if in_flight.is_empty() => {
+                            tokio::select! {
+                                () = &mut stop, if !stopping => return,
+                                () = tokio::time::sleep(Duration::from_secs(5)) => {}
+                            }
+                        }
+                        Err(_) => dry = true,
                     }
                 }
-                Ok(_) => {}
-                Err(_) => {
-                    tokio::select! {
-                        () = &mut stop => return,
-                        () = tokio::time::sleep(Duration::from_secs(5)) => {}
-                    }
-                }
+                // A delivery that finishes may leave room for a retry that has
+                // come due since the last claim.
+                Some(()) = in_flight.next(), if !in_flight.is_empty() => dry = false,
+                // New deliveries queued while slots are free are sent now,
+                // not when the next one in flight happens to finish.
+                () = self.wake.notified(), if dry && !stopping && claiming.is_none() => dry = false,
             }
         }
     }
@@ -575,5 +634,17 @@ mod tests {
             let slept = jitter(base);
             assert!(slept <= base && slept >= base * 3 / 4, "{slept:?}");
         }
+    }
+}
+
+/// A claim under way in [`Deliverer::run_until`].
+type Claim<'a> = std::pin::Pin<Box<dyn Future<Output = Result<Vec<Job>, QueueError>> + Send + 'a>>;
+
+/// Wait on the claim under way, leaving it in place: the caller takes it once
+/// it has finished.
+async fn poll_claim(claiming: &mut Option<(usize, Claim<'_>)>) -> Result<Vec<Job>, QueueError> {
+    match claiming {
+        Some((_, claim)) => claim.as_mut().await,
+        None => std::future::pending().await,
     }
 }

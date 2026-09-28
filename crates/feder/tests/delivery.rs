@@ -442,3 +442,174 @@ async fn a_batch_is_given_up_on_at_its_deadline() {
     assert_eq!(inbox.received().len(), 1, "nothing sent past the deadline");
     assert_eq!(failures.lock().unwrap().len(), 2);
 }
+
+/// A server that never answers holds the one slot it is sent on, for as
+/// long as the client waits on it; every other delivery goes on through the
+/// rest. Sent a batch at a time, the forty below waited behind it.
+#[tokio::test]
+async fn a_silent_inbox_holds_one_slot_not_the_rest() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let answered = Arc::new(AtomicUsize::new(0));
+    let counting = answered.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = Router::new()
+        .route(
+            "/silent",
+            post(|| async {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                StatusCode::ACCEPTED
+            }),
+        )
+        .route(
+            "/inbox/{n}",
+            post(move || {
+                let counting = counting.clone();
+                async move {
+                    counting.fetch_add(1, Ordering::SeqCst);
+                    StatusCode::ACCEPTED
+                }
+            }),
+        );
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let config = DelivererConfig {
+        concurrency: 4,
+        per_host: 4,
+        batch: 8,
+        ..fast()
+    };
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), config);
+    let silent = Url::parse(&format!("http://{address}/silent")).unwrap();
+    deliverer.send("alice", &json!({}), [silent]).await.unwrap();
+    let inboxes: Vec<Url> = (0..40)
+        .map(|n| Url::parse(&format!("http://{address}/inbox/{n}")).unwrap())
+        .collect();
+    deliverer.send("alice", &json!({}), inboxes).await.unwrap();
+
+    let delivered = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::select! {
+            () = deliverer.run() => {}
+            () = async {
+                while answered.load(Ordering::SeqCst) < 40 {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            } => {}
+        }
+    })
+    .await;
+    assert!(
+        delivered.is_ok(),
+        "{} of 40 delivered while one inbox stayed silent",
+        answered.load(Ordering::SeqCst)
+    );
+}
+
+/// A queue with one connection, which each call holds across an await, as a
+/// database pool's connection is held across a query.
+struct OneConnection {
+    inner: MemoryQueue,
+    connection: Arc<tokio::sync::Semaphore>,
+}
+
+impl OneConnection {
+    async fn hold(&self) -> tokio::sync::SemaphorePermit<'_> {
+        let permit = self.connection.acquire().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        permit
+    }
+}
+
+impl feder::queue::Queue for OneConnection {
+    async fn enqueue(
+        &self,
+        queue: &str,
+        payloads: Vec<serde_json::Value>,
+    ) -> Result<(), QueueError> {
+        let _held = self.hold().await;
+        self.inner.enqueue(queue, payloads).await
+    }
+
+    async fn claim(
+        &self,
+        queue: &str,
+        limit: usize,
+        lease: Duration,
+    ) -> Result<Vec<feder::queue::Job>, QueueError> {
+        let _held = self.hold().await;
+        self.inner.claim(queue, limit, lease).await
+    }
+
+    async fn complete(&self, id: &str) -> Result<(), QueueError> {
+        let _held = self.hold().await;
+        self.inner.complete(id).await
+    }
+
+    async fn retry(&self, id: &str, delay: Duration, error: &str) -> Result<(), QueueError> {
+        let _held = self.hold().await;
+        self.inner.retry(id, delay, error).await
+    }
+
+    async fn fail(&self, id: &str, error: &str) -> Result<(), QueueError> {
+        let _held = self.hold().await;
+        self.inner.fail(id, error).await
+    }
+
+    async fn next_due(&self, queue: &str) -> Result<Option<Duration>, QueueError> {
+        let _held = self.hold().await;
+        self.inner.next_due(queue).await
+    }
+}
+
+/// Claiming more is not allowed to stop the deliveries in flight from being
+/// polled: one of them may hold the connection the claim is waiting for, and
+/// then neither would finish. With a pool of five connections and a hundred
+/// and twenty-eight deliveries in flight, that stopped every delivery and
+/// starved everything else of connections too.
+#[tokio::test]
+async fn a_claim_does_not_starve_the_deliveries_in_flight() {
+    // Thirty inboxes: one named thirty times is sent to once.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = Router::new().route("/inbox/{n}", post(|| async { StatusCode::ACCEPTED }));
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let inboxes: Vec<Url> = (0..30)
+        .map(|n| Url::parse(&format!("http://{address}/inbox/{n}")).unwrap())
+        .collect();
+    let queue = OneConnection {
+        inner: MemoryQueue::new(),
+        connection: Arc::new(tokio::sync::Semaphore::new(1)),
+    };
+    let config = DelivererConfig {
+        concurrency: 8,
+        per_host: 8,
+        batch: 8,
+        ..fast()
+    };
+    let deliverer = Deliverer::new(queue, Keys, client(), config);
+    deliverer.send("alice", &json!({}), inboxes).await.unwrap();
+
+    let finished = tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::select! {
+            () = deliverer.run() => {}
+            () = async {
+                while deliverer.queue().inner.records().iter().filter(|r| r.complete).count() < 30 {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            } => {}
+        }
+    })
+    .await;
+    assert!(
+        finished.is_ok(),
+        "{} of 30 completed",
+        deliverer
+            .queue()
+            .inner
+            .records()
+            .iter()
+            .filter(|r| r.complete)
+            .count()
+    );
+}
