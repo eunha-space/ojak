@@ -49,9 +49,13 @@ the activity. Everything the activity says about anyone else is a claim.
 3.  The HTTP signature is parsed and held to step 2's policy: it covers the
     request target, the host, the date and the digest, the digest matches
     the body, and it was made for this host within the hour.
-4.  The key comes from the key-value store or is fetched, and has to be one
-    its actor publishes as its own; a key that no longer verifies is fetched
-    once more. The *sender* is that actor.
+4.  The key comes from the application (`known_key`), the key-value store, or
+    is fetched, and has to be one its actor publishes as its own; a key that
+    no longer verifies is fetched once more. The *sender* is that actor. A
+    fetched key that verifies and came with its actor's document, handed to
+    an application that stores actors (`key_fetched`) and gives their keys
+    back (`known_key`), is left to the application rather than cached as
+    well.
 5.  Failing a signature, an FEP-8b32 integrity proof on the activity
     authenticates it instead, with a key the actor lists in its
     `assertionMethod`.

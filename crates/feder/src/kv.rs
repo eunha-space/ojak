@@ -64,9 +64,27 @@ pub trait KvStore: Send + Sync + 'static {
 }
 
 /// A [`KvStore`] in memory.
+///
+/// An entry that has expired is removed as the store is written to, not only
+/// when its own key is next asked for: most keys are never asked for again —
+/// an actor seen once, an activity processed once — and a store that waited
+/// for that would grow for as long as its process ran.
+///
+/// [`MemoryKvStore::with_capacity`] also bounds how many entries it holds,
+/// dropping those nearest to expiring first. Everything Feder keeps here is a
+/// cache, so an entry dropped early costs a refetch, or for an activity's ID,
+/// a duplicate the application's own writes have to tolerate anyway.
 #[derive(Debug, Default)]
 pub struct MemoryKvStore {
-    entries: Mutex<HashMap<Vec<String>, Entry>>,
+    entries: Mutex<Entries>,
+    capacity: Option<usize>,
+}
+
+#[derive(Debug, Default)]
+struct Entries {
+    map: HashMap<Vec<String>, Entry>,
+    /// Writes since expired entries were last swept out.
+    writes: usize,
 }
 
 #[derive(Debug)]
@@ -81,13 +99,93 @@ impl Entry {
     }
 }
 
+/// Sweep at least this rarely, however small the store.
+const SWEEP_EVERY: usize = 1_024;
+
+impl Entries {
+    /// Put an entry, then keep the store to what has not expired and to
+    /// `capacity`. A sweep visits every entry, so it waits until the writes
+    /// since the last one are half as many as the entries: each write pays for
+    /// a bounded share of it.
+    fn put(&mut self, key: Vec<String>, entry: Entry, capacity: Option<usize>) {
+        self.map.insert(key, entry);
+        self.writes += 1;
+        let now = Instant::now();
+        if self.writes >= SWEEP_EVERY.max(self.map.len() / 2) {
+            self.map.retain(|_, entry| entry.live(now));
+            self.writes = 0;
+        }
+        if let Some(capacity) = capacity
+            && self.map.len() > capacity
+        {
+            self.map.retain(|_, entry| entry.live(now));
+            self.shrink_to(capacity - capacity / 10);
+        }
+    }
+
+    /// Drop the entries nearest to expiring until `target` remain. Evicting a
+    /// tenth below capacity at a time, rather than one entry per write, keeps
+    /// eviction's cost off every write once the store is full.
+    fn shrink_to(&mut self, target: usize) {
+        let excess = self.map.len().saturating_sub(target);
+        if excess == 0 {
+            return;
+        }
+        // Never-expiring entries sort last, so they go only when nothing else
+        // is left to drop.
+        let mut by_expiry: Vec<(Option<Instant>, &Vec<String>)> = self
+            .map
+            .iter()
+            .map(|(key, entry)| (entry.expires, key))
+            .collect();
+        by_expiry.select_nth_unstable_by(excess - 1, |a, b| match (a.0, b.0) {
+            (Some(a), Some(b)) => a.cmp(&b),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        });
+        let doomed: Vec<Vec<String>> = by_expiry[..excess]
+            .iter()
+            .map(|(_, key)| (*key).clone())
+            .collect();
+        for key in doomed {
+            self.map.remove(&key);
+        }
+    }
+}
+
 impl MemoryKvStore {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<Vec<String>, Entry>> {
+    /// A store that holds at most `capacity` entries.
+    ///
+    /// # Panics
+    /// If `capacity` is zero.
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self {
+        assert!(capacity > 0, "a memory kv store holds at least one entry");
+        Self {
+            entries: Mutex::default(),
+            capacity: Some(capacity),
+        }
+    }
+
+    /// How many entries it holds, expired ones not yet swept out included.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.lock().map.len()
+    }
+
+    /// Whether it holds no entries at all.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Entries> {
         self.entries.lock().expect("memory kv lock")
     }
 }
@@ -104,10 +202,10 @@ impl KvStore for MemoryKvStore {
     async fn get(&self, key: &[&str]) -> Result<Option<Value>, KvError> {
         let mut entries = self.lock();
         let key = owned(key);
-        match entries.get(&key) {
+        match entries.map.get(&key) {
             Some(entry) if entry.live(Instant::now()) => Ok(Some(entry.value.clone())),
             Some(_) => {
-                entries.remove(&key);
+                entries.map.remove(&key);
                 Ok(None)
             }
             None => Ok(None),
@@ -115,12 +213,13 @@ impl KvStore for MemoryKvStore {
     }
 
     async fn set(&self, key: &[&str], value: Value, ttl: Option<Duration>) -> Result<(), KvError> {
-        self.lock().insert(
+        self.lock().put(
             owned(key),
             Entry {
                 value,
                 expires: expiry(ttl),
             },
+            self.capacity,
         );
         Ok(())
     }
@@ -134,23 +233,25 @@ impl KvStore for MemoryKvStore {
         let mut entries = self.lock();
         let key = owned(key);
         if entries
+            .map
             .get(&key)
             .is_some_and(|entry| entry.live(Instant::now()))
         {
             return Ok(false);
         }
-        entries.insert(
+        entries.put(
             key,
             Entry {
                 value,
                 expires: expiry(ttl),
             },
+            self.capacity,
         );
         Ok(true)
     }
 
     async fn delete(&self, key: &[&str]) -> Result<(), KvError> {
-        self.lock().remove(&owned(key));
+        self.lock().map.remove(&owned(key));
         Ok(())
     }
 }

@@ -822,3 +822,71 @@ async fn an_activity_can_be_read_as_written() {
         format!("https://{HOST}/ap/users/1")
     );
 }
+
+/// A key the application keeps — handed its actor's document and giving the
+/// key back through `known_key`, as eunha does — is not cached by Feder too;
+/// without the application keeping it, Feder caches it as before.
+#[tokio::test]
+async fn a_key_the_application_keeps_is_not_cached_twice() {
+    let remote = Remote::default();
+    let bob = serve_remote(remote.clone()).await;
+    let key_id = format!("{bob}#main-key");
+    // The application's own store of actors' keys.
+    let kept: Arc<Mutex<Option<String>>> = Arc::default();
+    let (keep, give) = (kept.clone(), kept.clone());
+    let keeping = federation(move |b| {
+        let (keep, give) = (keep.clone(), give.clone());
+        b.key_fetched(move |_, document: Value| {
+            let keep = keep.clone();
+            async move {
+                *keep.lock().unwrap() = document["publicKey"]["publicKeyPem"]
+                    .as_str()
+                    .map(str::to_owned);
+            }
+        })
+        .known_key(move |_, key: String| {
+            let give = give.clone();
+            async move {
+                let actor = Url::parse(key.split('#').next().unwrap()).unwrap();
+                Ok::<_, String>(
+                    give.lock()
+                        .unwrap()
+                        .clone()
+                        .map(|pem| feder::federation::KnownKey { pem, actor }),
+                )
+            }
+        })
+    });
+    let store = App::default();
+    for n in 1..=2 {
+        let activity = follow(&bob, n);
+        let request = post("/ap/inbox", &key_id, &activity, &activity);
+        assert_eq!(deliver(&keeping, &store, request).await, 202);
+    }
+    assert_eq!(
+        remote.fetches.load(Ordering::SeqCst),
+        1,
+        "the second came from the application's store"
+    );
+
+    // Had Feder cached the key too, it would survive the application
+    // forgetting it; it is fetched again instead.
+    *kept.lock().unwrap() = None;
+    let activity = follow(&bob, 3);
+    let request = post("/ap/inbox", &key_id, &activity, &activity);
+    assert_eq!(deliver(&keeping, &store, request).await, 202);
+    assert_eq!(remote.fetches.load(Ordering::SeqCst), 2);
+
+    // An application that keeps no keys has Feder cache them, as before.
+    let remote = Remote::default();
+    let bob = serve_remote(remote.clone()).await;
+    let key_id = format!("{bob}#main-key");
+    let caching = federation(|b| b);
+    let store = App::default();
+    for n in 1..=2 {
+        let activity = follow(&bob, n);
+        let request = post("/ap/inbox", &key_id, &activity, &activity);
+        assert_eq!(deliver(&caching, &store, request).await, 202);
+    }
+    assert_eq!(remote.fetches.load(Ordering::SeqCst), 1);
+}

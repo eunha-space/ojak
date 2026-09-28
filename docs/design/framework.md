@@ -96,7 +96,9 @@ application provides:
 
 Both are traits, and as in Fedify their backends are pluggable: an
 application picks one rather than writing one. Feder ships an in-memory
-backend for tests and small deployments, *feder-postgres* keeps the queue and
+backend for tests and small deployments, which removes expired entries as it
+is written to and can be bounded to a number of entries, dropping those
+nearest to expiry first; *feder-postgres* keeps the queue and
 the store each in a table of its own that it creates on first use, and more
 backends can follow the same trait. Every backend runs one set of conformance
 checks, so they agree on the parts that lose work when they are wrong. An

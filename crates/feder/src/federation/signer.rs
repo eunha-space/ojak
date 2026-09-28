@@ -150,14 +150,26 @@ pub(super) async fn authenticate<D: Clone + Send + Sync + 'static>(
     let published = fetch_key(context, settings, &signature)
         .await
         .ok_or_else(|| format!("no key {} published by its actor", signature.key_id))?;
-    if let Err(error) = settings
-        .kv
-        .set(&cache_key, published.to_json(), Some(settings.key_ttl))
-        .await
+    let verified = check(&signature, &request, &published);
+    // A verified key that came with its actor's document, handed to an
+    // application that stores actors and gives their keys back through
+    // `known_key`, is the application's to keep. Caching it here as well held
+    // every new actor's key twice, and in memory for `key_ttl`. A key that
+    // does not verify is still cached, so that a run of forged requests does
+    // not fetch it again for each one.
+    let kept_by_application = verified
+        && settings.known_key.is_some()
+        && settings.key_fetched.is_some()
+        && published.document.is_some();
+    if !kept_by_application
+        && let Err(error) = settings
+            .kv
+            .set(&cache_key, published.to_json(), Some(settings.key_ttl))
+            .await
     {
         context.report(&Error::from(error));
     }
-    if check(&signature, &request, &published) {
+    if verified {
         // The actor's document, fetched for its key and established as served
         // from its own origin: an application that stores actors stores this
         // one now rather than fetching it again.
