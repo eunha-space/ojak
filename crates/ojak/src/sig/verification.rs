@@ -336,6 +336,7 @@ pub fn verify(signature: &Signature, request: &Request<'_>, key: Key<'_>) -> Res
                 &signature.signature,
                 request.header("content-digest"),
                 request.body,
+                request.headers,
                 &key,
             )
             .map_err(|error| Rejection::Invalid(error.to_string()))

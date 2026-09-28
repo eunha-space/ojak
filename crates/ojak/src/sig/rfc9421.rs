@@ -236,16 +236,23 @@ fn signature_base(components: &[(String, String)], params: &str) -> String {
 /// Verify an [RFC 9421] signature on an inbound request.
 ///
 /// The caller supplies the request as it saw it: the method, the URI it was
-/// made to, the `Signature-Input` and `Signature` field values, and the
-/// `Content-Digest` if one was sent. Only the components a federation request
-/// can be rebuilt from are supported — `@method`, `@target-uri`, `@authority`,
-/// `@path`, and `content-digest` — and a signature covering anything else is
+/// made to, the `Signature-Input` and `Signature` field values, the
+/// `Content-Digest` if one was sent, and its header fields. A covered header
+/// field is taken from `headers` as RFC 9421 §2.1 reads one — every value it
+/// was sent with, trimmed and joined by `, ` — and the derived components a
+/// federation request can be rebuilt from are `@method`, `@target-uri`,
+/// `@authority`, `@scheme`, `@path`, `@query` and `@request-target`. A
+/// signature covering anything else, or a header that was not sent, is
 /// rejected rather than verified against a base guessed from what is missing.
+///
+/// Fedify covers `host` and `date` besides the derived components; a verifier
+/// that read no header fields refused every request it signed this way.
 ///
 /// The digest is checked against `body`, so a signature covering
 /// `content-digest` binds the body it was sent with.
 ///
 /// [RFC 9421]: https://www.rfc-editor.org/rfc/rfc9421.html
+#[allow(clippy::too_many_arguments)]
 pub fn verify_request(
     method: &str,
     target_uri: &str,
@@ -253,6 +260,7 @@ pub fn verify_request(
     signature: &str,
     content_digest: Option<&str>,
     body: &[u8],
+    headers: &[(&str, &str)],
     key: &VerifyingKey<'_>,
 ) -> anyhow::Result<()> {
     let (label, covered, params) = parse_signature_input(signature_input)?;
@@ -283,6 +291,12 @@ pub fn verify_request(
                 .context("target URI has no authority")?
                 .to_string(),
             "@path" => url.path().to_string(),
+            "@scheme" => url.scheme().to_string(),
+            "@query" => format!("?{}", url.query().unwrap_or("")),
+            "@request-target" => match url.query() {
+                Some(query) => format!("{}?{query}", url.path()),
+                None => url.path().to_string(),
+            },
             "content-digest" => {
                 let sent =
                     content_digest.context("signature covers content-digest, but none was sent")?;
@@ -292,7 +306,21 @@ pub fn verify_request(
                 );
                 sent.to_string()
             }
-            other => anyhow::bail!("signature covers unsupported component {other:?}"),
+            derived if derived.starts_with('@') => {
+                anyhow::bail!("signature covers unsupported component {derived:?}")
+            }
+            field => {
+                let values: Vec<&str> = headers
+                    .iter()
+                    .filter(|(name, _)| name.eq_ignore_ascii_case(field))
+                    .map(|(_, value)| value.trim())
+                    .collect();
+                anyhow::ensure!(
+                    !values.is_empty(),
+                    "signature covers {field:?}, which was not sent"
+                );
+                values.join(", ")
+            }
         };
         components.push((name.clone(), value));
     }
@@ -537,6 +565,7 @@ mod tests {
             &signed.signature,
             signed.content_digest.as_deref(),
             body,
+            &[],
             &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .expect("a signature this module produced should verify");
@@ -560,6 +589,7 @@ mod tests {
             &signed.signature,
             signed.content_digest.as_deref(),
             b"swapped",
+            &[],
             &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .unwrap_err();
@@ -586,6 +616,7 @@ mod tests {
                 &signed.signature,
                 signed.content_digest.as_deref(),
                 body,
+                &[],
                 &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
             )
             .is_err()
@@ -603,10 +634,11 @@ mod tests {
             "sig1=:AAAA:",
             None,
             b"",
+            &[],
             &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .unwrap_err();
-        assert!(err.to_string().contains("unsupported component"), "{err}");
+        assert!(err.to_string().contains("x-custom"), "{err}");
     }
 
     #[test]
@@ -663,6 +695,89 @@ mod tests {
             .expect("the RFC's own signature must verify");
     }
 
+    /// RFC 9421 Appendix B.2.6 end to end: the published signature over
+    /// header fields as well as derived components verifies from the request
+    /// it was made for.
+    #[test]
+    fn verifies_the_rfc_signature_over_header_fields() {
+        verify_request(
+            "POST",
+            "https://example.com/foo?param=Value&Pet=dog",
+            "sig-b26=(\"date\" \"@method\" \"@path\" \"@authority\" \"content-type\" \"content-length\");created=1618884473;keyid=\"test-key-ed25519\"",
+            "sig-b26=:wqcAqbmYJ2ji2glfAMaRy4gruYYnx2nEFN2HN6jrnDnQCK1u02Gb04v9EDgwUPiu4A0w6vuQv5lIp5WPpBKRCw==:",
+            None,
+            br#"{"hello": "world"}"#,
+            &[
+                ("Host", "example.com"),
+                ("Date", "Tue, 20 Apr 2021 02:07:55 GMT"),
+                ("Content-Type", "application/json"),
+                ("Content-Length", "18"),
+            ],
+            &VerifyingKey::Ed25519(&TEST_KEY_ED25519_PUBLIC),
+        )
+        .expect("the RFC's signature over header fields verifies");
+    }
+
+    /// A request signed as Fedify signs one — `host` and `date` covered
+    /// alongside the derived components — verifies, and does not once a
+    /// covered header has changed on the way.
+    #[test]
+    fn verifies_a_signature_covering_host_and_date_as_fedify_makes_them() {
+        let body = br#"{"type":"Create"}"#;
+        let digest = content_digest(body);
+        let target = "https://seoul.earth/users/alice/inbox";
+        let params = "(\"@method\" \"@target-uri\" \"@authority\" \"host\" \"date\" \"content-digest\");created=1759000000;keyid=\"https://hollo.example/@bob#main-key\";alg=\"rsa-v1_5-sha256\"";
+        let date = "Sun, 28 Sep 2025 00:00:00 GMT";
+        let base = signature_base(
+            &[
+                ("@method".into(), "POST".into()),
+                ("@target-uri".into(), target.into()),
+                ("@authority".into(), "seoul.earth".into()),
+                ("host".into(), "seoul.earth".into()),
+                ("date".into(), date.into()),
+                ("content-digest".into(), digest.clone()),
+            ],
+            params,
+        );
+        let signature = SigningKey::RsaPem(TEST_KEY_RSA)
+            .sign(base.as_bytes())
+            .unwrap();
+        let input = format!("sig1={params}");
+        let signed = format!("sig1=:{signature}:");
+        let headers = [("host", "seoul.earth"), ("date", date)];
+
+        verify_request(
+            "POST",
+            target,
+            &input,
+            &signed,
+            Some(&digest),
+            body,
+            &headers,
+            &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
+        )
+        .expect("a signature over host and date verifies");
+
+        let changed = [
+            ("host", "seoul.earth"),
+            ("date", "Mon, 29 Sep 2025 00:00:00 GMT"),
+        ];
+        assert!(
+            verify_request(
+                "POST",
+                target,
+                &input,
+                &signed,
+                Some(&digest),
+                body,
+                &changed,
+                &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
+            )
+            .is_err(),
+            "a covered header that changed must not verify"
+        );
+    }
+
     #[test]
     fn signs_and_verifies_a_request_with_ed25519() {
         let body = br#"{"type":"Create"}"#;
@@ -687,6 +802,7 @@ mod tests {
             &signed.signature,
             signed.content_digest.as_deref(),
             body,
+            &[],
             &VerifyingKey::Ed25519(&TEST_KEY_ED25519_PUBLIC),
         )
         .expect("an Ed25519 signature this module made should verify");
@@ -717,6 +833,7 @@ mod tests {
             &signed.signature,
             signed.content_digest.as_deref(),
             body,
+            &[],
             &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .unwrap_err();
@@ -734,6 +851,7 @@ mod tests {
             "sig1=:AAAA:",
             None,
             b"",
+            &[],
             &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .unwrap_err();
