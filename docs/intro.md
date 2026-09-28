@@ -40,15 +40,18 @@ The main architectural rule is:
 
 The application owns its data: it says where its actors, objects and
 collections live and supplies them from its own storage, and Ojak does the
-protocol around them.  See the [design records](./design/) for where this is
-going.
+protocol around them.  The [design records](./design/) say why it is shaped
+this way.
 
 
 Status
 ------
 
-APIs and crate boundaries may still change.  Ojak is used today by
-[Eunha] and [Oeee Cafe], which depend on it through Git.
+Ojak serves actors, objects and collections, answers WebFinger and NodeInfo,
+receives and verifies activities, delivers through a queue, and serves and
+accepts portable objects.  [Eunha] and [Oeee Cafe] federate through it, and
+depend on it through Git.  APIs and crate boundaries may still change; the
+[design records](./design/) say what is built and what is left.
 
 ~~~~ toml
 [dependencies]

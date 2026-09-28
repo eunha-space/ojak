@@ -10,7 +10,8 @@ Ojak is a Cargo workspace.  Each crate lives under *crates/* in the
 Portable
 --------
 
-These make protocol decisions and do no I/O of their own.
+These make protocol decisions and do no I/O of their own.  All three are
+`no_std`, so that they can run where a standard library cannot.
 
  -  *ojak-vocab*: The Activity Vocabulary: every ActivityStreams type and the
     extensions the fediverse uses, generated from Fedify's vocabulary schemas
@@ -31,8 +32,9 @@ Runtime
 These do the I/O the portable crates leave out.
 
  -  *ojak-runtime*: Standard `std` building blocks: HTTP Signatures
-    (draft-cavage, and RFC 9421 with RSA or Ed25519), FEP-8b32 Object Integrity
-    Proofs, `did:key`, and WebFinger discovery.
+    (draft-cavage, and RFC 9421 with RSA or Ed25519) and the policy the inbox
+    holds them to, FEP-8b32 Object Integrity Proofs (`eddsa-jcs-2022`, and
+    `mldsa44-jcs-2024` to verify), `did:key`, and WebFinger discovery.
 
  -  *ojak*: The application framework over the protocol crates: the guarded HTTP
     client, queued delivery, serving actors, objects and collections, the
