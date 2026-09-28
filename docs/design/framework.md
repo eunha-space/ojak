@@ -73,11 +73,11 @@ each application had to write it itself:
     and NodeInfo were written by hand, with the `@context` literal repeated in
     each.
 
-Now Ojak has eight crates (*Crates* below), and applications serve, fetch,
+Now Ojak has six crates (*Crates* below), and applications serve, fetch,
 deliver and receive through it. `OjakCore` is gone, and the vocabulary is
 generated and read through *ojak-jsonld*. `verify_request` is unchanged, but
 nothing in Ojak's pipeline uses it: the inbox and signed GETs hold signatures
-to the stricter policy in `ojak_runtime::verification`.
+to the stricter policy in `ojak::sig::verification`.
 
 
 Decisions
@@ -128,10 +128,12 @@ processes share one store: the two colours of a blue/green deploy both run one,
 and what a colour was holding when it stopped is handed out again when its
 lease lapses rather than lost.
 
-The pure functions in `ojak-core` stay, and are the rest of that crate:
-given the local actor, the remote actor and a Follow, what should happen,
-including the locked-account path that yields a follow request instead of a
-follow.
+What to do with what arrives is the application's too, as it is in Fedify:
+whether a Follow is accepted, turned into a follow request because the account
+is locked, or refused, is policy, and a listener carries it out. Ojak
+authenticates the Follow, types it, and sends the `Accept` the application
+builds. An early `ojak-core` held that decision as a pure function, and it
+moved to the application that used it.
 
 ### One federation, generic over the application's data
 
@@ -193,7 +195,7 @@ from one template removes the class of bug.
 ### An origin is a host or a key
 
 Every same-origin rule in Ojak, in fetching, in the inbox and in ownership,
-compares *origins*, `ojak_core::origin::Origin`, and an origin is one of two
+compares *origins*, `ojak::origin::Origin`, and an origin is one of two
 things:
 
  -  the scheme, host and port of an `http` or `https` URI, as the web defines
@@ -415,7 +417,7 @@ Before a listener sees anything, Ojak:
 11. enqueues the activity, or reads it into the listener's type and runs the
     listener inline when no queue is configured.
 
-Parsing and verification are separate steps, in `ojak_runtime::verification`.
+Parsing and verification are separate steps, in `ojak::sig::verification`.
 The parsed signature is plain data that can be inspected and tested;
 verification takes it together with a key and a digest the caller supplies.
 
@@ -493,25 +495,29 @@ An application can allow private addresses for development.
 ### Crates
 
  -  *ojak-vocab*: vocabulary types, generated, `no_std`, reading and writing
-    Ojak's normalised form.
+    Ojak's normalised form, and what a post or reaction means where the
+    fediverse says it several ways.
  -  *ojak-jsonld*: normalisation over bundled contexts, `no_std`.
- -  *ojak-core*: pure protocol decisions, `no_std`: Follow, addressing,
-    origins and ownership rules, what a post or reaction means, relays, and
-    `ap://` identifiers.
- -  *ojak-runtime*: the primitives that need `std`: HTTP signatures and their
-    verification policy, integrity proofs, `did:key` and WebFinger lookup.
  -  *ojak*: the framework. The federation, its builder, routing and contexts,
     the inbox pipeline, delivery, fetching, gateways, the guarded client, and
-    the key-value and queue traits with their in-memory implementations.
+    the key-value and queue traits with their in-memory implementations; and
+    beside them, doing no I/O, signatures and proofs with their verification
+    policy (`ojak::sig`), origins, and `ap://` identifiers.
  -  *ojak-axum*: the axum integration, `ojak_axum::wrap`.
  -  *ojak-postgres*: the Postgres queue and key-value store. More backends
     can follow.
  -  *ojak-vocab-gen*: the generator of *ojak-vocab*'s types.
 
-The design folded *ojak-runtime* into the other two as its pieces moved: what
-is pure into *ojak-core*, what does I/O into *ojak*. That has not happened;
-the signature and proof primitives, pure parsing included, are still in
-*ojak-runtime*, which *ojak* and applications depend on.
+The design had a portable `ojak-core` of protocol decisions beside a
+`std` *ojak-runtime* of primitives, with the runtime folded into the other two
+over time. What was built made the split not worth its cost: the framework
+was the only crate that depended on either, the decisions in `ojak-core`
+were the applications' policy rather than the protocol's, and the primitives
+were pure but lived in the runtime. So the signature and proof primitives are
+`ojak::sig`, origins and `ap://` identifiers are in *ojak*, what a reaction
+means is in *ojak-vocab*, and the Follow and visibility decisions are the
+applications' own. Fedify is organised the same way: its signatures are part
+of the framework package, and its vocabulary is separate.
 
 ### Tests feed inputs and read outcomes
 
@@ -554,8 +560,7 @@ time next to what it had.
 
 What is left, from the decisions above: typed dispatch and returning
 vocabulary types from dispatchers, stopping delivery to a failing host,
-proofs as part of delivery, a test federation, and folding *ojak-runtime*
-away.
+proofs as part of delivery, and a test federation.
 
 
 Open questions

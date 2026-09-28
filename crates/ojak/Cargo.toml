@@ -1,22 +1,29 @@
 [package]
 name = "ojak"
-description = "An ActivityPub application framework over ojak's protocol crates"
+description = "An ActivityPub application framework"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-ojak-core = { path = "../ojak-core" }
 ojak-jsonld.workspace = true
-ojak-runtime = { path = "../ojak-runtime" }
 ojak-vocab = { path = "../ojak-vocab" }
+anyhow.workspace = true
+base64.workspace = true
+bs58.workspace = true
 chrono.workspace = true
+ed25519-dalek.workspace = true
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 http = "1"
 ipnet = "2"
+ml-dsa = "0.1"
 percent-encoding = "2"
+rand_core = { version = "0.6", features = ["getrandom"] }
 reqwest.workspace = true
+rsa.workspace = true
+serde_jcs.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tokio = { version = "1", features = ["net", "sync", "time", "macros"] }
 url.workspace = true
 
@@ -29,7 +36,7 @@ chrono.workspace = true
 http = "1"
 axum = "0.8"
 reqwest.workspace = true
-ojak-runtime = { path = "../ojak-runtime" }
+rand = "0.8"
 tokio = { version = "1", features = ["net", "sync", "time", "macros", "rt-multi-thread"] }
 
 [lints]

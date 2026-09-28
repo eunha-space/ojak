@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 pub mod generated;
 pub mod json;
 pub mod loss;
+pub mod meaning;
 mod read;
 
 pub use generated::*;

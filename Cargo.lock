@@ -1196,18 +1196,26 @@ dependencies = [
 name = "ojak"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
+ "base64",
+ "bs58",
  "chrono",
+ "ed25519-dalek",
  "futures-util",
  "http",
  "ipnet",
- "ojak-core",
+ "ml-dsa",
  "ojak-jsonld",
- "ojak-runtime",
  "ojak-vocab",
  "percent-encoding",
+ "rand 0.8.6",
+ "rand_core 0.6.4",
  "reqwest",
+ "rsa",
+ "serde_jcs",
  "serde_json",
+ "sha2",
  "tokio",
  "url",
 ]
@@ -1221,14 +1229,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tower",
-]
-
-[[package]]
-name = "ojak-core"
-version = "0.1.0"
-dependencies = [
- "ojak-vocab",
- "serde_json",
 ]
 
 [[package]]
@@ -1247,26 +1247,6 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
-]
-
-[[package]]
-name = "ojak-runtime"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "bs58",
- "chrono",
- "ed25519-dalek",
- "ml-dsa",
- "rand 0.8.6",
- "rand_core 0.6.4",
- "reqwest",
- "rsa",
- "serde_jcs",
- "serde_json",
- "sha2",
- "url",
 ]
 
 [[package]]

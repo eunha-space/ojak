@@ -26,7 +26,7 @@ What is left
  -  Stopping delivery to a host that keeps failing, and integrity proofs
     attached as part of delivery.
  -  A test federation that records what would have been sent.
- -  Folding *ojak-runtime* into *ojak-core* and *ojak*.
+ -  Running a relay.
  -  A configurable inbox body limit.
  -  Followers collection synchronisation (FEP-8fcf), client-to-server
     (FEP-ae97), and hashlink media.

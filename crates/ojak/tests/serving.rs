@@ -6,25 +6,23 @@ use axum::extract::State;
 use axum::routing;
 use chrono::{TimeZone, Utc};
 use ojak::client::{Client, ClientConfig};
-use ojak::delivery::Scheme;
 use ojak::federation::{
     ActorRef, Collection, Context, Federation, First, Found, Handled, NodeInfo, Page, PublicKey,
     Route, Software, with_keys,
 };
 use ojak::fetch::Fetcher;
 use ojak::kv::MemoryKvStore;
+use ojak::sig::Scheme;
+use ojak::sig::signature::{self, PrivateKey};
 use ojak::template::Values;
-use ojak_runtime::signature::{self, PrivateKey};
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use url::Url;
 
-const PRIVATE_KEY: &str =
-    include_str!("../../ojak-runtime/tests/fixtures/rfc9421_test_key_rsa.pem");
-const PUBLIC_KEY: &str =
-    include_str!("../../ojak-runtime/tests/fixtures/rfc9421_test_key_rsa_public.pem");
+const PRIVATE_KEY: &str = include_str!("fixtures/rfc9421_test_key_rsa.pem");
+const PUBLIC_KEY: &str = include_str!("fixtures/rfc9421_test_key_rsa_public.pem");
 const ACCEPT_AP: &str = "application/activity+json";
 const BROWSER: &str = "text/html,application/xhtml+xml,*/*;q=0.8";
 

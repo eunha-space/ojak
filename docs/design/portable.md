@@ -24,7 +24,7 @@ in three spellings and written in one:
     `https://gateway.example/.well-known/apgateway/did:key:z6Mk…/path`,
     which a server without FEP-ef61 sees as an ordinary `https` IRI.
 
-`ojak_core::portable::ApUri` parses all three into the DID, the path and the
+`ojak::portable::ApUri` parses all three into the DID, the path and the
 fragment, and compares by the canonical form, which drops the query. The
 query of an `ap` URI carries location hints,
 `?@gateway=https%3A%2F%2Fserver1.example`, which are kept apart as

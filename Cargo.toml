@@ -2,10 +2,8 @@
 members = [
   "crates/ojak",
   "crates/ojak-axum",
-  "crates/ojak-core",
   "crates/ojak-jsonld",
   "crates/ojak-postgres",
-  "crates/ojak-runtime",
   "crates/ojak-vocab",
   "crates/ojak-vocab-gen",
 ]

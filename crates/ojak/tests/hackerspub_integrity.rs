@@ -3,7 +3,7 @@
 //! `assertionMethod`. Guards against serialization mismatches the synthetic W3C
 //! vector can't catch (e.g. a trailing RsaSignature2017 `signature` field).
 
-use ojak_runtime::integrity::{
+use ojak::sig::integrity::{
     decode_multikey, extract_integrity_proof, verify_object_integrity_proof,
 };
 use serde_json::Value;

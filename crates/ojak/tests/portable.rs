@@ -10,17 +10,17 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use ojak::client::{Client, ClientConfig};
 use ojak::deliverer::{Deliverer, DelivererConfig, PortableInbox, SenderKeys};
-use ojak::delivery::{Scheme, SenderKey};
 use ojak::federation::{
     ActorRef, Context, Federation, Forward, ForwardTo, Found, GatewayInbox, Handled, PORTABLE_JSON,
     Received,
 };
 use ojak::fetch::{FetchError, Fetcher};
 use ojak::kv::MemoryKvStore;
+use ojak::portable::ApUri;
 use ojak::portable::{Ed25519Signer, ProofSigner};
 use ojak::queue::{MemoryQueue, QueueError, RetryPolicy};
-use ojak_core::portable::ApUri;
-use ojak_runtime::signature::{PrivateKey, sign_request_with_key};
+use ojak::sig::signature::{PrivateKey, sign_request_with_key};
+use ojak::sig::{Scheme, SenderKey};
 use ojak_vocab::generated::{Delete, Follow};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -28,10 +28,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use url::Url;
 
-const PRIVATE_KEY: &str =
-    include_str!("../../ojak-runtime/tests/fixtures/rfc9421_test_key_rsa.pem");
-const PUBLIC_KEY: &str =
-    include_str!("../../ojak-runtime/tests/fixtures/rfc9421_test_key_rsa_public.pem");
+const PRIVATE_KEY: &str = include_str!("fixtures/rfc9421_test_key_rsa.pem");
+const PUBLIC_KEY: &str = include_str!("fixtures/rfc9421_test_key_rsa_public.pem");
 const HOST: &str = "oeee.test";
 
 fn client() -> Client {

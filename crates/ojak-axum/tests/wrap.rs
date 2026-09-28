@@ -69,9 +69,9 @@ async fn ojak_answers_activitypub_and_the_application_the_rest() {
 #[tokio::test]
 async fn an_inbox_post_is_read_and_received() {
     use ojak::client::{Client, ClientConfig};
-    use ojak::delivery::Scheme;
     use ojak::fetch::Fetcher;
     use ojak::kv::MemoryKvStore;
+    use ojak::sig::Scheme;
     use std::sync::Arc;
     use std::time::Duration;
 

@@ -200,11 +200,11 @@ from its origin, as above.
 
 A relay passes public activities between the servers subscribed to it,
 signed by the relay, so what it sends on is forwarded and is established as
-any forwarded activity is. `ojak_core::relay` builds the subscription in
-either convention, Mastodon's follow of `as:Public` or LitePub's follow of
-the relay's actor, recognises the relay's answer, and says which outgoing
-activities go to the relays; the application keeps its subscriptions and
-adds the relays' inboxes to a public activity's deliveries.
+any forwarded activity is: receiving from one needs nothing more. Subscribing
+to one is a Follow the application sends and keeps, in whichever convention
+the relay speaks, Mastodon's follow of `as:Public` or LitePub's follow of the
+relay's actor. Running a relay is a package of its own, as `@fedify/relay` is
+for Fedify, and is not built.
 
 ### Errors and responses
 

@@ -10,18 +10,16 @@ use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use ojak::client::{Client, ClientConfig, RequestError};
-use ojak::delivery::{Scheme, SenderKey};
 use ojak::fetch::{FetchError, Fetcher};
-use ojak_runtime::signature::PrivateKey;
-use ojak_runtime::verification::{self, Key, Request};
+use ojak::sig::signature::PrivateKey;
+use ojak::sig::verification::{self, Key, Request};
+use ojak::sig::{Scheme, SenderKey};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 use url::Url;
 
-const PRIVATE_KEY: &str =
-    include_str!("../../ojak-runtime/tests/fixtures/rfc9421_test_key_rsa.pem");
-const PUBLIC_KEY: &str =
-    include_str!("../../ojak-runtime/tests/fixtures/rfc9421_test_key_rsa_public.pem");
+const PRIVATE_KEY: &str = include_str!("fixtures/rfc9421_test_key_rsa.pem");
+const PUBLIC_KEY: &str = include_str!("fixtures/rfc9421_test_key_rsa_public.pem");
 const KEY_ID: &str = "https://ojak.example/actor#main-key";
 
 /// A request the server saw.

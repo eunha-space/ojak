@@ -5,7 +5,7 @@
 //! method is `did:key:z6Mk…#z6Mk…`. FEP-ef61 asks for base58btc only, so
 //! that one key has one DID; a DID in any other multibase is not read.
 
-use crate::integrity::{PublicKey, decode_multikey, encode_ed25519_multikey};
+use crate::sig::integrity::{PublicKey, decode_multikey, encode_ed25519_multikey};
 use anyhow::{Result, anyhow};
 
 /// The `did:key` of an Ed25519 public key.

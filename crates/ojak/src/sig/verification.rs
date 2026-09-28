@@ -21,7 +21,7 @@
 //! ago, could be replayed here. `signature::verify_request` checks a digest
 //! only when one happens to be sent, and never the time or the host.
 
-use crate::{rfc9421, signature};
+use crate::sig::{rfc9421, signature};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};

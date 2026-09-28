@@ -545,9 +545,10 @@ mod tests {
     /// ML-DSA-44 verification itself.
     #[test]
     fn verifies_w3c_mldsa44_jcs_2024_vector() {
-        let doc: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/w3c_mldsa44_jcs_2024.json"))
-                .expect("parse vector");
+        let doc: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/w3c_mldsa44_jcs_2024.json"
+        ))
+        .expect("parse vector");
 
         let (proof, suite, vm) = extract_integrity_proof(&doc).expect("proof present");
         assert_eq!(suite, Cryptosuite::Mldsa44Jcs2024);
@@ -568,9 +569,10 @@ mod tests {
 
     #[test]
     fn rejects_a_tampered_mldsa44_document() {
-        let mut doc: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/w3c_mldsa44_jcs_2024.json"))
-                .expect("parse vector");
+        let mut doc: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/w3c_mldsa44_jcs_2024.json"
+        ))
+        .expect("parse vector");
         doc["issuer"] = serde_json::json!("did:example:evil");
 
         let (proof, _, vm) = extract_integrity_proof(&doc).expect("proof present");
@@ -587,9 +589,10 @@ mod tests {
     /// rather than a verification failure to retry.
     #[test]
     fn refuses_a_key_of_the_wrong_type() {
-        let doc: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/w3c_mldsa44_jcs_2024.json"))
-                .expect("parse vector");
+        let doc: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/w3c_mldsa44_jcs_2024.json"
+        ))
+        .expect("parse vector");
         let (proof, _, _) = extract_integrity_proof(&doc).expect("proof present");
 
         let ed25519 = decode_multikey("z6MkrJVnaZkeFzdQyMZu1cgjg7k1pZZ6pvBQ7XJPt4swbTQ2").unwrap();

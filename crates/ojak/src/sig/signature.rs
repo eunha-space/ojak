@@ -196,6 +196,11 @@ pub fn sign_get_with_key(url: &str, key_id: &str, key: &PrivateKey) -> anyhow::R
 
 /// Verify the HTTP Signature on an incoming POST request.
 ///
+/// This checks the signature and, when there is a `Digest` header, the body
+/// against it, and nothing more: not which headers were signed, nor when, nor
+/// for which host. [`verification`](super::verification) holds a request to
+/// that policy before it calls this.
+///
 /// # Arguments
 /// * `method`         – HTTP method in any case
 /// * `path`           – Request path (e.g., `/inbox`)
@@ -301,7 +306,7 @@ impl std::fmt::Debug for PrivateKey {
 
 /// Sign `message` with RSASSA-PKCS1-v1_5 over SHA-256, base64-encoded.
 ///
-/// Shared with [`crate::rfc9421`], which signs a different string with the same
+/// Shared with [`crate::sig::rfc9421`], which signs a different string with the same
 /// primitive.
 pub(crate) fn rsa_sign_pkcs1v15(private_key_pem: &str, message: &[u8]) -> anyhow::Result<String> {
     Ok(PrivateKey::from_pem(private_key_pem)?.sign(message))
@@ -322,7 +327,7 @@ fn parse_private_key(pem: &str) -> anyhow::Result<rsa::RsaPrivateKey> {
 
 /// Verify an RSASSA-PKCS1-v1_5 SHA-256 signature, base64-encoded.
 ///
-/// Shared with [`crate::rfc9421`], which verifies a different string with the
+/// Shared with [`crate::sig::rfc9421`], which verifies a different string with the
 /// same primitive.
 pub(crate) fn rsa_verify_pkcs1v15(
     public_key_pem: &str,

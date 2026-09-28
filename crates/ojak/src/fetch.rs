@@ -23,11 +23,11 @@
 //! whose proof holds; [`Fetcher::lookup`] sends a portable URL there.
 
 use crate::client::{Client, RequestError, Response};
-use crate::delivery::{Scheme, SenderKey};
+use crate::origin::Origin;
+use crate::portable::ApUri;
 use crate::portable::{self, DidResolver};
-use ojak_core::origin::Origin;
-use ojak_core::portable::ApUri;
-use ojak_runtime::{rfc9421, signature};
+use crate::sig::{Scheme, SenderKey};
+use crate::sig::{rfc9421, signature};
 use ojak_vocab::json::{FromJson, ToJson};
 use ojak_vocab::{Read, ReadError, Registry, read_reporting};
 use reqwest::header::{HeaderMap, HeaderValue};

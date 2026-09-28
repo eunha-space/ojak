@@ -8,12 +8,12 @@
 
 use super::{ActorRef, BoxFuture, Context, Error, Federation, Inner, RequestInfo, empty, signer};
 use crate::deliverer::PortableInbox;
+use crate::origin::same_origin;
+use crate::portable::ApUri;
 use crate::queue::{Job, QueueError, RetryPolicy, SharedQueue};
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use http::{HeaderValue, StatusCode, header};
-use ojak_core::origin::same_origin;
-use ojak_core::portable::ApUri;
 use ojak_vocab::json::{FromJson, ToJson, Typed};
 use ojak_vocab::loss::{self, Loss};
 use serde_json::{Value, json};
@@ -39,7 +39,7 @@ pub struct Received<T> {
     /// The actor Ojak authenticated as its sender. Everything the activity
     /// says about anyone else is a claim. A portable actor's is its `ap` URI
     /// with the DID's colons percent-encoded, which is how a `Url` holds one;
-    /// `ojak_core::portable::ApUri::parse` reads it back.
+    /// `crate::portable::ApUri::parse` reads it back.
     pub sender: Url,
     /// The actor whose inbox it arrived at; `None` for the shared inbox,
     /// where the recipients are worked out from the addressing.

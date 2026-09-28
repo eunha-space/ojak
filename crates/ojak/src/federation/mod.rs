@@ -27,10 +27,10 @@ pub use signer::KnownKey;
 
 use crate::fetch::Fetcher;
 use crate::kv::{KvError, KvStore};
+use crate::portable::ApUri;
 use crate::template::{Template, TemplateError, Values};
 use chrono::{DateTime, SecondsFormat, Utc};
 use http::{HeaderValue, Method, StatusCode, header};
-use ojak_core::portable::ApUri;
 use serde_json::{Value, json};
 use std::fmt;
 use std::future::Future;
@@ -810,7 +810,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     where
         K: KvStore,
         F: Fn(Context<D>) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = Result<Option<crate::delivery::SenderKey>, E>> + Send + 'static,
+        Fut: Future<Output = Result<Option<crate::sig::SenderKey>, E>> + Send + 'static,
         E: Into<Error>,
     {
         self.signed_fetch = Some(signer::SignedFetch {
@@ -1547,7 +1547,7 @@ pub(crate) fn activity(status: StatusCode, mut document: Value) -> http::Respons
 
 /// Whether `path` is under the well-known path gateways serve at.
 fn is_gateway_path(path: &str) -> bool {
-    path.starts_with(ojak_core::portable::GATEWAY_PATH)
+    path.starts_with(crate::portable::GATEWAY_PATH)
 }
 
 /// The media type a gateway serves portable objects as (FEP-ef61).

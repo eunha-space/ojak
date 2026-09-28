@@ -6,7 +6,6 @@ use axum::Router;
 use axum::extract::State;
 use axum::routing;
 use ojak::client::{Client, ClientConfig};
-use ojak::delivery::Scheme;
 use ojak::federation::{
     ActorRef, CollectionRef, Context, Federation, Forward, ForwardTo, Found, Handled, InboxWorker,
     InboxWorkerConfig, Received,
@@ -14,7 +13,8 @@ use ojak::federation::{
 use ojak::fetch::Fetcher;
 use ojak::kv::MemoryKvStore;
 use ojak::queue::{MemoryQueue, RetryPolicy, SharedQueue, shared};
-use ojak_runtime::signature::{PrivateKey, sign_request_with_key};
+use ojak::sig::Scheme;
+use ojak::sig::signature::{PrivateKey, sign_request_with_key};
 use ojak_vocab::generated::{Create, Delete, Follow};
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -22,10 +22,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use url::Url;
 
-const PRIVATE_KEY: &str =
-    include_str!("../../ojak-runtime/tests/fixtures/rfc9421_test_key_rsa.pem");
-const PUBLIC_KEY: &str =
-    include_str!("../../ojak-runtime/tests/fixtures/rfc9421_test_key_rsa_public.pem");
+const PRIVATE_KEY: &str = include_str!("fixtures/rfc9421_test_key_rsa.pem");
+const PUBLIC_KEY: &str = include_str!("fixtures/rfc9421_test_key_rsa_public.pem");
 const HOST: &str = "oeee.test";
 
 /// What the listeners saw.
@@ -579,7 +577,7 @@ async fn an_inbox_that_could_not_authenticate_is_not_built() {
 /// an assertionMethod authenticates the activity.
 #[tokio::test]
 async fn an_integrity_proof_authenticates_an_unsigned_activity() {
-    use ojak_runtime::integrity;
+    use ojak::sig::integrity;
 
     let remote = Remote::default();
     let bob = serve_remote(remote.clone()).await;

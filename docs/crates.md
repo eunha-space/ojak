@@ -7,38 +7,47 @@ Ojak is a Cargo workspace.  Each crate lives under *crates/* in the
 [repository]: https://github.com/eunha-space/ojak
 
 
-Portable
---------
+The vocabulary
+--------------
 
-These make protocol decisions and do no I/O of their own.  All three are
-`no_std`, so that they can run where a standard library cannot.
+These do no I/O, and are `no_std`, so that they can run where a standard
+library cannot.
 
  -  *ojak-vocab*: The Activity Vocabulary: every ActivityStreams type and the
     extensions the fediverse uses, generated from Fedify's vocabulary schemas
     and Ojak's own additions, with reading and writing through *ojak-jsonld*.
+    `ojak_vocab::meaning` says what a post or reaction means where the
+    fediverse says it several ways.
 
  -  *ojak-jsonld*: JSON-LD term expansion and compaction over bundled contexts,
     so that a document is read by what its keys stand for rather than how they
     are spelled.
 
- -  *ojak-core*: Portable ActivityPub decisions: pure functions over the
-    vocabulary for addressing and visibility, what to do with a Follow, what a
-    post or reaction means, relaying, and portable objects.
+
+The framework
+-------------
+
+ -  *ojak*: The application framework.  The application says where its
+    actors, objects and collections live and decides what to do with what
+    arrives; Ojak does the protocol around them.
+
+     -  `ojak::federation`: serving actors, objects, collections, WebFinger
+        and NodeInfo, and the inbox.
+     -  `ojak::deliverer`: queued delivery.
+     -  `ojak::fetch` and `ojak::client`: fetching other servers' documents
+        through the guarded HTTP client.
+     -  `ojak::sig`: HTTP Signatures (draft-cavage, and RFC 9421 with RSA or
+        Ed25519) and the policy the inbox holds them to, FEP-8b32 Object
+        Integrity Proofs (`eddsa-jcs-2022`, and `mldsa44-jcs-2024` to
+        verify), and `did:key`.  These do no I/O.
+     -  `ojak::origin` and `ojak::portable`: the same-origin rule, over hosts
+        and DIDs, and portable objects (FEP-ef61).
+     -  `ojak::kv` and `ojak::queue`: the key-value store and the queue, as
+        traits with in-memory implementations.
 
 
-Runtime
--------
-
-These do the I/O the portable crates leave out.
-
- -  *ojak-runtime*: Standard `std` building blocks: HTTP Signatures
-    (draft-cavage, and RFC 9421 with RSA or Ed25519) and the policy the inbox
-    holds them to, FEP-8b32 Object Integrity Proofs (`eddsa-jcs-2022`, and
-    `mldsa44-jcs-2024` to verify), `did:key`, and WebFinger discovery.
-
- -  *ojak*: The application framework over the protocol crates: the guarded HTTP
-    client, queued delivery, serving actors, objects and collections, the
-    inbox, and the key-value store.
+Integrations
+------------
 
  -  *ojak-axum*: Serving an Ojak federation from an [axum] application.
 

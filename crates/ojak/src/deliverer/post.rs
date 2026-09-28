@@ -1,4 +1,4 @@
-//! Delivering one activity to one inbox.
+//! Delivering one activity to one inbox: one attempt of a [`Deliverer`](super::Deliverer) job.
 //!
 //! One signed POST, retried once in the other signature scheme when the
 //! first is refused: a peer that answers 400 or 401 may be one that verifies
@@ -7,45 +7,13 @@
 //! says whether trying again later could help.
 
 use crate::client::{Client, RequestError};
-use ojak_runtime::{rfc9421, signature};
+use crate::sig::{Scheme, SenderKey, rfc9421, signature};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::fmt;
-use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
 
-/// An RSA private key, parsed once; what a [`SenderKey`] signs with.
-pub use ojak_runtime::signature::PrivateKey;
-
 const ACTIVITY_JSON: &str = "application/activity+json";
-
-/// An HTTP signature scheme.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Scheme {
-    /// draft-cavage-http-signatures-12, which most of the network verifies.
-    DraftCavage,
-    /// RFC 9421 HTTP Message Signatures.
-    Rfc9421,
-}
-
-impl Scheme {
-    /// The scheme a refused request is retried in.
-    #[must_use]
-    pub fn other(self) -> Self {
-        match self {
-            Self::DraftCavage => Self::Rfc9421,
-            Self::Rfc9421 => Self::DraftCavage,
-        }
-    }
-}
-
-/// The key an actor signs deliveries with.
-#[derive(Clone, Debug)]
-pub struct SenderKey {
-    /// The key's IRI, as its actor document publishes it.
-    pub key_id: String,
-    pub private_key: Arc<PrivateKey>,
-}
 
 /// Why a delivery did not go through.
 #[derive(Debug)]

@@ -8,9 +8,12 @@
 //! `did:key` is resolved here, since the DID is the key. Any other method
 //! needs a [`DidResolver`] from the application.
 
-use ojak_core::portable::{ApUri, did_of};
-use ojak_runtime::did::{did_key, did_key_method, resolve_did_key};
-use ojak_runtime::integrity::{self, PublicKey};
+mod uri;
+
+pub use uri::*;
+
+use crate::sig::did::{did_key, did_key_method, resolve_did_key};
+use crate::sig::integrity::{self, PublicKey};
 use serde_json::Value;
 use std::fmt;
 use std::future::Future;

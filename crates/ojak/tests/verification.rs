@@ -1,8 +1,8 @@
 //! Checking inbound signed requests: every rule, passing and refused.
 
-use ojak_runtime::rfc9421;
-use ojak_runtime::signature::{self, PrivateKey};
-use ojak_runtime::verification::{
+use ojak::sig::rfc9421;
+use ojak::sig::signature::{self, PrivateKey};
+use ojak::sig::verification::{
     self, Key, Policy, Rejection, Request, Scheme, key_owner, published_key_pem,
 };
 use serde_json::json;

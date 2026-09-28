@@ -67,8 +67,8 @@ pub enum SigningKey<'a> {
     /// PKCS#8 or PKCS#1 PEM-encoded RSA private key, parsed each time.
     RsaPem(&'a str),
     /// An RSA private key parsed once by
-    /// [`PrivateKey::from_pem`](crate::signature::PrivateKey::from_pem).
-    Rsa(&'a crate::signature::PrivateKey),
+    /// [`PrivateKey::from_pem`](crate::sig::signature::PrivateKey::from_pem).
+    Rsa(&'a crate::sig::signature::PrivateKey),
     /// A raw 32-byte Ed25519 seed.
     Ed25519(&'a [u8; 32]),
 }
@@ -83,7 +83,7 @@ impl SigningKey<'_> {
 
     fn sign(&self, message: &[u8]) -> anyhow::Result<String> {
         match self {
-            Self::RsaPem(pem) => crate::signature::rsa_sign_pkcs1v15(pem, message),
+            Self::RsaPem(pem) => crate::sig::signature::rsa_sign_pkcs1v15(pem, message),
             Self::Rsa(key) => Ok(key.sign(message)),
             Self::Ed25519(seed) => {
                 use ed25519_dalek::Signer as _;
@@ -113,7 +113,9 @@ impl VerifyingKey<'_> {
 
     fn verify(&self, message: &[u8], signature_b64: &str) -> anyhow::Result<()> {
         match self {
-            Self::RsaPem(pem) => crate::signature::rsa_verify_pkcs1v15(pem, message, signature_b64),
+            Self::RsaPem(pem) => {
+                crate::sig::signature::rsa_verify_pkcs1v15(pem, message, signature_b64)
+            }
             Self::Ed25519(key) => {
                 use ed25519_dalek::Verifier as _;
 
@@ -285,7 +287,7 @@ pub fn verify_request(
                 let sent =
                     content_digest.context("signature covers content-digest, but none was sent")?;
                 anyhow::ensure!(
-                    sent == crate::rfc9421::content_digest(body),
+                    sent == crate::sig::rfc9421::content_digest(body),
                     "content-digest does not match the body"
                 );
                 sent.to_string()
@@ -387,7 +389,7 @@ mod tests {
     use super::*;
 
     /// The `test-key-rsa` private key from RFC 9421 Appendix B.1.1.
-    const TEST_KEY_RSA: &str = include_str!("../tests/fixtures/rfc9421_test_key_rsa.pem");
+    const TEST_KEY_RSA: &str = include_str!("../../tests/fixtures/rfc9421_test_key_rsa.pem");
 
     /// RFC 9421 Appendix B.4: a signature base covering derived components and
     /// a content digest, built with `rsa-v1_5-sha256`. Reproducing the document
@@ -447,7 +449,8 @@ mod tests {
             "\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"content-digest\" \"content-type\" \"content-length\" \"forwarded\");created=1618884480;keyid=\"test-key-rsa\";alg=\"rsa-v1_5-sha256\";expires=1618884540",
         );
 
-        let signature = crate::signature::rsa_sign_pkcs1v15(TEST_KEY_RSA, base.as_bytes()).unwrap();
+        let signature =
+            crate::sig::signature::rsa_sign_pkcs1v15(TEST_KEY_RSA, base.as_bytes()).unwrap();
 
         let expected = concat!(
             "S6ZzPXSdAMOPjN/6KXfXWNO/f7V6cHm7BXYUh3YD/fRad4BCaRZxP+JH+8XY1I6+8Cy",
@@ -513,7 +516,7 @@ mod tests {
 
     /// The public half of `test-key-rsa`, from RFC 9421 Appendix B.1.1.
     const TEST_KEY_RSA_PUBLIC: &str =
-        include_str!("../tests/fixtures/rfc9421_test_key_rsa_public.pem");
+        include_str!("../../tests/fixtures/rfc9421_test_key_rsa_public.pem");
 
     #[test]
     fn verifies_what_it_signs() {

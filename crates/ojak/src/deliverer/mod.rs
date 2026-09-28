@@ -16,12 +16,16 @@
 //! actor lists; [`Deliverer::send_portable`] queues it with them, and one
 //! attempt tries each in order until one accepts.
 
+mod post;
+
+pub use post::{DeliveryError, deliver};
+
 use crate::client::Client;
-use crate::delivery::{self, DeliveryError, Scheme, SenderKey};
+use crate::portable::ApUri;
 use crate::queue::{Job, Queue, QueueError, RetryPolicy};
+use crate::sig::{Scheme, SenderKey};
 use futures_util::StreamExt as _;
 use futures_util::stream;
-use ojak_core::portable::ApUri;
 use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap};
 use std::future::Future;
@@ -574,7 +578,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             .get(&host)
             .copied()
             .unwrap_or(self.config.first_scheme);
-        let result = delivery::deliver(&self.client, target, body, key, first).await;
+        let result = post::deliver(&self.client, target, body, key, first).await;
         drop(shared_permit);
         drop(permit);
         let accepted = result?;

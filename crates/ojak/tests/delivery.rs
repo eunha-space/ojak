@@ -6,20 +6,19 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use ojak::client::{Client, ClientConfig, RequestError};
+use ojak::deliverer::{self as delivery, DeliveryError};
 use ojak::deliverer::{Deliverer, DelivererConfig, DeliveryFailure, SenderKeys};
-use ojak::delivery::{self, DeliveryError, Scheme, SenderKey};
 use ojak::queue::{MemoryQueue, QueueError, RetryPolicy};
-use ojak_runtime::signature::{self, PrivateKey};
+use ojak::sig::signature::{self, PrivateKey};
+use ojak::sig::{Scheme, SenderKey};
 use serde_json::json;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use url::Url;
 
-const PRIVATE_KEY: &str =
-    include_str!("../../ojak-runtime/tests/fixtures/rfc9421_test_key_rsa.pem");
-const PUBLIC_KEY: &str =
-    include_str!("../../ojak-runtime/tests/fixtures/rfc9421_test_key_rsa_public.pem");
+const PRIVATE_KEY: &str = include_str!("fixtures/rfc9421_test_key_rsa.pem");
+const PUBLIC_KEY: &str = include_str!("fixtures/rfc9421_test_key_rsa_public.pem");
 const KEY_ID: &str = "https://ojak.example/users/alice#main-key";
 
 /// What the test inbox does with each request.

@@ -9,12 +9,12 @@
 //! over the generated types, and an application that disagrees reads the
 //! fields itself.
 
-use alloc::{string::String, vec::Vec};
-use ojak_vocab::Iri;
-use ojak_vocab::generated::{
+use crate::Iri;
+use crate::generated::{
     AnyObject, Article, ChatMessage, Emoji, EmojiReact, Like, LinkOrObject, Note, Page, Question,
 };
-use ojak_vocab::json::Text;
+use crate::json::Text;
+use alloc::{string::String, vec::Vec};
 
 /// Someone a post mentions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -169,8 +169,8 @@ pub fn emoji_reaction(react: &EmojiReact) -> Option<Reaction<'_>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ojak_vocab::generated::AnyObject;
-    use ojak_vocab::{Registry, read_reporting};
+    use crate::generated::AnyObject;
+    use crate::{Registry, read_reporting};
     use serde_json::{Value, json};
 
     fn read(document: Value) -> AnyObject {

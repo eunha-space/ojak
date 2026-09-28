@@ -7,9 +7,9 @@
 //! verifies is fetched again once, since its actor may have rotated it.
 
 use super::{BoxFuture, Context, DynKv, Error, authority};
-use crate::delivery::SenderKey;
 use crate::fetch::Fetcher;
-use ojak_runtime::verification::{self, Key, Policy, Request, Signature};
+use crate::sig::SenderKey;
+use crate::sig::verification::{self, Key, Policy, Request, Signature};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
@@ -190,7 +190,7 @@ pub(super) async fn prove<D: Clone + Send + Sync + 'static>(
     document: &Value,
     actor: &str,
 ) -> Result<Url, String> {
-    use ojak_runtime::integrity;
+    use crate::sig::integrity;
 
     let settings = context
         .inner
@@ -200,7 +200,7 @@ pub(super) async fn prove<D: Clone + Send + Sync + 'static>(
         .ok_or("signed fetches are not configured")?;
     let (proof, _, method) =
         integrity::extract_integrity_proof(document).ok_or("no usable integrity proof")?;
-    if !ojak_core::origin::same_origin(&method, actor) {
+    if !crate::origin::same_origin(&method, actor) {
         return Err(format!("proof key {method} is not on {actor}'s origin"));
     }
     let actor_url = Url::parse(actor).map_err(|error| error.to_string())?;

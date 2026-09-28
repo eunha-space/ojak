@@ -284,7 +284,7 @@ fn without_the_type_the_scoped_terms_do_not_apply() {
 
 #[test]
 fn integrity_proof_fields_expand_under_their_scoped_context() {
-    // FEP-8b32, which is what ojak-runtime verifies. `proofValue` and
+    // FEP-8b32, which is what ojak::sig verifies. `proofValue` and
     // `cryptosuite` are defined by the context scoped to `DataIntegrityProof`.
     let document = json!({
         "@context": [
