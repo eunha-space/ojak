@@ -5,49 +5,34 @@ Step 4 of *framework.md*: what Ojak answers when another server, or a
 person, sends a GET. Actors, objects and collections come from dispatchers the
 application registers; WebFinger, host-meta and NodeInfo follow from them.
 
-*Status: done.* Everything below is implemented in `ojak::federation`, and
-both oeee-cafe and eunha serve through it with *ojak-axum*. The same
-`Federation` now also receives activities (*inbox.md*) and serves portable
-objects at gateways (*portable.md*). What was designed and not built is listed
-at the end.
+*Status: done.* Everything below is implemented in `ojak::federation`, with
+*ojak-axum* for axum applications. The same `Federation` also receives
+activities (*inbox.md*) and serves portable objects at gateways
+(*portable.md*). What was designed and not built is listed at the end; the
+[showcase](../showcase.md) says how applications use it.
 
 
-Where the two applications started
-----------------------------------
+What this step removes
+----------------------
 
-Before this step, both served their ActivityPub documents at paths of their own
-(`/ap/…`, `/users/…`) and their pages elsewhere (`/@alice`), and neither read
-`Accept`. Between them, every problem this step was meant to remove was
-present:
+An application that serves ActivityPub by hand, at paths of its own and
+without reading `Accept`, tends to collect the same problems:
 
- -  *Routes advertised and not served.* oeee-cafe's actors named an outbox,
-    and its communities a followers collection, that 404ed. Eunha once did the
-    same with featured collections, and an unrouted path there fell through
-    to the web app's HTML, which a peer then failed to parse.
- -  *URIs built twice.* oeee-cafe formatted `https://{domain}/ap/…` at each
-    call site and parsed it back by prefix; eunha had helpers for some URIs
-    and `format!` for the rest.
- -  *`@context` repeated.* Each handler wrote its own literal.
- -  *Nothing gone was gone.* Both answered 404 for a deleted post; neither
-    served a Tombstone or a 410.
- -  *No authorized fetch.* Neither checked a signature on a GET.
- -  *WebFinger by hand.* oeee-cafe's `profile-page` link pointed at the actor
-    document rather than the page. Eunha's accepted only its canonical domain
-    and only one of its two actor URI forms.
- -  *NodeInfo.* Eunha served 2.0 only; oeee-cafe served none.
+ -  *Routes advertised and not served.* An actor names an outbox or a
+    followers collection that 404s, or an unrouted path falls through to the
+    web app's HTML, which a peer then fails to parse.
+ -  *URIs built twice.* Each call site formats `https://{domain}/ap/…` and
+    parses it back by prefix.
+ -  *`@context` repeated.* Each handler writes its own literal.
+ -  *Nothing gone is gone.* A deleted post is a 404, not a Tombstone or a 410.
+ -  *No authorized fetch.* No signature is checked on a GET.
+ -  *WebFinger by hand.* A `profile-page` link that points at the actor
+    document rather than the page, or a lookup that accepts only the canonical
+    domain and one of several actor URI forms.
+ -  *NodeInfo* in one version, or none.
 
-Now both register their ActivityPub paths with Ojak, which reads `Accept`,
-and keep only the browser pages at them. Every route they advertise is
-registered, both return `Found::Gone` for deleted actors and posts, both serve
-WebFinger through `handle` and `map_alias`, and both serve NodeInfo 2.0 and
-2.1.
-
-Two problems are only partly gone. Both applications still build most URIs
-with `format!` rather than `ctx.actor_uri` and its siblings, and oeee-cafe
-still parses them back by prefix, so a route that is advertised is registered
-by care rather than by construction. Eunha still writes its own `@context`
-where it uses Mastodon's extensions, and oeee-cafe on the activities it
-sends. Neither uses authorized fetch yet.
+Registering dispatchers removes each of these by construction, except where
+an application still builds URIs itself rather than through the context.
 
 
 Decisions
@@ -80,8 +65,9 @@ router and does exactly the above:
 ojak_axum::wrap(router, federation, |parts| parts.extensions.get::<AppState>().cloned())
 ~~~~
 
-It takes `D` from a function over the request's parts, which is how eunha
-passes the tenant's state its dispatch put in the extensions; `None` passes
+It takes `D` from a function over the request's parts, which is how an
+application with many tenants passes the tenant's state its own routing put in
+the extensions; `None` passes
 the request to the application untouched. For an inbox path it reads the body,
 up to `MAX_INBOX_BODY`, and answers 413 beyond that.
 
@@ -91,7 +77,7 @@ Every URI Ojak builds, in a document or a link, uses the origin the
 application calls canonical for the request's host:
 
 ~~~~ rust
-.origin(Url::parse("https://oeee.cafe")?)            // one host
+.origin(Url::parse("https://example.com")?)            // one host
 .origin_with(|host, data: &D| data.canonical_origin(host)) // -> Option<Url>
 ~~~~
 
@@ -120,8 +106,8 @@ registered.
 The context builds URIs from templates and parses them back:
 
 ~~~~ rust
-ctx.actor_uri("person", &user_id)?            // https://oeee.cafe/ap/users/{user_id}
-ctx.object_uri("note", &[("post_id", &id)])?  // https://oeee.cafe/ap/posts/{post_id}
+ctx.actor_uri("person", &user_id)?            // https://example.com/ap/users/{user_id}
+ctx.object_uri("note", &[("post_id", &id)])?  // https://example.com/ap/posts/{post_id}
 ctx.collection_uri("followers", &user_id)?
 ctx.parse_uri(&iri) // Some(Route::Object { kind, values }) when it is ours
 ~~~~
@@ -142,9 +128,9 @@ Fedify allows one actor dispatcher and one identifier space. Both
 applications have more than one kind of actor at different paths, so an actor
 here is a *kind* and an identifier. A template with no expression, such as
 `/actor`, is an actor with the empty identifier. Since a kind is registered
-once, an actor served at two URIs is two kinds: eunha registers `actor` at
-`/users/{username}` and `actor_by_id` at `/ap/users/{id}`, Mastodon's two URI
-schemes, and the same for each of its collections.
+once, an actor served at two URIs is two kinds: an application following
+Mastodon's two URI schemes registers `actor` at `/users/{username}` and
+`actor_by_id` at `/ap/users/{id}`, and the same for each of its collections.
 
 A dispatcher is `Fn(Context<D>, String) -> Result<Found<Value>, E>`:
 
@@ -167,9 +153,8 @@ them itself: an actor document the application wrote is the one served.
 `with_keys(&mut document, &keys)` puts the first RSA key in `publicKey` and
 every Multikey in `assertionMethod`.
 
-Ojak does not require an actor's `id` to be the URL it was served at. Eunha
-serves an account at both of its URIs and names it by the one the account
-uses.
+Ojak does not require an actor's `id` to be the URL it was served at, so an
+account served at two URIs can be named by the one the account uses.
 
 ### Objects, by kind
 
@@ -213,10 +198,10 @@ Without a first cursor the whole collection is one document, the page
 function called once with no cursor, which suits a short one such as featured
 posts; its `totalItems` is the counter's, or else the number of items. A
 collection that hides its members returns `First::Hidden` and keeps its
-counter: the count is shown and the members are not, as oeee-cafe does for
-followers and eunha for `hide_collections`. `Collection::uri` names the
-collection by a URI other than the one it was requested at, which eunha uses
-to name an account's collections by the scheme the account uses.
+counter: the count is shown and the members are not, as Mastodon's
+`hide_collections` has it. `Collection::uri` names the collection by a URI
+other than the one it was requested at, such as the one of an account's two
+URI schemes that the account uses.
 
 Followers, following, outbox, liked and featured are collections like any
 other; Ojak puts none of them in an actor document by itself, and the
@@ -224,9 +209,8 @@ application links the ones it serves. Linking them with `ctx.collection_uri`
 makes a route that is advertised a route that is registered, since otherwise
 the URI cannot be built.
 
-Eunha's pages moved from Mastodon's `?page=true&max_id=` to `?cursor=`. Peers
-follow the `first` and `next` they are given, so the change was invisible to
-them.
+Moving from Mastodon's `?page=true&max_id=` to `?cursor=` breaks no peer:
+peers follow the `first` and `next` they are given.
 
 ### Authorized fetch is a question the dispatcher asks
 
@@ -304,8 +288,8 @@ it has one, and whatever `webfinger_links` adds, such as Mastodon's
 before WebFinger, is served at `/.well-known/host-meta` as XRD with an `lrdd`
 template, with no further code. Both are served once any actor is registered.
 
-One namespace or two is the application's business: oeee-cafe's `handle`
-looks for a user and then a community, and eunha's maps its own domain to the
+One namespace or two is the application's business: `handle` may look a name
+up as a user and then as a group, or map the server's own domain to the
 instance actor.
 
 ### NodeInfo from one dispatcher
@@ -347,34 +331,6 @@ it for the log. The body never carries the error, since it is whatever the
 database said.
 
 
-What moved
-----------
-
-**oeee-cafe** went first. It had the fewest routes and the most of the gaps,
-and moving it fixed them by construction:
-
- -  `person` and `group` actors, `note` objects, followers collections for
-    both, and the outboxes it advertises, always empty;
- -  WebFinger through `handle`, over its one namespace of users and
-    communities, with `profile-page` fixed;
- -  NodeInfo 2.0 and 2.1;
- -  Tombstones for deleted users, communities and posts.
-
-Its inbox followed in step 5, and `activitypub_federation` is no longer a
-dependency.
-
-**Eunha** followed:
-
- -  both actor URI forms, the instance actor, statuses and their activities,
-    outbox, followers, following, featured and featured collections, and
-    feature and quote authorisations;
- -  WebFinger accepting its aliases and both actor URI forms, with Mastodon's
-    `subscribe` link;
- -  NodeInfo 2.1 beside 2.0;
- -  the canonical origin from its tenancy registry, through `origin_with`;
- -  host-meta, through Ojak.
-
-
 Not built
 ---------
 
@@ -383,5 +339,3 @@ Not built
  -  *Followers collection synchronisation* (FEP-8fcf), which needs a filter
     on the followers page by host. The page function's arguments leave room
     for it.
- -  *Authorized fetch in the applications.* Ojak has `ctx.signer()` and
-    `authorize`; neither application uses them yet.

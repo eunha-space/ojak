@@ -6,15 +6,16 @@ the steps that built it. Each opens with its status and says where what was
 built differs from what was designed.
 
  -  [Ojak as an application framework](./framework.md): the governing rule,
-    the decisions, and the seven steps. Six are done; the inbox is done in
-    Ojak and taken up in full by oeee-cafe.
+    the decisions, and the seven steps. Done.
  -  [Serving](./serving.md): what Ojak answers when another server, or a
-    person, sends a GET. Done, and used by both applications.
+    person, sends a GET. Done.
  -  [The inbox](./inbox.md): what Ojak does with an activity another server
-    POSTs. Done; oeee-cafe uses typed listeners, and eunha one `on_any`.
+    POSTs. Done.
  -  [Portable objects](./portable.md): objects whose identity is a key rather
-    than a host (FEP-ef61). Done in Ojak; neither application is a gateway
-    yet.
+    than a host (FEP-ef61). Done.
+
+How applications use what these records describe is in the
+[showcase](../showcase.md).
 
 
 What is left

@@ -6,11 +6,9 @@ key rather than a host (FEP-ef61), and signing them with a key that need not
 be on the server. *framework.md* says why this belongs in the model; this is
 how each part of Ojak does it.
 
-*Status: done in Ojak, little used yet.* Everything below is implemented.
-Neither application is a gateway or signs portable objects: eunha reads
-portable actors, fetching them from their gateways, and delivers to them at
-a gateway's `https` inbox; oeee-cafe uses none of it. What was designed and
-not built is listed at the end.
+*Status: done.* Everything below is implemented. What was designed and not
+built is listed at the end; the [showcase](../showcase.md) says how
+applications use it.
 
 
 Identifiers
@@ -226,4 +224,3 @@ Not built
  -  *Collections* served without proofs, which are authentic only from a
     gateway the actor lists; Ojak does not read them yet.
  -  *Hashlink media.*
- -  *Either application as a gateway*, or delivering with `send_portable`.

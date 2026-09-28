@@ -7,11 +7,10 @@ into a framework that ActivityPub applications are built on, in the shape
 actors, objects and collections live and supplies them from its own storage,
 and Ojak does the protocol around them.
 
-*Status: built.* Six of the seven steps in *Sequence* below are done, and the
-seventh, the inbox, is done in Ojak and taken up in full by one of the two
-applications. Each decision says where what was built differs from what was
-designed. *serving.md*, *inbox.md* and *portable.md* have the details of their
-steps.
+*Status: built.* The seven steps in *Sequence* below are done. Each decision
+says where what was built differs from what was designed. *serving.md*,
+*inbox.md* and *portable.md* have the details of their steps, and the
+[showcase](../showcase.md) says how applications use it.
 
 The governing rule is the one *CONTRIBUTING.md* already states, applied to
 data as well as to I/O:
@@ -52,37 +51,33 @@ built on them rebuilt the same missing middle.
     other signature scheme, `sign_get` and a WebFinger lookup.
 
 What was missing was everything between a primitive and an application, and
-eunha had written it itself:
+each application had to write it itself:
 
  -  *Verification policy.* `ojak_runtime::signature::verify_request` checks
     the body digest only when a `Digest` header is present, does not require
     the digest to be among the signed headers, and never bounds the
-    signature's age. Eunha enforced all three itself, along with the rule that
-    the key's host matches the actor's.
- -  *Inbox dispatch.* Eunha parsed every incoming activity as
+    signature's age. An application had to know to enforce all three itself,
+    along with the rule that the key's host matches the actor's.
+ -  *Inbox dispatch.* An application parsed every incoming activity as
     `serde_json::Value` and matched on its `type`; only Follow went through
     `ojak-core`.
- -  *Queues.* Eunha had two Postgres job queues, one for incoming activities
-    and one for deliveries, that differed mostly in their table names: claim
+ -  *Queues.* An application kept job queues of its own, one for incoming
+    activities and one for deliveries, that differed mostly in their table
+    names: claim
     with `SKIP LOCKED`, exponential backoff, cleanup of old rows, wake on
     enqueue.
- -  *Fetching.* Eunha guarded its fetches against private addresses but
-    delivered through a client that was not guarded. Delivery errors came back
-    as strings, and eunha parsed the HTTP status out of them to decide whether
-    to retry.
+ -  *Fetching.* Fetches had to be guarded against private addresses, and
+    deliveries too. Delivery errors came back as strings, and an application
+    parsed the HTTP status out of them to decide whether to retry.
  -  *Serving.* Actor documents, collections and their pagination, WebFinger
     and NodeInfo were written by hand, with the `@context` literal repeated in
     each.
 
-oeee-cafe, the other intended consumer, used the `activitypub_federation`
-crate instead.
-
-Now Ojak has eight crates (*Crates* below), and both applications serve,
-fetch, deliver and receive through it. `OjakCore` is gone, the vocabulary is
-generated and read through *ojak-jsonld*, and oeee-cafe no longer depends on
-`activitypub_federation`. `verify_request` is unchanged, but nothing in Ojak's
-pipeline uses it: the inbox and signed GETs hold signatures to the stricter
-policy in `ojak_runtime::verification`.
+Now Ojak has eight crates (*Crates* below), and applications serve, fetch,
+deliver and receive through it. `OjakCore` is gone, and the vocabulary is
+generated and read through *ojak-jsonld*. `verify_request` is unchanged, but
+nothing in Ojak's pipeline uses it: the inbox and signed GETs hold signatures
+to the stricter policy in `ojak_runtime::verification`.
 
 
 Decisions
@@ -119,10 +114,9 @@ application writes from `schema()`. More backends can follow the same trait.
 Every backend runs one set of conformance checks, `ojak::testing::check_queue`
 and `check_kv`, so they agree on the parts that lose work when they are wrong.
 
-The design had an application with queue tables of its own implement the
-trait over them. Eunha did not: its deliveries moved into Ojak's queue table,
-`eunha.ojak_queue`, and its incoming activities stay in its own
-`inbox_jobs`, with its own loop, outside the trait.
+An application with queue tables of its own can implement the trait over
+them, or move its rows into Ojak's table; one whose inbox already has a queue
+can keep it and take activities through `on_any`.
 
 The queue is claimed from, not listened to. Where Fedify's message queue hands
 a message to a listener, Ojak's worker *claims* jobs from a named queue for a
@@ -149,7 +143,7 @@ for its own types.
 
 ~~~~ rust
 let federation = Federation::builder()
-    .origin(Url::parse("https://oeee.cafe")?)
+    .origin(Url::parse("https://example.com")?)
     .actor("person", "/ap/users/{user_id}", load_person)
     .actor("group", "/ap/communities/{community_id}", load_group)
     .key_pairs(load_key_pairs)
@@ -171,16 +165,16 @@ federation: a `Deliverer` owns its queue (*Sending* below).
 
 The origin comes from the request. `.origin_with(|host, data| …)` maps the
 host a request was for to its canonical origin, so one process can serve more
-than one host, which eunha's many tenants need, without Ojak knowing what a
-tenant is; `.origin(url)` is the single-host case, and one of the two is
-required. Work outside a request builds a context with
+than one host, as an application with many tenants needs, without Ojak
+knowing what a tenant is; `.origin(url)` is the single-host case, and one of
+the two is required. Work outside a request builds a context with
 `Federation::context(origin, data)`, and a queued inbox activity keeps the
 origin it arrived at.
 
 Ojak does not spawn tasks. The deliverer's loop and the inbox worker are
 futures, `run_until(stop)`, that the application spawns however it spawns
-work; eunha requires every task to be spawned through its own function so that
-work carries the tenant that started it.
+work, such as through a function of its own so that work carries the tenant
+that started it.
 
 ### Routes and URIs come from the same template
 
@@ -194,8 +188,7 @@ is what an inbox handler needs to recognise a local post in `inReplyTo`.
 
 An application that builds these strings by hand writes each rule twice, once
 in the router and once at every call site, and the two drift. Deriving both
-from one template removes the class of bug. Neither application has moved its
-URI building onto the context yet; *serving.md* says where.
+from one template removes the class of bug.
 
 ### An origin is a host or a key
 
@@ -443,8 +436,8 @@ tokio::spawn(async move { deliverer.run_until(stop).await });
 The design had the federation send, `ctx.send_activity`, with a recipients
 walk over the followers dispatcher. What was built is a `Deliverer` of its
 own, over a queue and the application's `SenderKeys`, and the application
-works out the inboxes: both applications already had them as SQL over their
-own tables, shared inboxes preferred. `send_batch` tags a batch so it can be
+works out the inboxes, typically as a query over its own tables, shared
+inboxes preferred. `send_batch` tags a batch so it can be
 followed and gives it a deadline, past which a delivery is given up on
 rather than retried; `send_portable` delivers to a portable actor's gateways.
 
@@ -518,7 +511,7 @@ An application can allow private addresses for development.
 The design folded *ojak-runtime* into the other two as its pieces moved: what
 is pure into *ojak-core*, what does I/O into *ojak*. That has not happened;
 the signature and proof primitives, pure parsing included, are still in
-*ojak-runtime*, which *ojak* and both applications depend on.
+*ojak-runtime*, which *ojak* and applications depend on.
 
 ### Tests feed inputs and read outcomes
 
@@ -534,39 +527,30 @@ been built; `MemoryQueue` records what was queued, which is the nearest thing.
 Sequence
 --------
 
-Each step stood on its own, and both applications took them one at a time
-next to what they had.
+Each step stood on its own, so that an application could take them one at a
+time next to what it had.
 
 1.  *Read by meaning.* Wire *ojak-jsonld* into *ojak-vocab*, so that types
     read the normalised form and extension vocabulary is recognised by IRI,
     and into the inbound path after verification. *Done.*
 2.  *Origins, verification and the guarded client.* The origin type, the
     stricter signature checks, proof verification over both kinds of origin,
-    and the guarded client land as primitives, and eunha drops its own copies
-    of the policy. *Done.* Eunha keeps a guarded fetch of its own for what is
-    not ActivityPub, link previews and link verification.
+    and the guarded client land as primitives, so that an application drops
+    its own copies of the policy. *Done.*
 3.  *Sending.* Queued delivery with retry in the other scheme and typed
-    errors. *Done,* as a `Deliverer` rather than `send_activity`; eunha's
-    delivery rows moved into Ojak's queue table.
+    errors. *Done,* as a `Deliverer` rather than `send_activity`.
 4.  *Serving.* Actor, object and collection dispatchers, WebFinger and
-    NodeInfo, which only answer GET requests. *Done,* and both applications
-    serve through it. *serving.md* has the design.
-5.  *The inbox.* Late, because it is where a mistake is a security problem.
-    *Done in Ojak.* oeee-cafe receives through typed listeners and an
-    `InboxWorker`; eunha receives through Ojak's pipeline and one `on_any`,
-    and keeps its own type dispatch and inbox queue. *inbox.md* has the
+    NodeInfo, which only answer GET requests. *Done.* *serving.md* has the
     design.
+5.  *The inbox.* Late, because it is where a mistake is a security problem.
+    *Done.* *inbox.md* has the design.
 6.  *Generated vocabulary.* Vendor the schemas, write the generator, and move
     *ojak-vocab* onto its output once the generated types read the same
     documents the hand-written ones do. *Done:* the generated types are
     *ojak-vocab*'s API, with Ojak's own types and properties in
     `extensions/`, and `tests/corpus` measures what they read.
 7.  *Gateways.* Serving and accepting portable objects, and the signer trait
-    for keys held off the server. *Done in Ojak;* neither application is a
-    gateway yet. *portable.md* has the details.
-
-For oeee-cafe the same order applied, and `activitypub_federation` was
-removed at the end.
+    for keys held off the server. *Done.* *portable.md* has the details.
 
 What is left, from the decisions above: typed dispatch and returning
 vocabulary types from dispatchers, stopping delivery to a failing host,

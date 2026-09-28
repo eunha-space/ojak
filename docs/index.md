@@ -15,6 +15,9 @@ hero:
       text: Design records
       link: /design/
     - theme: alt
+      text: Showcase
+      link: /showcase
+    - theme: alt
       text: GitHub
       link: https://github.com/eunha-space/ojak
 

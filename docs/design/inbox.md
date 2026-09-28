@@ -5,37 +5,26 @@ Step 5 of *framework.md*: what Ojak does with an activity another server
 POSTs. Listeners registered per activity type receive it typed, from a
 sender Ojak has authenticated, with nothing in it trusted that the sender
 could not vouch for. It was last among the steps because a mistake here is a
-security problem, and the two applications between them showed every kind.
+security problem.
 
-*Status: done.* The inbox is part of `ojak::federation`, beside serving, and
-both applications receive through it. It also accepts portable activities at
-gateways (*portable.md*). What was designed and not built is listed at the
-end.
+*Status: done.* The inbox is part of `ojak::federation`, beside serving. It
+also accepts portable activities at gateways (*portable.md*). What was
+designed and not built is listed at the end; the
+[showcase](../showcase.md) says how applications use it.
 
 
-Where the two applications started
-----------------------------------
+What this step prevents
+-----------------------
 
-Eunha verified signatures itself, both schemes, with the policy of step 2,
-fell back to an FEP-8b32 proof, answered 202 for an unverified `Delete`,
-queued the activity in `eunha.inbox_jobs` and dispatched on the `type`
-string. oeee-cafe handed the request to `activitypub_federation`, whose axum
-inbox read a body of any size, checked draft-cavage signatures without
-checking the body against its digest, and dispatched through an untagged
-serde enum, synchronously, inside the request.
-
-Neither checked, before September 2026, that an activity acts only on what
-its sender owns, and each had its own way of not checking:
-
- -  oeee-cafe deleted any post of its own a remote `Delete` named, and
-    undid any reaction or follow a remote `Undo` named, a local user's
-    included;
- -  eunha rewrote any account an `Update` named, public key included, which
-    is an account takeover; edited any status an `Update(Note)` named; and
-    stored an embedded note under whatever URI and author it claimed.
-
-Each was fixed where it was, with a test. This step made the rule the
-framework's, so that no listener has the chance to forget it.
+An inbox written by hand has to verify signatures to a policy strict enough
+to matter, and most of all has to check that an activity acts only on what
+its sender owns. The ways of not checking are ordinary: deleting any local
+post a remote `Delete` names; undoing any reaction or follow a remote `Undo`
+names, a local user's included; rewriting any account an `Update` names,
+public key included, which is an account takeover; editing any post an
+`Update(Note)` names; storing an embedded note under whatever URI and author
+it claims. This step makes the rule the framework's, so that no listener has
+the chance to forget it.
 
 
 Decisions
@@ -147,8 +136,8 @@ and an activity no listener takes is answered 202 and dropped, as Mastodon
 does. An activity that cannot be read into its listener's type is reported
 and answered 202 as well: retrying it would not change it.
 
-Eunha receives through one `on_any`, reads `vouched`, and dispatches on the
-type itself over its own queue; oeee-cafe has a typed listener per activity.
+An application that already dispatches on the type itself can take every
+activity through one `on_any`, reading `vouched`, and keep its own queue.
 
 ### Queued, or not
 
@@ -215,8 +204,7 @@ any forwarded activity is. `ojak_core::relay` builds the subscription in
 either convention, Mastodon's follow of `as:Public` or LitePub's follow of
 the relay's actor, recognises the relay's answer, and says which outgoing
 activities go to the relays; the application keeps its subscriptions and
-adds the relays' inboxes to a public activity's deliveries. Neither
-application subscribes to a relay yet.
+adds the relays' inboxes to a public activity's deliveries.
 
 ### Errors and responses
 
@@ -239,27 +227,7 @@ A 400 or 401 says why in plain text. Every failure is reported to
 `.on_error`.
 
 
-What moved
-----------
-
-**oeee-cafe** first: `activitypub_federation` is gone. Its listeners are
-`on::<Follow>`, `on::<Create>`, `on::<Undo>`, `on::<Update>`,
-`on::<Delete>`, `on::<Like>` and `on::<EmojiReact>`, reading the generated
-types, run by an `InboxWorker` over `ojak_queue` in Postgres, and it fetches
-objects with `Fetcher::lookup_as`. The ownership checks added in September are
-the listeners' still, now over an authenticated sender.
-
-**Eunha**: its signature code, the fallback to a proof and the `Delete` rule
-are Ojak's, along with the domain block, through `blocked`, and its stored
-keys, through `known_key` and `key_fetched`. Its handlers did not become
-typed listeners: one `on_any` hands each activity to its existing
-`inbox_jobs` queue, which dispatches on the type.
-
-
 Not built
 ---------
 
  -  *A configurable body limit.* It is 1 MiB.
- -  *Typed listeners in eunha*, and eunha's inbox on `InboxWorker`.
- -  *An `on_unverified` in either application*, so neither removes an actor
-    whose unverifiable `Delete` it receives.

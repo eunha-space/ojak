@@ -14,6 +14,7 @@ export default defineConfig({
       { text: "Introduction", link: "/intro" },
       { text: "Crates", link: "/crates" },
       { text: "Design", link: "/design/" },
+      { text: "Showcase", link: "/showcase" },
     ],
     sidebar: [
       {
@@ -21,6 +22,7 @@ export default defineConfig({
         items: [
           { text: "What is Ojak?", link: "/intro" },
           { text: "Crates", link: "/crates" },
+          { text: "Showcase", link: "/showcase" },
         ],
       },
       {

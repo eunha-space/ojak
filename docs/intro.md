@@ -49,17 +49,15 @@ Status
 
 Ojak serves actors, objects and collections, answers WebFinger and NodeInfo,
 receives and verifies activities, delivers through a queue, and serves and
-accepts portable objects.  [Eunha] and [Oeee Cafe] federate through it, and
-depend on it through Git.  APIs and crate boundaries may still change; the
-[design records](./design/) say what is built and what is left.
+accepts portable objects.  Applications built on it are in the
+[showcase](./showcase.md).  APIs and crate boundaries may still change; the
+[design records](./design/) say what is built and what is left.  Depend on it
+through Git:
 
 ~~~~ toml
 [dependencies]
 ojak = { git = "https://github.com/eunha-space/ojak.git" }
 ~~~~
-
-[Eunha]: https://github.com/eunha-space/eunha
-[Oeee Cafe]: https://github.com/oeee-cafe/web
 
 
 License
