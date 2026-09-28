@@ -1,16 +1,23 @@
-Feder
-=====
+Ojak
+====
 
 One ActivityPub core, many runtimes.
 
-Feder is an early-stage Rust project for building ActivityPub applications from
+Ojak is an early-stage Rust project for building ActivityPub applications from
 a portable protocol core and platform-specific runtimes.
+
+The name comes from *Ojakgyo* (오작교, 烏鵲橋), the bridge of crows and
+magpies that, in the Korean telling of the Weaver and the Herdsman, spans the
+Milky Way so that two stars kept apart can meet.  Ojak builds bridges between
+servers.
+
+Documentation is at <https://eunha-space.github.io/ojak/>.
 
 
 Motivation
 ----------
 
-Feder grew out of work in the Fedify ecosystem and a question about smaller,
+Ojak grew out of work in the Fedify ecosystem and a question about smaller,
 cheaper, and more portable fediverse software. What would it take for a
 single-user ActivityPub server to run outside the usual VPS-shaped web
 application?
@@ -23,7 +30,7 @@ software so different parts can run on machines with very different resources.
 Approach
 --------
 
-Feder separates ActivityPub protocol logic from platform execution. The core
+Ojak separates ActivityPub protocol logic from platform execution. The core
 should contain federation behavior such as inbox/outbox state, delivery
 decisions, and protocol-level rules. Runtimes provide platform-specific pieces
 such as networking, storage, clocks, scheduling, and execution.
@@ -35,5 +42,5 @@ ActivityPub server. Future runtimes may explore more constrained environments.
 License
 -------
 
-Feder is licensed under the GNU Affero General Public License v3.0. See
+Ojak is licensed under the GNU Affero General Public License v3.0. See
 [*LICENSE*](./LICENSE) for details.

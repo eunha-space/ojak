@@ -1,0 +1,44 @@
+[package]
+name = "ojak"
+description = "An ActivityPub application framework over ojak's protocol crates"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ojak-core = { path = "../ojak-core" }
+ojak-jsonld.workspace = true
+ojak-runtime = { path = "../ojak-runtime" }
+ojak-vocab = { path = "../ojak-vocab" }
+chrono.workspace = true
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+http = "1"
+ipnet = "2"
+percent-encoding = "2"
+reqwest.workspace = true
+serde_json.workspace = true
+tokio = { version = "1", features = ["net", "sync", "time", "macros"] }
+url.workspace = true
+
+[features]
+# The checks every queue backend has to pass, for backends' own tests.
+testing = []
+
+[dev-dependencies]
+chrono.workspace = true
+http = "1"
+axum = "0.8"
+reqwest.workspace = true
+ojak-runtime = { path = "../ojak-runtime" }
+tokio = { version = "1", features = ["net", "sync", "time", "macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true
+
+[[test]]
+name = "memory_queue"
+required-features = ["testing"]
+
+[[test]]
+name = "memory_kv"
+required-features = ["testing"]

@@ -464,104 +464,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "feder"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "feder-core",
- "feder-jsonld",
- "feder-runtime",
- "feder-vocab",
- "futures-util",
- "http",
- "ipnet",
- "percent-encoding",
- "reqwest",
- "serde_json",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "feder-axum"
-version = "0.1.0"
-dependencies = [
- "axum",
- "feder",
- "serde_json",
- "tokio",
- "tower",
-]
-
-[[package]]
-name = "feder-core"
-version = "0.1.0"
-dependencies = [
- "feder-vocab",
- "serde_json",
-]
-
-[[package]]
-name = "feder-jsonld"
-version = "0.1.0"
-dependencies = [
- "iri-string",
- "serde_json",
-]
-
-[[package]]
-name = "feder-postgres"
-version = "0.1.0"
-dependencies = [
- "feder",
- "serde_json",
- "sqlx",
- "tokio",
-]
-
-[[package]]
-name = "feder-runtime"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "bs58",
- "chrono",
- "ed25519-dalek",
- "ml-dsa",
- "rand 0.8.6",
- "rand_core 0.6.4",
- "reqwest",
- "rsa",
- "serde_jcs",
- "serde_json",
- "sha2",
- "url",
-]
-
-[[package]]
-name = "feder-vocab"
-version = "0.1.0"
-dependencies = [
- "feder-jsonld",
- "iri-string",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "feder-vocab-gen"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "feder-jsonld",
- "serde",
- "serde_json",
- "yaml-rust2",
-]
-
-[[package]]
 name = "fiat-crypto"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1288,6 +1190,104 @@ checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
  "libm",
+]
+
+[[package]]
+name = "ojak"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "futures-util",
+ "http",
+ "ipnet",
+ "ojak-core",
+ "ojak-jsonld",
+ "ojak-runtime",
+ "ojak-vocab",
+ "percent-encoding",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "ojak-axum"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "ojak",
+ "serde_json",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "ojak-core"
+version = "0.1.0"
+dependencies = [
+ "ojak-vocab",
+ "serde_json",
+]
+
+[[package]]
+name = "ojak-jsonld"
+version = "0.1.0"
+dependencies = [
+ "iri-string",
+ "serde_json",
+]
+
+[[package]]
+name = "ojak-postgres"
+version = "0.1.0"
+dependencies = [
+ "ojak",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
+name = "ojak-runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "bs58",
+ "chrono",
+ "ed25519-dalek",
+ "ml-dsa",
+ "rand 0.8.6",
+ "rand_core 0.6.4",
+ "reqwest",
+ "rsa",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+ "url",
+]
+
+[[package]]
+name = "ojak-vocab"
+version = "0.1.0"
+dependencies = [
+ "iri-string",
+ "ojak-jsonld",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ojak-vocab-gen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ojak-jsonld",
+ "serde",
+ "serde_json",
+ "yaml-rust2",
 ]
 
 [[package]]

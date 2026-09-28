@@ -1,7 +1,7 @@
-Contributing to Feder
-=====================
+Contributing to Ojak
+====================
 
-Thank you for your interest in contributing to Feder. This document outlines
+Thank you for your interest in contributing to Ojak. This document outlines
 the development workflow and the tools we use to maintain code quality.
 
 Please also read the project's [AI usage policy](./AI_POLICY.md) before
@@ -31,7 +31,7 @@ Development workflow
 We use mise tasks to automate common development steps. Please ensure your
 changes pass the automated checks before submitting a pull request.
 
-Please open pull requests against the `main` branch of the Feder upstream
+Please open pull requests against the `main` branch of the Ojak upstream
 repository.
 
 ### Code formatting
@@ -61,8 +61,8 @@ ensures that the codebase remains clean and free of common pitfalls. If
 Project direction
 -----------------
 
-Feder is still early-stage, so APIs and crate boundaries may change. The
-current direction is to build Feder as a Rust framework for ActivityPub
+Ojak is still early-stage, so APIs and crate boundaries may change. The
+current direction is to build Ojak as a Rust framework for ActivityPub
 applications with a portable protocol core and platform-specific runtimes.
 
 The main architectural rule is:
@@ -73,15 +73,15 @@ The main architectural rule is:
 In practice, this means protocol decisions should stay separate from platform
 execution. The intended crate roles are:
 
- -  `feder-vocab`: Type-safe representations of Activity Vocabulary objects,
+ -  `ojak-vocab`: Type-safe representations of Activity Vocabulary objects,
     such as actors, notes, and activities.
- -  `feder-core`: The portable ActivityPub protocol engine, responsible for
+ -  `ojak-core`: The portable ActivityPub protocol engine, responsible for
     protocol decisions and state transitions.
  -  Runtime crates: Platform-specific execution layers for networking, storage,
     clocks, timers, async runtimes, and operating system or hardware
     integration.
 
-When contributing to `feder-core`, avoid adding direct dependencies on HTTP
+When contributing to `ojak-core`, avoid adding direct dependencies on HTTP
 clients or servers, databases, filesystems, async runtimes, system clocks, or
 platform-specific crates. Runtime crates may use those dependencies when
 appropriate, but those choices should not leak into the portable core.

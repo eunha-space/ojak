@@ -1,13 +1,13 @@
 [workspace]
 members = [
-  "crates/feder",
-  "crates/feder-axum",
-  "crates/feder-core",
-  "crates/feder-jsonld",
-  "crates/feder-postgres",
-  "crates/feder-runtime",
-  "crates/feder-vocab",
-  "crates/feder-vocab-gen",
+  "crates/ojak",
+  "crates/ojak-axum",
+  "crates/ojak-core",
+  "crates/ojak-jsonld",
+  "crates/ojak-postgres",
+  "crates/ojak-runtime",
+  "crates/ojak-vocab",
+  "crates/ojak-vocab-gen",
 ]
 resolver = "3"
 
@@ -17,7 +17,7 @@ edition = "2024"
 license = "AGPL-3.0-only"
 
 [workspace.dependencies]
-feder-jsonld = { path = "crates/feder-jsonld" }
+ojak-jsonld = { path = "crates/ojak-jsonld" }
 iri-string = { version = "0.7.12", default-features = false, features = ["alloc", "serde"] }
 serde = { version = "1.0.219", default-features = false, features = ["alloc", "derive"] }
 serde_json = "1.0.140"

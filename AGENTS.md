@@ -1,9 +1,9 @@
 <!-- deno-fmt-ignore-file -->
 
-Feder LLM coding agent instructions
-===================================
+Ojak LLM coding agent instructions
+==================================
 
-This file contains instructions for LLM coding agents working with the Feder
+This file contains instructions for LLM coding agents working with the Ojak
 codebase.
 
 

@@ -6,7 +6,7 @@ AI usage policy
 This policy is inspired by [Fedify's AI policy][1], which in turn is inspired
 by [Ghostty's AI policy][2].
 
-The Feder project has the following rules for AI usage:
+The Ojak project has the following rules for AI usage:
 
  -  *All AI usage in any form must be disclosed.*  You must state the tool you
     used (e.g., Claude, Cursor, GitHub Copilot) along with the extent that
@@ -41,7 +41,7 @@ The Feder project has the following rules for AI usage:
     We want to help contributors learn and grow, but repeated or intentional
     violations of this policy undermine trust and burden maintainers.
 
-These rules apply only to outside contributions to Feder.  Maintainers are
+These rules apply only to outside contributions to Ojak.  Maintainers are
 exempt from these rules and may use AI tools at their discretion; they've
 proven themselves trustworthy to apply good judgment.
 
@@ -77,7 +77,7 @@ If multiple AI tools were used, include one `Assisted-by` line per tool.
 There are humans here
 ---------------------
 
-Please remember that Feder is maintained by humans.
+Please remember that Ojak is maintained by humans.
 
 Every discussion, issue, and pull request is read and reviewed by humans
 (and sometimes machines, too).  It is a boundary point at which people interact
@@ -95,7 +95,7 @@ maintainers.
 AI is welcome here
 ------------------
 
-Feder is written with plenty of AI assistance, and many maintainers embrace
+Ojak is written with plenty of AI assistance, and many maintainers embrace
 AI tools as a productive tool in their workflow.
 
 *Our reason for this policy is not due to an anti-AI stance*, but instead due

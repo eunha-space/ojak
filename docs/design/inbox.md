@@ -1,9 +1,9 @@
 The inbox
 =========
 
-Step 5 of *framework.md*: what Feder does with an activity another server
+Step 5 of *framework.md*: what Ojak does with an activity another server
 POSTs. Listeners registered per activity type receive it typed, from a
-sender Feder has authenticated, with nothing in it trusted that the sender
+sender Ojak has authenticated, with nothing in it trusted that the sender
 could not vouch for. It is last among the steps because a mistake here is a
 security problem, and the two applications between them show every kind.
 
@@ -38,7 +38,7 @@ Decisions
 
 ### The sender is authenticated, and is the only one trusted
 
-Before a listener sees anything, Feder establishes one fact: which actor sent
+Before a listener sees anything, Ojak establishes one fact: which actor sent
 the activity. Everything the activity says about anyone else is a claim.
 
 1.  The body is bounded (1 MiB unless configured), and must be a JSON object
@@ -80,7 +80,7 @@ document is now gone.
 ### Nothing embedded is trusted that the sender cannot vouch for
 
 An activity may embed its object, and the object may claim an `id` and an
-author. Feder keeps an embedded object only when its `id` is on the sender's
+author. Ojak keeps an embedded object only when its `id` is on the sender's
 origin and every author it names is too. Anything else is reduced to its
 `id` before a listener sees it, so the listener fetches it from where the id
 says it lives, with the fetcher, which establishes it the same way. An
@@ -88,7 +88,7 @@ says it lives, with the fetcher, which establishes it the same way. An
 
 Rules that need the application's data stay the listener's: that an `Undo`
 names the sender's own `Follow`, that a `Delete` names something the sender
-owns. The listener receives the sender to compare against, and Feder never
+owns. The listener receives the sender to compare against, and Ojak never
 hands it an activity whose sender is in doubt.
 
 ### Listeners are typed
@@ -137,7 +137,7 @@ not the followers of the post's author, who would see half a conversation.
 ActivityPub (§7.1.2) has the server that owns the post pass it on: an
 activity seen for the first time, addressed to a collection of ours, that
 concerns something of ours in its `object`, `target`, `inReplyTo` or `tag`,
-or in those of the object it embeds. Feder decides that, and calls the
+or in those of the object it embeds. Ojak decides that, and calls the
 application's `forward` with the activity and the collections; the
 application sends it to their members, signed by the collection's owner,
 as Mastodon does. Whether it was forwarded is kept in the key-value store
@@ -151,7 +151,7 @@ from its origin, as above.
 
 A relay passes public activities between the servers subscribed to it,
 signed by the relay, so what it sends on is forwarded and is established as
-any forwarded activity is. `feder_core::relay` builds the subscription in
+any forwarded activity is. `ojak_core::relay` builds the subscription in
 either convention, Mastodon's follow of `as:Public` or LitePub's follow of
 the relay's actor, recognises the relay's answer, and says which outgoing
 activities go to the relays; the application keeps its subscriptions and
@@ -177,11 +177,11 @@ What moves
 `on::<Follow>`, `on::<Create>`, `on::<Undo>`, `on::<Update>`,
 `on::<Delete>`, `on::<Like>` and `on::<EmojiReact>`, reading the generated
 types, and its actors are fetched with `Fetcher::lookup_as` instead of
-`ObjectId::dereference`. The pre-check added in September is Feder's now.
+`ObjectId::dereference`. The pre-check added in September is Ojak's now.
 
 **Eunha**: its handlers become listeners over its existing `inbox_jobs`, or
-over `eunha.feder_queue` beside its deliveries; its signature code, the
-fallback to a proof and the `Delete` rule are Feder's.
+over `eunha.ojak_queue` beside its deliveries; its signature code, the
+fallback to a proof and the `Delete` rule are Ojak's.
 
 
 Not in this step

@@ -1,0 +1,19 @@
+[package]
+name = "ojak-vocab"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ojak-jsonld.workspace = true
+iri-string.workspace = true
+serde.workspace = true
+# Not inherited from the workspace: this crate is `no_std`, and an inherited
+# dependency cannot turn the workspace's default features back off.
+serde_json = { version = "1.0.140", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

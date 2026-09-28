@@ -1,0 +1,17 @@
+[package]
+name = "ojak-vocab-gen"
+description = "Generates ojak-vocab's types from the vendored vocabulary schemas"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+ojak-jsonld.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+yaml-rust2 = "0.11"
+
+[lints]
+workspace = true

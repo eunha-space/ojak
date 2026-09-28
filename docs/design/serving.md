@@ -1,7 +1,7 @@
 Serving
 =======
 
-Step 4 of *framework.md*: what Feder answers when another server, or a
+Step 4 of *framework.md*: what Ojak answers when another server, or a
 person, sends a GET. Actors, objects and collections come from dispatchers the
 application registers; WebFinger, host-meta and NodeInfo follow from them.
 Nothing here receives an activity; that is step 5.
@@ -39,7 +39,7 @@ canonical one.
 Decisions
 ---------
 
-### Feder answers requests in `http` types, with an axum adapter
+### Ojak answers requests in `http` types, with an axum adapter
 
 The core is framework-neutral:
 
@@ -49,21 +49,21 @@ match federation.handle(request, data).await {
     // A route matched, but the request did not ask for ActivityPub: the
     // application serves its page at the same URL, or 406.
     Handled::NotAcceptable => app.call(request).await,
-    // No route of Feder's matched.
+    // No route of Ojak's matched.
     Handled::NotFound => app.call(request).await,
 }
 ~~~~
 
 `request` is an `http::Request` and `data` is the application's `D`, the value
-every callback's context carries. The *feder-axum* adapter,
-`feder_axum::wrap(app, federation, data)`, puts the federation in front of an
+every callback's context carries. The *ojak-axum* adapter,
+`ojak_axum::wrap(app, federation, data)`, puts the federation in front of an
 application's router and does exactly the above, taking `D` from a function
 over the request's parts, which is how eunha passes the tenant's state that its
 dispatch put in the extensions.
 
 ### The origin is the canonical one, from the request
 
-Every URI Feder builds, in a document or a link, uses the origin the
+Every URI Ojak builds, in a document or a link, uses the origin the
 application calls canonical for the request's host:
 
 ~~~~ rust
@@ -124,10 +124,10 @@ enum Found<T> {
 
 Key pairs come from their own dispatcher, and the actor dispatcher reads them
 through the context, `ctx.actor_keys(kind, id)`, to put `publicKey` and
-`assertionMethod` in the document. Feder does not insert them itself: an
+`assertionMethod` in the document. Ojak does not insert them itself: an
 actor document the application wrote is the one served.
 
-Feder does not require an actor's `id` to be the URL it was served at. Eunha
+Ojak does not require an actor's `id` to be the URL it was served at. Eunha
 serves an account at both of its URIs and names it by the one the account
 uses.
 
@@ -139,14 +139,14 @@ uses.
 ~~~~
 
 An object template may have any number of expressions, and the dispatcher
-receives them by name. Kinds are names until *feder-vocab*'s generated types
+receives them by name. Kinds are names until *ojak-vocab*'s generated types
 become the API (step 6), when `object::<Note>` can replace
 `object("note", …)` without changing anything else here.
 
 ### What a dispatcher returns is a document
 
 Dispatchers return anything that is `IntoDocument`: a `serde_json::Value`, or
-a generated vocabulary type. A document without an `@context` gets Feder's
+a generated vocabulary type. A document without an `@context` gets Ojak's
 default, ActivityStreams with the security and Multikey contexts; one with its
 own keeps it. The content type is always `application/activity+json`, with
 `Vary: Accept`.
@@ -160,7 +160,7 @@ own keeps it. The content type is always `application/activity+json`, with
 ~~~~
 
 The page function receives the identifier and a cursor and returns the items,
-as IRIs or embedded objects, and the next and previous cursors. Feder writes
+as IRIs or embedded objects, and the next and previous cursors. Ojak writes
 the documents:
 
  -  the collection, at the template's URI: an `OrderedCollection` with
@@ -176,7 +176,7 @@ and keeps its counter: the count is shown and the members are not, as eunha
 does for `hide_collections`.
 
 Followers, following, outbox, liked and featured are collections like any
-other; Feder puts none of them in an actor document by itself, and the
+other; Ojak puts none of them in an actor document by itself, and the
 application links the ones it serves with `ctx.collection_uri`. A route that
 is advertised is then a route that is registered, or the URI cannot be built.
 
@@ -186,7 +186,7 @@ them.
 
 ### Authorized fetch is a question the dispatcher asks
 
-A GET may be signed. Feder verifies it only when asked, because verifying
+A GET may be signed. Ojak verifies it only when asked, because verifying
 may mean fetching the signer's key:
 
 ~~~~ rust
@@ -203,7 +203,7 @@ async fn load_note(ctx: &Context<D>, values: &Values) -> Result<Found<Value>, Er
 ~~~~
 
 Signed fetches are configured with the fetcher, a key-value store, how long
-a key is kept, and the key Feder signs its own key fetches with, for peers in
+a key is kept, and the key Ojak signs its own key fetches with, for peers in
 secure mode. `ctx.signer()` runs the checks of *framework.md*'s inbox pipeline
 that apply to a GET: the signature's shape, host and age, then the key, from the
 key-value store or fetched with the fetcher, and the key owner's origin. It
@@ -225,7 +225,7 @@ request is 401.
 .webfinger_links(|ctx, actor, document| vec![subscribe_template(ctx, actor)])
 ~~~~
 
-Feder serves `/.well-known/webfinger` for:
+Ojak serves `/.well-known/webfinger` for:
 
  -  `acct:user@host`, where `host` is the canonical origin's or an alias of
     it, looked up through `handle`. An alias is a host the origin function
@@ -251,7 +251,7 @@ looks for a user and then a community, as it does now.
 .nodeinfo(|ctx| async move { Ok(NodeInfo { software, usage, open_registrations, metadata }) })
 ~~~~
 
-`NodeInfo` is a typed struct of the 2.1 schema. Feder serves
+`NodeInfo` is a typed struct of the 2.1 schema. Ojak serves
 `/.well-known/nodeinfo` linking both 2.0 and 2.1, and each at its own path,
 the 2.0 document being the 2.1 one without what 2.0 lacks.
 
@@ -265,7 +265,7 @@ of our own document is sent. Anything else, including
 a bare `*/*` or a browser's `text/html`, is `NotAcceptable`, and the
 application serves the page at that URL or answers 406 itself. This lets an
 application keep one URL for a post, if it wants that, and an unrouted path
-never answers a peer with HTML: it is Feder's 404 or the application's.
+never answers a peer with HTML: it is Ojak's 404 or the application's.
 
 `HEAD` is answered as `GET` without a body. Every other method on a matched
 route is 405, except `POST` to an inbox, which is step 5.
@@ -301,7 +301,7 @@ dependency until then.
  -  WebFinger accepting its aliases and both actor URI forms;
  -  NodeInfo 2.1 beside 2.0;
  -  the canonical origin from its tenancy registry;
- -  host-meta, through Feder.
+ -  host-meta, through Ojak.
 
 
 Not in this step
@@ -325,5 +325,5 @@ Order of work
 4.  WebFinger, host-meta and NodeInfo.
 5.  `ctx.signer()` and `authorize`, with the key cache over the key-value
     store.
-6.  *feder-axum*.
+6.  *ojak-axum*.
 7.  oeee-cafe onto it, then eunha.

@@ -1,6 +1,6 @@
 ---
 name: commit
-description: Create a Git commit for the currently staged Feder changes.
+description: Create a Git commit for the currently staged Ojak changes.
 allowed-tools: Bash(git *)
 ---
 

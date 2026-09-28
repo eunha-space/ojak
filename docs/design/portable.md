@@ -4,7 +4,7 @@ Portable objects
 Step 7 of *framework.md*: serving and accepting objects whose identity is a
 key rather than a host (FEP-ef61), and signing them with a key that need not
 be on the server. *framework.md* says why this belongs in the model; this is
-how each part of Feder does it.
+how each part of Ojak does it.
 
 
 Identifiers
@@ -13,14 +13,14 @@ Identifiers
 An `ap` URI names an object by a DID: `ap://did:key:z6Mk…/actor`. It is read
 in three spellings and written in one:
 
- -  `ap://did:key:z6Mk…/path`, the canonical form, which is what Feder writes;
+ -  `ap://did:key:z6Mk…/path`, the canonical form, which is what Ojak writes;
  -  `ap+ef61://…` and a percent-encoded authority, `ap://did%3Akey%3Az6Mk…`,
     which are the same identifier;
  -  the *compatible* form a gateway serves it under,
     `https://gateway.example/.well-known/apgateway/did:key:z6Mk…/path`,
     which a server without FEP-ef61 sees as an ordinary `https` IRI.
 
-`feder_core::portable::ApUri` parses all three into the DID and the path, and
+`ojak_core::portable::ApUri` parses all three into the DID and the path, and
 compares by the canonical form, which drops the query. The query of an `ap`
 URI carries location hints, `?@gateway=https%3A%2F%2Fserver1.example`, which
 are kept apart as `gateways()`; the compatible form's gateway is one too.
@@ -56,7 +56,7 @@ from a `DidResolver` the application provides, because a method that allows
 rotation needs someone to ask and which one is the application's choice;
 without one, they do not resolve and nothing under them is authentic.
 
-`feder::portable::verify` does this for any document: the `id` is portable,
+`ojak::portable::verify` does this for any document: the `id` is portable,
 a proof is there, its method is under the `id`'s DID, and it verifies. An
 actor also has to list at least one gateway.
 
@@ -93,7 +93,7 @@ authenticated as it would be anywhere else.
 Serving
 -------
 
-Feder answers `/.well-known/apgateway/{did}/{+path}` when the application
+Ojak answers `/.well-known/apgateway/{did}/{+path}` when the application
 registers a gateway:
 
 ~~~~ rust
@@ -103,7 +103,7 @@ registers a gateway:
 
  -  A GET is answered with what `gateway` found, served as `application/ld+json`
     with the ActivityStreams profile, as the bytes the application stored:
-    the proof covers them, and Feder does not rewrite a document it did not
+    the proof covers them, and Ojak does not rewrite a document it did not
     sign. A document that is not public is the application's to refuse; the
     context says who signed the request, as it does for any dispatcher.
  -  A POST is a delivery to a portable inbox, accepted when `gateway_inbox`
@@ -121,7 +121,7 @@ An actor's gateways each keep its data, and a delivery reaches only one of
 them, so FEP-ef61 asks the one it reaches to forward it to the rest, and
 never to forward one activity twice. `gateway_inbox` returns the actor's
 gateways along with the recipient; when an activity arrives at a portable
-inbox and is authenticated, Feder calls the application's `forward` with the
+inbox and is authenticated, Ojak calls the application's `forward` with the
 activity as it arrived and the other gateways, and the application sends it
 with `send_portable`. Whether it was forwarded is kept in the key-value store
 under its `id`, for a week, so a copy that comes back from another gateway
@@ -166,7 +166,7 @@ trait ProofSigner {
 
 `Ed25519Signer` holds a seed in memory, derives its `did:key` and signs with
 it, which is server-side signing. A signer that calls a separate service, or
-waits on a user's device, implements the same trait, and the rest of Feder
+waits on a user's device, implements the same trait, and the rest of Ojak
 cannot tell the difference: what is signed is a whole document, and what
 comes back is that document with its proof.
 
@@ -178,5 +178,5 @@ Not in this step
  -  *Client-to-server* (FEP-ae97): outboxes that accept activities signed by
     the client.
  -  *Collections* served without proofs, which are authentic only from a
-    gateway the actor lists; Feder does not read them yet.
+    gateway the actor lists; Ojak does not read them yet.
  -  *Hashlink media.*
