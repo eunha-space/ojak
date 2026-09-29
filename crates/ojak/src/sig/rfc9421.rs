@@ -354,6 +354,12 @@ pub fn created_at(signature_input: &str) -> Option<i64> {
     param(&params, "created")?.parse().ok()
 }
 
+/// The `expires` parameter of a `Signature-Input`, as a Unix timestamp.
+pub fn expires_at(signature_input: &str) -> Option<i64> {
+    let (_, _, params) = parse_signature_input(signature_input).ok()?;
+    param(&params, "expires")?.parse().ok()
+}
+
 /// Split `label=("a" "b");created=…` into its label, covered components, and
 /// the parameter string exactly as received — the signature covers the latter
 /// byte for byte, so it must not be re-serialised.

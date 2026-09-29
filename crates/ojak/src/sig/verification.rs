@@ -7,8 +7,8 @@
 //! 2.  [`check`] applies the policy a signature has to meet before its key is
 //!     even fetched: it covers the request target, the host, when it was made
 //!     and, for a request with a body, the body's digest; the digest is there
-//!     and matches the body; it was made recently; and it was made for this
-//!     server.
+//!     and matches the body; it was made recently and has not expired; and it
+//!     was made for this server.
 //! 3.  [`verify`] checks the signature against a key the caller found.
 //!
 //! What lies between the second and third steps — fetching the key, and
@@ -94,6 +94,9 @@ pub struct Signature {
     /// When it was made, from a signed `created` or the `Date` header, as
     /// seconds since the Unix epoch.
     pub created: Option<i64>,
+    /// When the signer said it stops being valid, if it said so in what it
+    /// signed.
+    pub expires: Option<i64>,
     signature: String,
     signature_input: Option<String>,
 }
@@ -113,6 +116,8 @@ pub enum Rejection {
     DigestMismatch,
     /// The signature was made too far from now.
     Stale { seconds: i64 },
+    /// The signature expired, `seconds` ago.
+    Expired { seconds: i64 },
     /// The request was signed for another host.
     WrongHost(String),
     /// The signature does not verify against the key.
@@ -128,6 +133,7 @@ impl fmt::Display for Rejection {
             Self::MissingHeader(name) => write!(f, "missing {name} header"),
             Self::DigestMismatch => f.write_str("the body does not match its digest"),
             Self::Stale { seconds } => write!(f, "signature made {seconds}s from now"),
+            Self::Expired { seconds } => write!(f, "signature expired {seconds}s ago"),
             Self::WrongHost(host) => write!(f, "signed for another host: {host}"),
             Self::Invalid(why) => write!(f, "signature does not verify: {why}"),
         }
@@ -167,6 +173,7 @@ pub fn parse(request: &Request<'_>) -> Result<Signature, Rejection> {
             key_id,
             covered,
             created: rfc9421::created_at(input),
+            expires: rfc9421::expires_at(input),
             signature,
             signature_input: Some(input.to_owned()),
         });
@@ -197,11 +204,23 @@ pub fn parse(request: &Request<'_>) -> Result<Signature, Rejection> {
     } else {
         request.header("date").and_then(http_date)
     };
+    let expires = if covered.iter().any(|name| name == "(expires)") {
+        Some(
+            params
+                .get("expires")
+                .ok_or_else(|| Rejection::Malformed("(expires) covered but not given".into()))?
+                .parse()
+                .map_err(|_| Rejection::Malformed("unreadable expires".into()))?,
+        )
+    } else {
+        None
+    };
     Ok(Signature {
         scheme: Scheme::DraftCavage,
         key_id,
         covered,
         created,
+        expires,
         signature,
         signature_input: None,
     })
@@ -263,6 +282,15 @@ pub fn check(
     let seconds = created - now;
     if seconds.abs() > policy.max_skew_seconds {
         return Err(Rejection::Stale { seconds });
+    }
+    // The skew allowed is for clocks that disagree, not for outliving what
+    // the signer allowed.
+    if let Some(expires) = signature.expires
+        && expires < now
+    {
+        return Err(Rejection::Expired {
+            seconds: now - expires,
+        });
     }
 
     let host = request

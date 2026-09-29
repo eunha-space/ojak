@@ -300,3 +300,84 @@ fn a_key_belongs_to_the_actor_it_is_published_by() {
     });
     assert_eq!(published_key_pem(&several, KEY_ID).as_deref(), Some("NEW"));
 }
+
+/// Headers of a POST signed with draft-cavage over `(created)` and
+/// `(expires)` rather than `date`, as hs2019 signers do.
+fn cavage_created(created: i64, expires: i64) -> Vec<(String, String)> {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
+    use rsa::pkcs1::DecodeRsaPrivateKey as _;
+    use rsa::signature::{SignatureEncoding as _, Signer as _};
+    use sha2::Digest as _;
+
+    let key = rsa::pkcs1v15::SigningKey::<sha2::Sha256>::new(
+        rsa::RsaPrivateKey::from_pkcs1_pem(PRIVATE_KEY).unwrap(),
+    );
+    let digest = format!("SHA-256={}", STANDARD.encode(sha2::Sha256::digest(BODY)));
+    let signing_string = format!(
+        "(request-target): post /users/alice/inbox\nhost: {HOST}\n(created): {created}\n(expires): {expires}\ndigest: {digest}"
+    );
+    let signed = STANDARD.encode(key.sign(signing_string.as_bytes()).to_bytes());
+    vec![
+        ("host".into(), HOST.into()),
+        ("digest".into(), digest),
+        (
+            "signature".into(),
+            format!(
+                r#"keyId="{KEY_ID}",algorithm="hs2019",created={created},expires={expires},headers="(request-target) host (created) (expires) digest",signature="{signed}""#
+            ),
+        ),
+    ]
+}
+
+#[test]
+fn a_signature_over_created_and_expires_is_verified_until_it_expires() {
+    let now = now();
+    let headers = cavage_created(now - 10, now + 60);
+    assert_eq!(accept(&headers, BODY, now), Ok(Scheme::DraftCavage));
+    assert_eq!(
+        accept(&headers, BODY, now + 70),
+        Err(Rejection::Expired { seconds: 10 }),
+        "within the allowed skew, but past when the signer said it ends"
+    );
+}
+
+#[test]
+fn an_rfc9421_signature_past_its_expires_is_refused() {
+    let mut headers = rfc9421(BODY);
+    let input = headers
+        .iter()
+        .find(|(name, _)| name == "signature-input")
+        .unwrap()
+        .1
+        .clone();
+    let expires = now() - 10;
+    replace(
+        &mut headers,
+        "signature-input",
+        &format!("{input};expires={expires}"),
+    );
+    let headers = refs(&headers);
+    let request = Request {
+        method: "POST",
+        path_and_query: "/users/alice/inbox",
+        headers: &headers,
+        body: BODY,
+    };
+    let hosts = hosts();
+    let parsed = verification::parse(&request).unwrap();
+    assert!(matches!(
+        verification::check(&parsed, &request, &Policy::new(&hosts), now()),
+        Err(Rejection::Expired { .. })
+    ));
+}
+
+#[test]
+fn a_covered_header_that_was_not_sent_is_refused() {
+    let mut headers = cavage(BODY);
+    headers.retain(|(name, _)| name != "content-type");
+    assert!(matches!(
+        accept(&headers, BODY, now()),
+        Err(Rejection::Invalid(_))
+    ));
+}

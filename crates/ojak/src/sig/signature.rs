@@ -235,22 +235,29 @@ pub fn verify_request(
         anyhow::ensure!(digest_val == expected, "body digest mismatch");
     }
 
-    let signing_string: String = headers_list
+    let signing_string = headers_list
         .split_whitespace()
-        .map(|h| match h {
-            // The signer covered the path *and* any query string, so the
-            // verifier has to reconstruct both or it rebuilds a different
-            // request than the one that was signed.
-            "(request-target)" => {
-                format!(
-                    "(request-target): {} {}",
-                    method.to_lowercase(),
-                    path_and_query
-                )
-            }
-            other => format!("{other}: {}", get(other)),
+        .map(|h| {
+            let h = h.to_ascii_lowercase();
+            let value = match h.as_str() {
+                // The signer covered the path *and* any query string, so the
+                // verifier has to reconstruct both or it rebuilds a different
+                // request than the one that was signed.
+                "(request-target)" => format!("{} {}", method.to_lowercase(), path_and_query),
+                "(created)" | "(expires)" => params
+                    .get(&h[1..h.len() - 1])
+                    .with_context(|| format!("{h} is covered but not given"))?
+                    .clone(),
+                other => headers
+                    .iter()
+                    .find(|(name, _)| *name == other)
+                    .with_context(|| format!("{other} is covered but was not sent"))?
+                    .1
+                    .to_owned(),
+            };
+            Ok(format!("{h}: {value}"))
         })
-        .collect::<Vec<_>>()
+        .collect::<anyhow::Result<Vec<_>>>()?
         .join("\n");
 
     rsa_verify_pkcs1v15(public_key_pem, signing_string.as_bytes(), sig_b64)
