@@ -76,16 +76,27 @@ pub enum PublicKey {
 /// Returns the proof object, its cryptosuite, and its `verificationMethod` id.
 /// The caller resolves that id to a key of the matching type and passes both
 /// back to [`verify_object_integrity_proof`]. `proof` may be a single object or
-/// an array (only the first usable one is returned).
+/// an array (only the first usable one is returned; [`integrity_proofs`] has
+/// them all).
 #[must_use]
 pub fn extract_integrity_proof(
     document: &Value,
 ) -> Option<(Map<String, Value>, Cryptosuite, String)> {
-    let candidates = match document.get("proof")? {
-        Value::Array(arr) => arr.clone(),
-        obj @ Value::Object(_) => alloc_one(obj.clone()),
-        _ => return None,
+    integrity_proofs(document).into_iter().next()
+}
+
+/// Every usable assertion-method integrity proof on `document`, in order, as
+/// [`extract_integrity_proof`] returns one. A document may carry several, in
+/// different suites or by different keys, and one that does not verify says
+/// nothing about the others.
+#[must_use]
+pub fn integrity_proofs(document: &Value) -> Vec<(Map<String, Value>, Cryptosuite, String)> {
+    let candidates = match document.get("proof") {
+        Some(Value::Array(arr)) => arr.clone(),
+        Some(obj @ Value::Object(_)) => alloc_one(obj.clone()),
+        _ => return Vec::new(),
     };
+    let mut proofs = Vec::new();
     for candidate in candidates {
         let Value::Object(obj) = candidate else {
             continue;
@@ -114,10 +125,10 @@ pub fn extract_integrity_proof(
         }
         if let Some(vm) = obj.get("verificationMethod").and_then(Value::as_str) {
             let vm = vm.to_string();
-            return Some((obj, suite, vm));
+            proofs.push((obj, suite, vm));
         }
     }
-    None
+    proofs
 }
 
 fn alloc_one(value: Value) -> Vec<Value> {

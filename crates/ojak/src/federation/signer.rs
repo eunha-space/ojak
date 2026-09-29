@@ -198,10 +198,17 @@ pub(super) async fn prove<D: Clone + Send + Sync + 'static>(
         .signed_fetch
         .as_ref()
         .ok_or("signed fetches are not configured")?;
-    let (proof, _, method) =
-        integrity::extract_integrity_proof(document).ok_or("no usable integrity proof")?;
-    if !crate::origin::same_origin(&method, actor) {
-        return Err(format!("proof key {method} is not on {actor}'s origin"));
+    // Every proof by a key on the actor's origin is tried, in order; a
+    // document may carry one per suite, or one by a key its actor no longer
+    // lists beside one by the key it does.
+    let proofs: Vec<_> = integrity::integrity_proofs(document)
+        .into_iter()
+        .filter(|(_, _, method)| crate::origin::same_origin(method, actor))
+        .collect();
+    if proofs.is_empty() {
+        return Err(format!(
+            "no usable integrity proof by a key on {actor}'s origin"
+        ));
     }
     let actor_url = Url::parse(actor).map_err(|error| error.to_string())?;
     let key = match (settings.key)(context.clone()).await {
@@ -216,12 +223,21 @@ pub(super) async fn prove<D: Clone + Send + Sync + 'static>(
         .document(&actor_url, key.as_ref())
         .await
         .map_err(|error| error.to_string())?;
-    let multibase = assertion_method(&fetched.json, &method)
-        .ok_or_else(|| format!("{actor} does not list {method} as an assertionMethod"))?;
-    let public_key = integrity::decode_multikey(&multibase).map_err(|error| error.to_string())?;
-    integrity::verify_object_integrity_proof(document, &proof, &public_key)
-        .map_err(|error| error.to_string())?;
-    Url::parse(&fetched.id).map_err(|error| error.to_string())
+    let mut why = String::new();
+    for (proof, _, method) in proofs {
+        let Some(multibase) = assertion_method(&fetched.json, &method) else {
+            why = format!("{actor} does not list {method} as an assertionMethod");
+            continue;
+        };
+        let verified = integrity::decode_multikey(&multibase).and_then(|public_key| {
+            integrity::verify_object_integrity_proof(document, &proof, &public_key)
+        });
+        match verified {
+            Ok(()) => return Url::parse(&fetched.id).map_err(|error| error.to_string()),
+            Err(error) => why = error.to_string(),
+        }
+    }
+    Err(why)
 }
 
 /// Fetch an activity forwarded by a server other than its actor's from

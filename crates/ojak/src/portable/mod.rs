@@ -90,27 +90,39 @@ pub async fn resolve(
     }
 }
 
-/// Verify that `document` carries a proof made with a key under `did`.
+/// Verify that `document` carries a proof made with a key under `did`: any
+/// of its proofs, tried in order.
 ///
 /// # Errors
 ///
-/// When it does not.
+/// When none is, with why the last one tried was not.
 pub async fn verify_by(
     document: &Value,
     did: &str,
     resolver: Option<&dyn DidResolver>,
 ) -> Result<(), PortableError> {
-    let (proof, _, method) =
-        integrity::extract_integrity_proof(document).ok_or(PortableError::NoProof)?;
-    if did_of(&method) != Some(did) {
-        return Err(PortableError::ForeignMethod {
-            method,
-            did: did.to_owned(),
-        });
+    let mut last = PortableError::NoProof;
+    for (proof, _, method) in integrity::integrity_proofs(document) {
+        if did_of(&method) != Some(did) {
+            last = PortableError::ForeignMethod {
+                method,
+                did: did.to_owned(),
+            };
+            continue;
+        }
+        let key = match resolve(&method, resolver).await {
+            Ok(key) => key,
+            Err(error) => {
+                last = error;
+                continue;
+            }
+        };
+        match integrity::verify_object_integrity_proof(document, &proof, &key) {
+            Ok(()) => return Ok(()),
+            Err(error) => last = PortableError::Invalid(error.to_string()),
+        }
     }
-    let key = resolve(&method, resolver).await?;
-    integrity::verify_object_integrity_proof(document, &proof, &key)
-        .map_err(|error| PortableError::Invalid(error.to_string()))
+    Err(last)
 }
 
 /// Verify a portable document: its `id` is an `ap` URI, a proof by the
@@ -277,6 +289,29 @@ mod tests {
         let id = verify(&signed, None).await.unwrap();
         assert_eq!(id.did(), signer.did());
         assert_eq!(gateways(&signed), ["https://server1.example"]);
+    }
+
+    #[tokio::test]
+    async fn a_proof_that_verifies_is_found_among_ones_that_do_not() {
+        let owner = Ed25519Signer::generate();
+        let other = Ed25519Signer::generate();
+        let unsigned = actor(&owner);
+        let by_owner = owner.prove(&unsigned).await.unwrap();
+        let by_other = other.prove(&unsigned).await.unwrap();
+        let mut tampered = by_owner["proof"].clone();
+        tampered["created"] = json!("2000-01-01T00:00:00Z");
+        let mut signed = unsigned;
+        signed["proof"] = json!([by_other["proof"], tampered, by_owner["proof"]]);
+        assert_eq!(integrity::integrity_proofs(&signed).len(), 3);
+
+        let id = verify(&signed, None).await.unwrap();
+        assert_eq!(id.did(), owner.did());
+
+        signed["proof"] = json!([by_other["proof"], tampered]);
+        assert!(matches!(
+            verify(&signed, None).await,
+            Err(PortableError::Invalid(_))
+        ));
     }
 
     #[tokio::test]
