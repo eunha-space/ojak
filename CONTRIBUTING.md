@@ -105,3 +105,15 @@ will run the `check` task every time you commit.
 ~~~~ bash
 mise generate git-pre-commit --write --task=check
 ~~~~
+
+Development workflow
+--------------------
+
+Run the relevant checks before committing.  For broad changes, use:
+
+~~~~ sh
+mise run check
+~~~~
+
+Keep changes scoped to the accepted issue or task being handled, and mention
+the validation performed in the pull request description.
