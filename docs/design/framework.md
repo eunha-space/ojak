@@ -506,11 +506,12 @@ An application can allow private addresses for development.
     Ojak's normalised form, and what a post or reaction means where the
     fediverse says it several ways.
  -  *ojak-jsonld*: normalisation over bundled contexts, `no_std`.
+ -  *ojak-sig*: signatures and proofs with their verification policy, doing
+    no I/O and given the time and randomness; `ojak::sig` re-exports it.
  -  *ojak*: the framework. The federation, its builder, routing and contexts,
     the inbox pipeline, delivery, fetching, gateways, the guarded client, and
     the key-value and queue traits with their in-memory implementations; and
-    beside them, doing no I/O, signatures and proofs with their verification
-    policy (`ojak::sig`), origins, and `ap://` identifiers.
+    beside them, doing no I/O, origins and `ap://` identifiers.
  -  *ojak-axum*: the axum integration, `ojak_axum::wrap`.
  -  *ojak-postgres*: the Postgres queue and key-value store. More backends
     can follow.
@@ -521,11 +522,20 @@ The design had a portable `ojak-core` of protocol decisions beside a
 over time. What was built made the split not worth its cost: the framework
 was the only crate that depended on either, the decisions in `ojak-core`
 were the applications' policy rather than the protocol's, and the primitives
-were pure but lived in the runtime. So the signature and proof primitives are
-`ojak::sig`, origins and `ap://` identifiers are in *ojak*, what a reaction
-means is in *ojak-vocab*, and the Follow and visibility decisions are the
-applications' own. Fedify is organised the same way: its signatures are part
-of the framework package, and its vocabulary is separate.
+were pure but lived in the runtime. So origins and `ap://` identifiers are in
+*ojak*, what a reaction means is in *ojak-vocab*, and the Follow and
+visibility decisions are the applications' own.
+
+The signature and proof primitives were `ojak::sig` in *ojak* at first, and
+are now *ojak-sig*. They were pure, but reaching them meant building the
+framework, with its async runtime and HTTP client, which a device that only
+signs or verifies has no use for. The crate is given the time and randomness
+rather than reading the system's, so that it decides nothing about the
+platform it runs on. It is not `no_std`: its structured-field parser and its
+JSON canonicaliser need the standard library, and replacing them waits for an
+application that runs without one. Fedify keeps its signatures in the
+framework package, but they fetch keys and send requests; its vocabulary and
+key encodings are the separate packages.
 
 ### Tests feed inputs and read outcomes
 
@@ -581,6 +591,8 @@ Open questions
     that can needs a party to resolve it, and the choice between a
     DNS-rooted identifier, a directory, and anything else is left to the
     application's resolver until one of them is clearly right.
- -  *Constrained runtimes.* The split between the `no_std` crates and *ojak*
-    is meant to keep that door open. Whether the framework crate itself
-    should run anywhere but a standard operating system is not decided.
+ -  *Constrained runtimes.* The split between the `no_std` crates,
+    *ojak-sig*, and *ojak* is meant to keep that door open. *ojak-sig* is
+    one step from `no_std`, its structured-field parser and JSON
+    canonicaliser. Whether the framework crate itself should run anywhere
+    but a standard operating system is not decided.

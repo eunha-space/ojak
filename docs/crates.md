@@ -24,6 +24,18 @@ library cannot.
     are spelled.
 
 
+Signatures
+----------
+
+ -  *ojak-sig*: HTTP Signatures (draft-cavage, and RFC 9421 with RSA or
+    Ed25519) and the policy the inbox holds them to, FEP-8b32 Object
+    Integrity Proofs (`eddsa-jcs-2022`, and `mldsa44-jcs-2024` to verify),
+    and `did:key`.  It does no I/O and needs no async runtime: the caller
+    passes in bytes, headers, keys, the time and, to make a key,
+    randomness.  It uses the standard library, which two of its parsers
+    need.  *ojak* re-exports it as `ojak::sig`.
+
+
 The framework
 -------------
 
@@ -36,10 +48,7 @@ The framework
      -  `ojak::deliverer`: queued delivery.
      -  `ojak::fetch` and `ojak::client`: fetching other servers' documents
         through the guarded HTTP client.
-     -  `ojak::sig`: HTTP Signatures (draft-cavage, and RFC 9421 with RSA or
-        Ed25519) and the policy the inbox holds them to, FEP-8b32 Object
-        Integrity Proofs (`eddsa-jcs-2022`, and `mldsa44-jcs-2024` to
-        verify), and `did:key`.  These do no I/O.
+     -  `ojak::sig`: *ojak-sig*, re-exported.
      -  `ojak::origin` and `ojak::portable`: the same-origin rule, over hosts
         and DIDs, and portable objects (FEP-ef61).
      -  `ojak::kv` and `ojak::queue`: the key-value store and the queue, as

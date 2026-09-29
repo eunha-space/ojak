@@ -102,7 +102,8 @@ pub async fn verify_by(
     resolver: Option<&dyn DidResolver>,
 ) -> Result<(), PortableError> {
     let mut last = PortableError::NoProof;
-    for (proof, _, method) in integrity::integrity_proofs(document) {
+    for (proof, _, method) in integrity::integrity_proofs(document, chrono::Utc::now().timestamp())
+    {
         if did_of(&method) != Some(did) {
             last = PortableError::ForeignMethod {
                 method,
@@ -230,7 +231,7 @@ impl Ed25519Signer {
     /// A signer with a fresh key.
     #[must_use]
     pub fn generate() -> Self {
-        Self::new(integrity::generate_ed25519_seed())
+        Self::new(integrity::generate_ed25519_seed(&mut rand_core::OsRng))
     }
 
     /// A signer for a PKCS#8 PEM Ed25519 private key.
@@ -257,8 +258,13 @@ impl ProofSigner for Ed25519Signer {
 
     fn prove<'a>(&'a self, document: &'a Value) -> BoxFuture<'a, Result<Value, Error>> {
         Box::pin(async move {
-            integrity::sign_object_integrity_proof(document, &self.method, &self.seed)
-                .map_err(|error| error.to_string().into())
+            integrity::sign_object_integrity_proof(
+                document,
+                &self.method,
+                &self.seed,
+                chrono::Utc::now().timestamp(),
+            )
+            .map_err(|error| error.to_string().into())
         })
     }
 }
@@ -302,7 +308,10 @@ mod tests {
         tampered["created"] = json!("2000-01-01T00:00:00Z");
         let mut signed = unsigned;
         signed["proof"] = json!([by_other["proof"], tampered, by_owner["proof"]]);
-        assert_eq!(integrity::integrity_proofs(&signed).len(), 3);
+        assert_eq!(
+            integrity::integrity_proofs(&signed, chrono::Utc::now().timestamp()).len(),
+            3
+        );
 
         let id = verify(&signed, None).await.unwrap();
         assert_eq!(id.did(), owner.did());
@@ -379,9 +388,13 @@ mod tests {
             "id": "ap://did:web:a.example/objects/1",
             "type": "Note"
         });
-        let signed =
-            integrity::sign_object_integrity_proof(&document, "did:web:a.example#key", &seed)
-                .unwrap();
+        let signed = integrity::sign_object_integrity_proof(
+            &document,
+            "did:web:a.example#key",
+            &seed,
+            chrono::Utc::now().timestamp(),
+        )
+        .unwrap();
         assert!(matches!(
             verify(&signed, None).await,
             Err(PortableError::Unresolved { .. })

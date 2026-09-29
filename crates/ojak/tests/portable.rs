@@ -539,6 +539,7 @@ fn signed(path: &str, key_id: &str, body: &Value) -> (http::request::Parts, Vec<
         key_id,
         &key,
         &[],
+        chrono::Utc::now().timestamp(),
     )
     .unwrap();
     let parts = http::Request::builder()

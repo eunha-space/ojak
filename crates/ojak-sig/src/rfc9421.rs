@@ -15,7 +15,8 @@
 //!
 //! [RFC 9421]: https://www.rfc-editor.org/rfc/rfc9421.html
 
-use anyhow::{Context as _, anyhow};
+use crate::Error;
+use crate::signature::PrivateKey;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use sha2::{Digest as _, Sha256};
 
@@ -66,9 +67,8 @@ impl Algorithm {
 pub enum SigningKey<'a> {
     /// PKCS#8 or PKCS#1 PEM-encoded RSA private key, parsed each time.
     RsaPem(&'a str),
-    /// An RSA private key parsed once by
-    /// [`PrivateKey::from_pem`](crate::sig::signature::PrivateKey::from_pem).
-    Rsa(&'a crate::sig::signature::PrivateKey),
+    /// An RSA private key parsed once by [`PrivateKey::from_pem`].
+    Rsa(&'a PrivateKey),
     /// A raw 32-byte Ed25519 seed.
     Ed25519(&'a [u8; 32]),
 }
@@ -81,9 +81,9 @@ impl SigningKey<'_> {
         }
     }
 
-    fn sign(&self, message: &[u8]) -> anyhow::Result<String> {
+    fn sign(&self, message: &[u8]) -> Result<String, Error> {
         match self {
-            Self::RsaPem(pem) => crate::sig::signature::rsa_sign_pkcs1v15(pem, message),
+            Self::RsaPem(pem) => crate::signature::rsa_sign_pkcs1v15(pem, message),
             Self::Rsa(key) => Ok(key.sign(message)),
             Self::Ed25519(seed) => {
                 use ed25519_dalek::Signer as _;
@@ -111,23 +111,21 @@ impl VerifyingKey<'_> {
         }
     }
 
-    fn verify(&self, message: &[u8], signature_b64: &str) -> anyhow::Result<()> {
+    fn verify(&self, message: &[u8], signature_b64: &str) -> Result<(), Error> {
         match self {
-            Self::RsaPem(pem) => {
-                crate::sig::signature::rsa_verify_pkcs1v15(pem, message, signature_b64)
-            }
+            Self::RsaPem(pem) => crate::signature::rsa_verify_pkcs1v15(pem, message, signature_b64),
             Self::Ed25519(key) => {
                 use ed25519_dalek::Verifier as _;
 
                 let bytes = BASE64
                     .decode(signature_b64)
-                    .context("decode base64 signature")?;
+                    .map_err(|e| Error::Malformed(format!("signature is not base64: {e}")))?;
                 let signature = ed25519_dalek::Signature::from_slice(&bytes)
-                    .map_err(|e| anyhow::anyhow!("invalid Ed25519 signature: {e}"))?;
+                    .map_err(|e| Error::Malformed(format!("Ed25519 signature: {e}")))?;
                 ed25519_dalek::VerifyingKey::from_bytes(key)
-                    .map_err(|e| anyhow::anyhow!("invalid Ed25519 public key: {e}"))?
+                    .map_err(|e| Error::Key(format!("Ed25519 public key: {e}")))?
                     .verify(message, &signature)
-                    .context("signature verification failed")
+                    .map_err(|_| Error::Invalid)
             }
         }
     }
@@ -149,6 +147,8 @@ const LABEL: &str = "sig1";
 /// * `body`   – request body, or `None` for a bodyless request
 /// * `key_id` – `keyid` parameter, the URI identifying the key
 /// * `key`    – the private key to sign with
+/// * `now`    – the time, in seconds since the Unix epoch, which becomes
+///   `created`
 ///
 /// # Errors
 /// Returns an error if the key cannot be parsed or the signature cannot be made.
@@ -158,7 +158,8 @@ pub fn sign_request(
     body: Option<&[u8]>,
     key_id: &str,
     key: &SigningKey<'_>,
-) -> anyhow::Result<SignedHeaders> {
+    now: i64,
+) -> Result<SignedHeaders, Error> {
     let content_digest = body.map(content_digest);
 
     let mut components = vec![
@@ -169,20 +170,17 @@ pub fn sign_request(
         components.push(("content-digest".to_string(), digest.clone()));
     }
 
-    let created = chrono::Utc::now().timestamp();
     let params = signature_params(
         &components
             .iter()
             .map(|(name, _)| name.as_str())
             .collect::<Vec<_>>(),
-        created,
+        now,
         key_id,
         key.algorithm(),
     );
     let base = signature_base(&components, &params);
-    let signature = key
-        .sign(base.as_bytes())
-        .context("signing the RFC 9421 signature base")?;
+    let signature = key.sign(base.as_bytes())?;
 
     Ok(SignedHeaders {
         signature_input: format!("{LABEL}={params}"),
@@ -252,6 +250,11 @@ fn signature_base(components: &[(String, String)], params: &str) -> String {
 /// `content-digest` binds the body it was sent with.
 ///
 /// [RFC 9421]: https://www.rfc-editor.org/rfc/rfc9421.html
+///
+/// # Errors
+/// When the signature cannot be read, covers what cannot be rebuilt or was
+/// not sent, states an algorithm the key is not, the body does not match its
+/// digest, or the signature does not verify.
 #[allow(clippy::too_many_arguments)]
 pub fn verify_request(
     method: &str,
@@ -262,7 +265,7 @@ pub fn verify_request(
     body: &[u8],
     headers: &[(&str, &str)],
     key: &VerifyingKey<'_>,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     let input = Input::parse(signature_input)?;
     let sig_b64 = BASE64.encode(signature_bytes(signature, &input.label)?);
     let Input {
@@ -273,17 +276,19 @@ pub fn verify_request(
     // can check: a signature claiming `ed25519` must not be waved through an
     // RSA verification, or vice versa.
     if let Some(alg) = input.string("alg") {
-        let stated =
-            Algorithm::from_str(&alg).ok_or_else(|| anyhow!("unsupported algorithm {alg:?}"))?;
-        anyhow::ensure!(
-            stated == key.algorithm(),
-            "signature claims {} but the key is {}",
-            stated.as_str(),
-            key.algorithm().as_str()
-        );
+        let stated = Algorithm::from_str(&alg)
+            .ok_or_else(|| Error::Unsupported(format!("algorithm {alg:?}")))?;
+        if stated != key.algorithm() {
+            return Err(Error::WrongKey(format!(
+                "signature claims {} but the key is {}",
+                stated.as_str(),
+                key.algorithm().as_str()
+            )));
+        }
     }
 
-    let url = url::Url::parse(target_uri).context("invalid target URI")?;
+    let url = url::Url::parse(target_uri)
+        .map_err(|error| Error::Malformed(format!("target URI {target_uri:?}: {error}")))?;
     let mut components = Vec::with_capacity(covered.len());
     for name in covered {
         let value = match name.as_str() {
@@ -291,7 +296,9 @@ pub fn verify_request(
             "@target-uri" => target_uri.to_string(),
             // The host, and the port when it is not the scheme's default.
             "@authority" => {
-                let host = url.host_str().context("target URI has no authority")?;
+                let host = url
+                    .host_str()
+                    .ok_or_else(|| Error::Malformed("target URI has no authority".into()))?;
                 match url.port() {
                     Some(port) => format!("{host}:{port}"),
                     None => host.to_string(),
@@ -305,16 +312,14 @@ pub fn verify_request(
                 None => url.path().to_string(),
             },
             "content-digest" => {
-                let sent =
-                    content_digest.context("signature covers content-digest, but none was sent")?;
-                anyhow::ensure!(
-                    crate::sig::digest::content_digest_matches(sent, body),
-                    "content-digest does not match the body"
-                );
+                let sent = content_digest.ok_or_else(|| Error::Missing("content-digest".into()))?;
+                if !crate::digest::content_digest_matches(sent, body) {
+                    return Err(Error::DigestMismatch);
+                }
                 sent.to_string()
             }
             derived if derived.starts_with('@') => {
-                anyhow::bail!("signature covers unsupported component {derived:?}")
+                return Err(Error::Unsupported(format!("component {derived:?}")));
             }
             field => {
                 let values: Vec<&str> = headers
@@ -322,10 +327,9 @@ pub fn verify_request(
                     .filter(|(name, _)| name.eq_ignore_ascii_case(field))
                     .map(|(_, value)| value.trim())
                     .collect();
-                anyhow::ensure!(
-                    !values.is_empty(),
-                    "signature covers {field:?}, which was not sent"
-                );
+                if values.is_empty() {
+                    return Err(Error::Missing(field.to_owned()));
+                }
                 values.join(", ")
             }
         };
@@ -379,39 +383,43 @@ struct Input {
 }
 
 impl Input {
-    fn parse(header: &str) -> anyhow::Result<Self> {
+    fn parse(header: &str) -> Result<Self, Error> {
+        let malformed = |why: String| Error::Malformed(format!("Signature-Input: {why}"));
         let dictionary = sfv::Parser::new(header)
             .parse::<sfv::Dictionary>()
-            .map_err(|error| anyhow!("unreadable Signature-Input: {error}"))?;
+            .map_err(|error| malformed(error.to_string()))?;
         let (label, entry) = dictionary
             .first()
-            .context("Signature-Input has no signature")?;
+            .ok_or_else(|| malformed("no signature".into()))?;
         let sfv::ListEntry::InnerList(list) = entry else {
-            anyhow::bail!("Signature-Input is not a component list");
+            return Err(malformed("not a component list".into()));
         };
         let mut covered = Vec::with_capacity(list.items.len());
         for item in &list.items {
             let name = item
                 .bare_item
                 .as_string()
-                .context("a covered component is not a string")?;
+                .ok_or_else(|| malformed("a covered component is not a string".into()))?;
             // Parameters select a part of a component (`;sf`, `;key`, `;req`),
             // which is not rebuilt here, so a signature using them is refused
             // rather than verified against the whole.
-            anyhow::ensure!(
-                item.params.is_empty(),
-                "component {:?} has parameters",
-                name.as_str()
-            );
+            if !item.params.is_empty() {
+                return Err(Error::Unsupported(format!(
+                    "component {:?} with parameters",
+                    name.as_str()
+                )));
+            }
             let name = name.as_str().to_owned();
-            anyhow::ensure!(!covered.contains(&name), "{name:?} is covered twice");
+            if covered.contains(&name) {
+                return Err(malformed(format!("{name:?} is covered twice")));
+            }
             covered.push(name);
         }
         let mut serializer = sfv::ListSerializer::new();
         serializer.members([entry]);
         let params = serializer
             .finish()
-            .context("Signature-Input has no signature")?;
+            .ok_or_else(|| malformed("no signature".into()))?;
         Ok(Self {
             label: label.as_str().to_owned(),
             covered,
@@ -432,19 +440,21 @@ impl Input {
 }
 
 /// The signature published under `label` in a `Signature` field.
-fn signature_bytes(header: &str, label: &str) -> anyhow::Result<Vec<u8>> {
+fn signature_bytes(header: &str, label: &str) -> Result<Vec<u8>, Error> {
+    let malformed = |why: String| Error::Malformed(format!("Signature: {why}"));
     let dictionary = sfv::Parser::new(header)
         .parse::<sfv::Dictionary>()
-        .map_err(|error| anyhow!("unreadable Signature: {error}"))?;
-    let key = sfv::KeyRef::from_str(label).map_err(|error| anyhow!("{error}"))?;
+        .map_err(|error| malformed(error.to_string()))?;
+    let key = sfv::KeyRef::from_str(label).map_err(|error| malformed(error.to_string()))?;
+    let not_bytes = || malformed("not a byte sequence".into());
     match dictionary.get(key) {
         Some(sfv::ListEntry::Item(item)) => Ok(item
             .bare_item
             .as_byte_sequence()
-            .context("signature is not a byte sequence")?
+            .ok_or_else(not_bytes)?
             .to_vec()),
-        Some(sfv::ListEntry::InnerList(_)) => anyhow::bail!("signature is not a byte sequence"),
-        None => anyhow::bail!("no signature labelled {label:?}"),
+        Some(sfv::ListEntry::InnerList(_)) => Err(not_bytes()),
+        None => Err(malformed(format!("no signature labelled {label:?}"))),
     }
 }
 
@@ -453,7 +463,10 @@ mod tests {
     use super::*;
 
     /// The `test-key-rsa` private key from RFC 9421 Appendix B.1.1.
-    const TEST_KEY_RSA: &str = include_str!("../../tests/fixtures/rfc9421_test_key_rsa.pem");
+    const TEST_KEY_RSA: &str = include_str!("../tests/fixtures/rfc9421_test_key_rsa.pem");
+
+    /// When the tests sign: any time will do, as verifying does not check it.
+    const NOW: i64 = 1_759_000_000;
 
     /// RFC 9421 Appendix B.4: a signature base covering derived components and
     /// a content digest, built with `rsa-v1_5-sha256`. Reproducing the document
@@ -513,8 +526,7 @@ mod tests {
             "\"@signature-params\": (\"@method\" \"@authority\" \"@path\" \"content-digest\" \"content-type\" \"content-length\" \"forwarded\");created=1618884480;keyid=\"test-key-rsa\";alg=\"rsa-v1_5-sha256\";expires=1618884540",
         );
 
-        let signature =
-            crate::sig::signature::rsa_sign_pkcs1v15(TEST_KEY_RSA, base.as_bytes()).unwrap();
+        let signature = crate::signature::rsa_sign_pkcs1v15(TEST_KEY_RSA, base.as_bytes()).unwrap();
 
         let expected = concat!(
             "S6ZzPXSdAMOPjN/6KXfXWNO/f7V6cHm7BXYUh3YD/fRad4BCaRZxP+JH+8XY1I6+8Cy",
@@ -536,6 +548,7 @@ mod tests {
             Some(body),
             "https://local.example/users/alice#main-key",
             &SigningKey::RsaPem(TEST_KEY_RSA),
+            NOW,
         )
         .unwrap();
 
@@ -567,6 +580,7 @@ mod tests {
             None,
             "https://local.example/actor#main-key",
             &SigningKey::RsaPem(TEST_KEY_RSA),
+            NOW,
         )
         .unwrap();
 
@@ -580,7 +594,7 @@ mod tests {
 
     /// The public half of `test-key-rsa`, from RFC 9421 Appendix B.1.1.
     const TEST_KEY_RSA_PUBLIC: &str =
-        include_str!("../../tests/fixtures/rfc9421_test_key_rsa_public.pem");
+        include_str!("../tests/fixtures/rfc9421_test_key_rsa_public.pem");
 
     #[test]
     fn verifies_what_it_signs() {
@@ -591,6 +605,7 @@ mod tests {
             Some(body),
             "https://local.example/users/alice#main-key",
             &SigningKey::RsaPem(TEST_KEY_RSA),
+            NOW,
         )
         .unwrap();
 
@@ -615,6 +630,7 @@ mod tests {
             Some(b"original"),
             "https://local.example/users/alice#main-key",
             &SigningKey::RsaPem(TEST_KEY_RSA),
+            NOW,
         )
         .unwrap();
 
@@ -629,7 +645,7 @@ mod tests {
             &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .unwrap_err();
-        assert!(err.to_string().contains("content-digest"), "{err}");
+        assert_eq!(err, Error::DigestMismatch);
     }
 
     #[test]
@@ -641,6 +657,7 @@ mod tests {
             Some(body),
             "https://local.example/users/alice#main-key",
             &SigningKey::RsaPem(TEST_KEY_RSA),
+            NOW,
         )
         .unwrap();
 
@@ -668,6 +685,7 @@ mod tests {
             Some(body),
             "https://local.example/users/alice#main-key",
             &SigningKey::RsaPem(TEST_KEY_RSA),
+            NOW,
         )
         .unwrap();
         // Spaced as RFC 8941 allows, which is not how it was signed.
@@ -760,7 +778,7 @@ mod tests {
             &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .unwrap_err();
-        assert!(err.to_string().contains("x-custom"), "{err}");
+        assert_eq!(err, Error::Missing("x-custom".into()));
     }
 
     #[test]
@@ -909,6 +927,7 @@ mod tests {
             Some(body),
             "https://local.example/users/alice#ed25519-key",
             &SigningKey::Ed25519(&TEST_KEY_ED25519_SEED),
+            NOW,
         )
         .unwrap();
 
@@ -942,6 +961,7 @@ mod tests {
             Some(body),
             "https://local.example/users/alice#ed25519-key",
             &SigningKey::Ed25519(&TEST_KEY_ED25519_SEED),
+            NOW,
         )
         .unwrap();
 
@@ -959,7 +979,10 @@ mod tests {
             &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .unwrap_err();
-        assert!(err.to_string().contains("claims ed25519"), "{err}");
+        assert!(
+            matches!(&err, Error::WrongKey(why) if why.contains("claims ed25519")),
+            "{err}"
+        );
     }
 
     /// An algorithm nobody here implements is refused outright, rather than
@@ -977,7 +1000,7 @@ mod tests {
             &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
         )
         .unwrap_err();
-        assert!(err.to_string().contains("unsupported algorithm"), "{err}");
+        assert!(matches!(err, Error::Unsupported(_)), "{err}");
     }
 
     #[test]

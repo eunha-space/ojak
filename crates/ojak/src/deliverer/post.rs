@@ -132,6 +132,7 @@ async fn attempt(
                 &key.key_id,
                 &key.private_key,
                 &[("content-type", ACTIVITY_JSON)],
+                chrono::Utc::now().timestamp(),
             )
             .map_err(|error| DeliveryError::Signing(error.to_string()))?;
             insert(&mut headers, "date", &signed.date)?;
@@ -145,6 +146,7 @@ async fn attempt(
                 Some(body),
                 &key.key_id,
                 &rfc9421::SigningKey::Rsa(&key.private_key),
+                chrono::Utc::now().timestamp(),
             )
             .map_err(|error| DeliveryError::Signing(error.to_string()))?;
             insert(&mut headers, "signature-input", &signed.signature_input)?;

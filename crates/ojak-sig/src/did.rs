@@ -5,8 +5,8 @@
 //! method is `did:key:z6Mk…#z6Mk…`. FEP-ef61 asks for base58btc only, so
 //! that one key has one DID; a DID in any other multibase is not read.
 
-use crate::sig::integrity::{PublicKey, decode_multikey, encode_ed25519_multikey};
-use anyhow::{Result, anyhow};
+use crate::Error;
+use crate::integrity::{PublicKey, decode_multikey, encode_ed25519_multikey};
 
 /// The `did:key` of an Ed25519 public key.
 #[must_use]
@@ -31,22 +31,23 @@ pub fn did_key_method(did: &str) -> String {
 /// When `did_url` is not a `did:key` DID URL in base58btc, names another
 /// verification method, or carries a key type the integrity module cannot
 /// verify with.
-pub fn resolve_did_key(did_url: &str) -> Result<PublicKey> {
+pub fn resolve_did_key(did_url: &str) -> Result<PublicKey, Error> {
+    let not = |why: &str| Error::Key(format!("{did_url} {why}"));
     let rest = did_url
         .strip_prefix("did:key:")
-        .ok_or_else(|| anyhow!("{did_url} is not a did:key"))?;
+        .ok_or_else(|| not("is not a did:key"))?;
     let (multibase, fragment) = match rest.split_once('#') {
         Some((multibase, fragment)) => (multibase, Some(fragment)),
         None => (rest, None),
     };
     if multibase.contains(['/', '?']) {
-        return Err(anyhow!("{did_url} has a path or query"));
+        return Err(not("has a path or query"));
     }
     if !multibase.starts_with('z') {
-        return Err(anyhow!("{did_url} is not base58btc"));
+        return Err(not("is not base58btc"));
     }
     if fragment.is_some_and(|fragment| fragment != multibase) {
-        return Err(anyhow!("{did_url} names no verification method of its DID"));
+        return Err(not("names no verification method of its DID"));
     }
     decode_multikey(multibase)
 }

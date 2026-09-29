@@ -217,7 +217,7 @@ pub(super) async fn prove<D: Clone + Send + Sync + 'static>(
     // Every proof by a key on the actor's origin is tried, in order; a
     // document may carry one per suite, or one by a key its actor no longer
     // lists beside one by the key it does.
-    let proofs: Vec<_> = integrity::integrity_proofs(document)
+    let proofs: Vec<_> = integrity::integrity_proofs(document, chrono::Utc::now().timestamp())
         .into_iter()
         .filter(|(_, _, method)| crate::origin::same_origin(method, actor))
         .collect();

@@ -178,6 +178,7 @@ fn post(
         key_id,
         &key,
         &[],
+        chrono::Utc::now().timestamp(),
     )
     .unwrap();
     let parts = http::Request::builder()
@@ -583,7 +584,7 @@ async fn an_integrity_proof_authenticates_an_unsigned_activity() {
 
     let remote = Remote::default();
     let bob = serve_remote(remote.clone()).await;
-    let pem = integrity::generate_ed25519_key().unwrap();
+    let pem = integrity::generate_ed25519_key(&mut rand_core::OsRng).unwrap();
     let (seed, public) = integrity::parse_ed25519_key(&pem).unwrap();
     *remote.multikey.lock().unwrap() = Some(integrity::encode_ed25519_multikey(&public));
     let federation = federation(|b| b);
@@ -593,6 +594,7 @@ async fn an_integrity_proof_authenticates_an_unsigned_activity() {
         &follow(&bob, 1),
         &format!("{bob}#ed25519-key"),
         &seed,
+        chrono::Utc::now().timestamp(),
     )
     .unwrap();
     let unsigned = |body: &Value| {
@@ -907,6 +909,7 @@ fn post_ed25519(
         Some(&bytes),
         key_id,
         &rfc9421::SigningKey::Ed25519(seed),
+        chrono::Utc::now().timestamp(),
     )
     .unwrap();
     let parts = http::Request::builder()
@@ -932,7 +935,7 @@ async fn an_ed25519_signature_by_a_listed_multikey_authenticates() {
 
     let remote = Remote::default();
     let bob = serve_remote(remote.clone()).await;
-    let pem = integrity::generate_ed25519_key().unwrap();
+    let pem = integrity::generate_ed25519_key(&mut rand_core::OsRng).unwrap();
     let (seed, public) = integrity::parse_ed25519_key(&pem).unwrap();
     *remote.multikey.lock().unwrap() = Some(integrity::encode_ed25519_multikey(&public));
     let federation = federation(|b| b);
@@ -966,9 +969,11 @@ async fn an_ed25519_signature_by_a_listed_multikey_authenticates() {
     assert_eq!(seen[0].sender, bob);
 
     // A key bob does not list proves nothing.
-    let other = integrity::parse_ed25519_key(&integrity::generate_ed25519_key().unwrap())
-        .unwrap()
-        .0;
+    let other = integrity::parse_ed25519_key(
+        &integrity::generate_ed25519_key(&mut rand_core::OsRng).unwrap(),
+    )
+    .unwrap()
+    .0;
     let activity = follow(&bob, 3);
     assert_eq!(
         deliver(

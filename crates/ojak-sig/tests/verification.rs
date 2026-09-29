@@ -1,8 +1,8 @@
 //! Checking inbound signed requests: every rule, passing and refused.
 
-use ojak::sig::rfc9421;
-use ojak::sig::signature::{self, PrivateKey};
-use ojak::sig::verification::{
+use ojak_sig::rfc9421;
+use ojak_sig::signature::{self, PrivateKey};
+use ojak_sig::verification::{
     self, Key, Policy, Rejection, Request, Scheme, key_owner, published_key_pem,
 };
 use serde_json::json;
@@ -32,6 +32,7 @@ fn cavage(body: &[u8]) -> Vec<(String, String)> {
         KEY_ID,
         &key,
         &[("content-type", "application/activity+json")],
+        now(),
     )
     .unwrap();
     vec![
@@ -51,6 +52,7 @@ fn rfc9421(body: &[u8]) -> Vec<(String, String)> {
         Some(body),
         KEY_ID,
         &rfc9421::SigningKey::RsaPem(PRIVATE_KEY),
+        now(),
     )
     .unwrap();
     vec![
@@ -139,8 +141,8 @@ fn a_digest_the_signature_does_not_cover_is_not_enough() {
     // A signed GET covers no digest; sent as a POST with a digest added, the
     // body could be anything.
     let key = PrivateKey::from_pem(PRIVATE_KEY).unwrap();
-    let signed = signature::sign_get_with_key(INBOX, KEY_ID, &key).unwrap();
-    let digest = signature::sign_request("post", INBOX, BODY, KEY_ID, PRIVATE_KEY, &[])
+    let signed = signature::sign_get_with_key(INBOX, KEY_ID, &key, now()).unwrap();
+    let digest = signature::sign_request("post", INBOX, BODY, KEY_ID, PRIVATE_KEY, &[], now())
         .unwrap()
         .digest;
     let headers = vec![

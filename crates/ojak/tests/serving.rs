@@ -648,8 +648,13 @@ async fn serve_remote(remote: Remote) -> Url {
 
 fn signed_request(path: &str, key_id: &str) -> http::request::Parts {
     let key = PrivateKey::from_pem(PRIVATE_KEY).unwrap();
-    let signed =
-        signature::sign_get_with_key(&format!("https://oeee.test{path}"), key_id, &key).unwrap();
+    let signed = signature::sign_get_with_key(
+        &format!("https://oeee.test{path}"),
+        key_id,
+        &key,
+        chrono::Utc::now().timestamp(),
+    )
+    .unwrap();
     let mut parts = request("GET", "oeee.test", path, Some(ACCEPT_AP));
     parts.headers.insert("date", signed.date.parse().unwrap());
     parts

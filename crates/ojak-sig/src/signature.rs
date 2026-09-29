@@ -1,10 +1,13 @@
 //! HTTP Signature (draft-cavage-http-signatures) for ActivityPub federation.
 //!
 //! Runtime-agnostic: it works with plain byte slices and `(name, value)` header
-//! pairs, so it can be used with any HTTP framework.
+//! pairs, so it can be used with any HTTP framework, and is given the time
+//! rather than reading a clock.
 
-use anyhow::Context as _;
+use crate::{CryptoRngCore, Error};
+use alloc::collections::BTreeMap;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use core::fmt;
 use sha2::{Digest as _, Sha256};
 
 /// Headers produced by [`sign_request`] that must be attached to the outgoing request.
@@ -41,6 +44,17 @@ fn request_target(method: &str, url: &url::Url) -> String {
         Some(query) => format!("{} {}?{}", method.to_lowercase(), url.path(), query),
         None => format!("{} {}", method.to_lowercase(), url.path()),
     }
+}
+
+/// `now`, seconds since the Unix epoch, as a `Date` header writes it.
+fn http_date(now: i64) -> Result<String, Error> {
+    let date = chrono::DateTime::from_timestamp(now, 0)
+        .ok_or_else(|| Error::Malformed(format!("{now} is not a time")))?;
+    Ok(date.format("%a, %d %b %Y %H:%M:%S GMT").to_string())
+}
+
+fn parse_url(url: &str) -> Result<url::Url, Error> {
+    url::Url::parse(url).map_err(|error| Error::Malformed(format!("URL {url:?}: {error}")))
 }
 
 /// Build a signing string and the `headers` parameter naming its lines.
@@ -82,6 +96,8 @@ fn signing_string(covered: &[(&str, String)]) -> (String, String) {
 /// * `key_id`          – `keyId` URI, typically `https://actor/url#main-key`
 /// * `private_key_pem` – PKCS#8 or PKCS#1 PEM-encoded RSA private key
 /// * `extra_headers`   – Additional headers to cover, in the order sent
+/// * `now`             – The time, in seconds since the Unix epoch, which
+///   becomes the `Date` header
 ///
 /// # Errors
 /// Returns an error if the URL cannot be parsed or the key cannot sign.
@@ -92,9 +108,10 @@ pub fn sign_request(
     key_id: &str,
     private_key_pem: &str,
     extra_headers: &[(&str, &str)],
-) -> anyhow::Result<SignedHeaders> {
+    now: i64,
+) -> Result<SignedHeaders, Error> {
     let key = PrivateKey::from_pem(private_key_pem)?;
-    sign_request_with_key(method, url, body, key_id, &key, extra_headers)
+    sign_request_with_key(method, url, body, key_id, &key, extra_headers, now)
 }
 
 /// [`sign_request`] with a key parsed once by [`PrivateKey::from_pem`].
@@ -111,13 +128,12 @@ pub fn sign_request_with_key(
     key_id: &str,
     key: &PrivateKey,
     extra_headers: &[(&str, &str)],
-) -> anyhow::Result<SignedHeaders> {
+    now: i64,
+) -> Result<SignedHeaders, Error> {
     let digest = format!("SHA-256={}", BASE64.encode(Sha256::digest(body)));
-    let date = chrono::Utc::now()
-        .format("%a, %d %b %Y %H:%M:%S GMT")
-        .to_string();
+    let date = http_date(now)?;
 
-    let parsed = url::Url::parse(url).context("invalid URL")?;
+    let parsed = parse_url(url)?;
     let host = host_header(&parsed);
 
     let mut covered: Vec<(&str, String)> = vec![("host", host), ("date", date.clone())];
@@ -161,21 +177,33 @@ pub struct SignedGet {
 /// * `url`             – Full URL being fetched
 /// * `key_id`          – `keyId` URI, typically `https://domain/actor#main-key`
 /// * `private_key_pem` – PKCS#8 or PKCS#1 PEM-encoded RSA private key
-pub fn sign_get(url: &str, key_id: &str, private_key_pem: &str) -> anyhow::Result<SignedGet> {
+/// * `now`             – The time, in seconds since the Unix epoch
+///
+/// # Errors
+/// Returns an error if the URL or the key cannot be parsed.
+pub fn sign_get(
+    url: &str,
+    key_id: &str,
+    private_key_pem: &str,
+    now: i64,
+) -> Result<SignedGet, Error> {
     let key = PrivateKey::from_pem(private_key_pem)?;
-    sign_get_with_key(url, key_id, &key)
+    sign_get_with_key(url, key_id, &key, now)
 }
 
 /// [`sign_get`] with a key parsed once by [`PrivateKey::from_pem`].
 ///
 /// # Errors
 /// Returns an error if the URL cannot be parsed.
-pub fn sign_get_with_key(url: &str, key_id: &str, key: &PrivateKey) -> anyhow::Result<SignedGet> {
-    let date = chrono::Utc::now()
-        .format("%a, %d %b %Y %H:%M:%S GMT")
-        .to_string();
+pub fn sign_get_with_key(
+    url: &str,
+    key_id: &str,
+    key: &PrivateKey,
+    now: i64,
+) -> Result<SignedGet, Error> {
+    let date = http_date(now)?;
 
-    let parsed = url::Url::parse(url).context("invalid URL")?;
+    let parsed = parse_url(url)?;
     let host = host_header(&parsed);
 
     // Same covered set and order as Mastodon: no body, so no digest.
@@ -207,13 +235,17 @@ pub fn sign_get_with_key(url: &str, key_id: &str, key: &PrivateKey) -> anyhow::R
 /// * `headers`        – All request headers as `(lowercase-name, value)` pairs
 /// * `body`           – Raw request body bytes
 /// * `public_key_pem` – SPKI PEM-encoded RSA public key of the signing actor
+///
+/// # Errors
+/// When the signature cannot be read, the body does not match its digest, a
+/// covered header was not sent, or the signature does not verify.
 pub fn verify_request(
     method: &str,
     path_and_query: &str,
     headers: &[(&str, &str)],
     body: &[u8],
     public_key_pem: &str,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     let get = |name: &str| -> &str {
         headers
             .iter()
@@ -223,18 +255,19 @@ pub fn verify_request(
     };
 
     let sig_header_val = get("signature");
-    anyhow::ensure!(!sig_header_val.is_empty(), "missing Signature header");
+    if sig_header_val.is_empty() {
+        return Err(Error::Missing("Signature".into()));
+    }
 
     let params = parse_params(sig_header_val);
-    let headers_list = params.get("headers").map(String::as_str).unwrap_or("date");
-    let sig_b64 = params.get("signature").context("missing signature field")?;
+    let headers_list = params.get("headers").map_or("date", String::as_str);
+    let sig_b64 = params
+        .get("signature")
+        .ok_or_else(|| Error::Malformed("no signature parameter".into()))?;
 
     let digest_val = get("digest");
-    if !digest_val.is_empty() {
-        anyhow::ensure!(
-            super::digest::digest_matches(digest_val, body),
-            "body digest mismatch"
-        );
+    if !digest_val.is_empty() && !crate::digest::digest_matches(digest_val, body) {
+        return Err(Error::DigestMismatch);
     }
 
     let signing_string = headers_list
@@ -248,18 +281,18 @@ pub fn verify_request(
                 "(request-target)" => format!("{} {}", method.to_lowercase(), path_and_query),
                 "(created)" | "(expires)" => params
                     .get(&h[1..h.len() - 1])
-                    .with_context(|| format!("{h} is covered but not given"))?
+                    .ok_or_else(|| Error::Missing(h.clone()))?
                     .clone(),
                 other => headers
                     .iter()
                     .find(|(name, _)| *name == other)
-                    .with_context(|| format!("{other} is covered but was not sent"))?
+                    .ok_or_else(|| Error::Missing(other.to_owned()))?
                     .1
                     .to_owned(),
             };
             Ok(format!("{h}: {value}"))
         })
-        .collect::<anyhow::Result<Vec<_>>>()?
+        .collect::<Result<Vec<_>, Error>>()?
         .join("\n");
 
     rsa_verify_pkcs1v15(public_key_pem, signing_string.as_bytes(), sig_b64)
@@ -293,8 +326,8 @@ impl PrivateKey {
     ///
     /// # Errors
     /// Returns an error if the PEM is neither.
-    pub fn from_pem(pem: &str) -> anyhow::Result<Self> {
-        let key = parse_private_key(pem).context("parse RSA private key")?;
+    pub fn from_pem(pem: &str) -> Result<Self, Error> {
+        let key = parse_private_key(pem)?;
         Ok(Self(rsa::pkcs1v15::SigningKey::<Sha256>::new(key)))
     }
 
@@ -307,23 +340,23 @@ impl PrivateKey {
     }
 }
 
-impl std::fmt::Debug for PrivateKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for PrivateKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("PrivateKey(..)")
     }
 }
 
 /// Sign `message` with RSASSA-PKCS1-v1_5 over SHA-256, base64-encoded.
 ///
-/// Shared with [`crate::sig::rfc9421`], which signs a different string with the same
+/// Shared with [`crate::rfc9421`], which signs a different string with the same
 /// primitive.
-pub(crate) fn rsa_sign_pkcs1v15(private_key_pem: &str, message: &[u8]) -> anyhow::Result<String> {
+pub(crate) fn rsa_sign_pkcs1v15(private_key_pem: &str, message: &[u8]) -> Result<String, Error> {
     Ok(PrivateKey::from_pem(private_key_pem)?.sign(message))
 }
 
 /// Parse an RSA private key from either PKCS#8 (`BEGIN PRIVATE KEY`) or
 /// PKCS#1 (`BEGIN RSA PRIVATE KEY`) PEM format.
-fn parse_private_key(pem: &str) -> anyhow::Result<rsa::RsaPrivateKey> {
+fn parse_private_key(pem: &str) -> Result<rsa::RsaPrivateKey, Error> {
     use rsa::pkcs8::DecodePrivateKey as _;
 
     if let Ok(key) = rsa::RsaPrivateKey::from_pkcs8_pem(pem) {
@@ -331,35 +364,39 @@ fn parse_private_key(pem: &str) -> anyhow::Result<rsa::RsaPrivateKey> {
     }
 
     use rsa::pkcs1::DecodeRsaPrivateKey as _;
-    rsa::RsaPrivateKey::from_pkcs1_pem(pem).context("not valid PKCS#8 or PKCS#1 PEM")
+    rsa::RsaPrivateKey::from_pkcs1_pem(pem)
+        .map_err(|_| Error::Key("not an RSA private key in PKCS#8 or PKCS#1 PEM".into()))
 }
 
 /// Verify an RSASSA-PKCS1-v1_5 SHA-256 signature, base64-encoded.
 ///
-/// Shared with [`crate::sig::rfc9421`], which verifies a different string with the
+/// Shared with [`crate::rfc9421`], which verifies a different string with the
 /// same primitive.
 pub(crate) fn rsa_verify_pkcs1v15(
     public_key_pem: &str,
     message: &[u8],
     sig_b64: &str,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     use rsa::pkcs1v15::{Signature, VerifyingKey};
     use rsa::signature::Verifier as _;
 
-    let sig_bytes = BASE64.decode(sig_b64).context("decode base64 signature")?;
+    let sig_bytes = BASE64
+        .decode(sig_b64)
+        .map_err(|error| Error::Malformed(format!("signature is not base64: {error}")))?;
     let public_key = rsa_public_key_from_pem(public_key_pem)?;
     let verifying_key = VerifyingKey::<Sha256>::new(public_key);
-    let sig = Signature::try_from(sig_bytes.as_slice()).context("parse signature bytes")?;
+    let sig = Signature::try_from(sig_bytes.as_slice())
+        .map_err(|error| Error::Malformed(format!("RSA signature: {error}")))?;
     verifying_key
         .verify(message, &sig)
-        .context("signature verification failed")
+        .map_err(|_| Error::Invalid)
 }
 
 /// An RSA public key from a PEM as actors publish them: SubjectPublicKeyInfo
 /// (`PUBLIC KEY`) or PKCS#1 (`RSA PUBLIC KEY`), with whatever line length and
 /// surrounding whitespace it was written with. The PEM parser holds a key to
 /// 64-character lines, which not every implementation writes.
-pub(crate) fn rsa_public_key_from_pem(pem: &str) -> anyhow::Result<rsa::RsaPublicKey> {
+pub(crate) fn rsa_public_key_from_pem(pem: &str) -> Result<rsa::RsaPublicKey, Error> {
     use rsa::pkcs1::DecodeRsaPublicKey as _;
     use rsa::pkcs8::DecodePublicKey as _;
 
@@ -367,28 +404,28 @@ pub(crate) fn rsa_public_key_from_pem(pem: &str) -> anyhow::Result<rsa::RsaPubli
     if let Ok(key) = rsa::RsaPublicKey::from_public_key_pem(pem) {
         return Ok(key);
     }
-    let (label, der) = pem_body(pem).context("parse RSA public key")?;
+    let unreadable = || Error::Key("not an RSA public key in SPKI or PKCS#1 PEM".into());
+    let (label, der) = pem_body(pem).ok_or_else(unreadable)?;
     match label {
-        "PUBLIC KEY" => rsa::RsaPublicKey::from_public_key_der(&der),
-        "RSA PUBLIC KEY" => rsa::RsaPublicKey::from_pkcs1_der(&der).map_err(Into::into),
-        _ => anyhow::bail!("not an RSA public key: {label}"),
+        "PUBLIC KEY" => rsa::RsaPublicKey::from_public_key_der(&der).map_err(|_| unreadable()),
+        "RSA PUBLIC KEY" => rsa::RsaPublicKey::from_pkcs1_der(&der).map_err(|_| unreadable()),
+        _ => Err(Error::Key(format!("not an RSA public key: {label}"))),
     }
-    .context("parse RSA public key")
 }
 
 /// The label and decoded body of a PEM block, read leniently: any line
 /// length, and whitespace anywhere in the body.
-fn pem_body(pem: &str) -> anyhow::Result<(&str, Vec<u8>)> {
-    let rest = pem.strip_prefix("-----BEGIN ").context("no PEM header")?;
-    let (label, rest) = rest.split_once("-----").context("no PEM header")?;
+fn pem_body(pem: &str) -> Option<(&str, Vec<u8>)> {
+    let rest = pem.strip_prefix("-----BEGIN ")?;
+    let (label, rest) = rest.split_once("-----")?;
     let end = format!("-----END {label}-----");
-    let (body, _) = rest.split_once(end.as_str()).context("no PEM footer")?;
+    let (body, _) = rest.split_once(end.as_str())?;
     let body: String = body.split_whitespace().collect();
-    Ok((label, BASE64.decode(body).context("decode PEM body")?))
+    Some((label, BASE64.decode(body).ok()?))
 }
 
-pub(crate) fn parse_params(header: &str) -> std::collections::HashMap<String, String> {
-    let mut map = std::collections::HashMap::new();
+pub(crate) fn parse_params(header: &str) -> BTreeMap<String, String> {
+    let mut map = BTreeMap::new();
     for part in header.split(',') {
         let part = part.trim();
         if let Some(pos) = part.find('=') {
@@ -406,15 +443,21 @@ pub(crate) fn parse_params(header: &str) -> std::collections::HashMap<String, St
 ///
 /// # Errors
 ///
-/// When the operating system's randomness is unavailable.
-pub fn generate_rsa_keypair() -> anyhow::Result<(String, String)> {
+/// When `rng` fails, or the key cannot be encoded.
+pub fn generate_rsa_keypair(rng: &mut impl CryptoRngCore) -> Result<(String, String), Error> {
     use rsa::pkcs8::{EncodePrivateKey as _, EncodePublicKey as _, LineEnding};
 
-    let private = rsa::RsaPrivateKey::new(&mut rand_core::OsRng, 2048)?;
+    let key = |error: &dyn fmt::Display| Error::Key(format!("RSA key generation: {error}"));
+    let private = rsa::RsaPrivateKey::new(rng, 2048).map_err(|error| key(&error))?;
     let public = rsa::RsaPublicKey::from(&private);
     Ok((
-        private.to_pkcs8_pem(LineEnding::LF)?.to_string(),
-        public.to_public_key_pem(LineEnding::LF)?,
+        private
+            .to_pkcs8_pem(LineEnding::LF)
+            .map_err(|error| key(&error))?
+            .to_string(),
+        public
+            .to_public_key_pem(LineEnding::LF)
+            .map_err(|error| key(&error))?,
     ))
 }
 
@@ -424,9 +467,12 @@ mod tests {
     use rsa::pkcs1::EncodeRsaPrivateKey as _;
     use rsa::pkcs8::EncodePublicKey as _;
 
+    /// When the tests sign: any time will do, as nothing here checks it.
+    const NOW: i64 = 1_759_000_000;
+
     #[test]
     fn a_generated_key_pair_signs_and_verifies() {
-        let (private, public) = generate_rsa_keypair().unwrap();
+        let (private, public) = generate_rsa_keypair(&mut rand::rngs::OsRng).unwrap();
         assert!(private.starts_with("-----BEGIN PRIVATE KEY-----"));
         assert!(public.starts_with("-----BEGIN PUBLIC KEY-----"));
         let signed = sign_request(
@@ -436,6 +482,7 @@ mod tests {
             "https://b.example/users/b#main-key",
             &private,
             &[],
+            NOW,
         )
         .unwrap();
         let headers = [
@@ -452,7 +499,7 @@ mod tests {
         use rsa::pkcs1::{DecodeRsaPrivateKey as _, EncodeRsaPublicKey as _};
 
         let private = rsa::RsaPrivateKey::from_pkcs1_pem(include_str!(
-            "../../tests/fixtures/rfc9421_test_key_rsa.pem"
+            "../tests/fixtures/rfc9421_test_key_rsa.pem"
         ))
         .unwrap();
         let public = rsa::RsaPublicKey::from(&private);
@@ -504,6 +551,7 @@ mod tests {
             "https://a.test/users/alice#main-key",
             &priv_pem,
             &[],
+            NOW,
         )
         .unwrap();
 
@@ -535,6 +583,7 @@ mod tests {
             "https://a.test/users/alice#main-key",
             &priv_pem,
             &[],
+            NOW,
         )
         .unwrap();
         let headers = [
@@ -557,6 +606,7 @@ mod tests {
             "https://remote.example/users/bob",
             "https://a.test/actor#main-key",
             &priv_pem,
+            NOW,
         )
         .unwrap();
 
@@ -582,7 +632,8 @@ mod tests {
 
         for target in ["/users/bob", "/users/carol"] {
             let url = format!("https://remote.example{target}");
-            let signed = sign_get_with_key(&url, "https://a.test/actor#main-key", &key).unwrap();
+            let signed =
+                sign_get_with_key(&url, "https://a.test/actor#main-key", &key, NOW).unwrap();
             let headers = [
                 ("host", "remote.example"),
                 ("date", signed.date.as_str()),
@@ -599,6 +650,7 @@ mod tests {
             "https://a.test/actor#main-key",
             &key,
             &[],
+            NOW,
         )
         .unwrap();
         let headers = [
@@ -623,6 +675,7 @@ mod tests {
             "https://a.test/users/alice#main-key",
             &priv_pem,
             &[("content-type", "application/activity+json")],
+            NOW,
         )
         .unwrap();
 
@@ -644,6 +697,7 @@ mod tests {
             "https://remote.example/users/bob",
             "https://a.test/actor#main-key",
             &priv_pem,
+            NOW,
         )
         .unwrap();
 
@@ -671,6 +725,7 @@ mod tests {
             "https://a.test/users/alice#main-key",
             &priv_pem,
             &[],
+            NOW,
         )
         .unwrap();
 
@@ -704,6 +759,7 @@ mod tests {
             "https://a.test/users/alice#main-key",
             &priv_pem,
             &[],
+            NOW,
         )
         .unwrap();
         let headers = [

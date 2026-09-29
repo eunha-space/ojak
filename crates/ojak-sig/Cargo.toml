@@ -1,0 +1,30 @@
+[package]
+name = "ojak-sig"
+description = "HTTP signatures and object integrity proofs for ActivityPub, without I/O"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+base64.workspace = true
+bs58.workspace = true
+# Without `clock`: the time comes from the caller, and nothing here can ask
+# the system for it.
+chrono = { version = "0.4", default-features = false, features = ["alloc"] }
+ed25519-dalek.workspace = true
+ml-dsa = "0.1"
+# Without `getrandom`: randomness comes from the caller.
+rand_core = { version = "0.6", default-features = false }
+rsa.workspace = true
+serde_json_canonicalizer.workspace = true
+serde_json.workspace = true
+sfv = "0.15"
+sha2.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+chrono.workspace = true
+rand = "0.8"
+
+[lints]
+workspace = true

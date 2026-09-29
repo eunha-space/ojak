@@ -24,7 +24,7 @@
 //! itself calls out: the proof configuration always takes the document's
 //! `@context`, rather than keeping whatever the proof carried.
 
-use anyhow::{Context as _, Result, anyhow};
+use crate::{CryptoRngCore, Error};
 use ed25519_dalek::Verifier as _;
 use serde_json::{Map, Value};
 use sha2::{Digest as _, Sha256};
@@ -71,7 +71,8 @@ pub enum PublicKey {
     MlDsa44(Box<[u8]>),
 }
 
-/// Find a usable assertion-method integrity proof on `document`, if present.
+/// Find a usable assertion-method integrity proof on `document`, if present,
+/// and not expired at `now`, in seconds since the Unix epoch.
 ///
 /// Returns the proof object, its cryptosuite, and its `verificationMethod` id.
 /// The caller resolves that id to a key of the matching type and passes both
@@ -81,8 +82,9 @@ pub enum PublicKey {
 #[must_use]
 pub fn extract_integrity_proof(
     document: &Value,
+    now: i64,
 ) -> Option<(Map<String, Value>, Cryptosuite, String)> {
-    integrity_proofs(document).into_iter().next()
+    integrity_proofs(document, now).into_iter().next()
 }
 
 /// Every usable assertion-method integrity proof on `document`, in order, as
@@ -90,7 +92,10 @@ pub fn extract_integrity_proof(
 /// different suites or by different keys, and one that does not verify says
 /// nothing about the others.
 #[must_use]
-pub fn integrity_proofs(document: &Value) -> Vec<(Map<String, Value>, Cryptosuite, String)> {
+pub fn integrity_proofs(
+    document: &Value,
+    now: i64,
+) -> Vec<(Map<String, Value>, Cryptosuite, String)> {
     let candidates = match document.get("proof") {
         Some(Value::Array(arr)) => arr.clone(),
         Some(obj @ Value::Object(_)) => alloc_one(obj.clone()),
@@ -118,7 +123,7 @@ pub fn integrity_proofs(document: &Value) -> Vec<(Map<String, Value>, Cryptosuit
         // the signature, so it cannot have been added by anyone else.
         if let Some(expires) = obj.get("expires").and_then(Value::as_str) {
             match chrono::DateTime::parse_from_rfc3339(expires) {
-                Ok(deadline) if deadline < chrono::Utc::now() => continue,
+                Ok(deadline) if deadline.timestamp() < now => continue,
                 Err(_) => continue,
                 Ok(_) => {}
             }
@@ -145,16 +150,16 @@ pub fn verify_object_integrity_proof(
     document: &Value,
     proof: &Map<String, Value>,
     public_key: &PublicKey,
-) -> Result<()> {
+) -> Result<(), Error> {
     let suite = proof
         .get("cryptosuite")
         .and_then(Value::as_str)
         .and_then(Cryptosuite::from_str)
-        .ok_or_else(|| anyhow!("unsupported or missing cryptosuite"))?;
+        .ok_or_else(|| Error::Unsupported("or missing cryptosuite".into()))?;
     let proof_value = proof
         .get("proofValue")
         .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("proof missing proofValue"))?;
+        .ok_or_else(|| Error::Malformed("proof has no proofValue".into()))?;
 
     // The proof configuration is the proof as it was signed: everything the
     // proof carries except the signature itself. Rebuilding it from a fixed
@@ -171,12 +176,16 @@ pub fn verify_object_integrity_proof(
             // so a signer cannot claim a context the document never had.
             if let Some(Value::Array(proof_context)) = proof_config.get("@context").cloned() {
                 let Some(Value::Array(doc_context)) = document_context.clone() else {
-                    return Err(anyhow!("proof declares @context but the document does not"));
+                    return Err(Error::Malformed(
+                        "proof declares @context but the document does not".into(),
+                    ));
                 };
                 if doc_context.len() < proof_context.len()
                     || doc_context[..proof_context.len()] != proof_context[..]
                 {
-                    return Err(anyhow!("proof @context is not a prefix of the document's"));
+                    return Err(Error::Malformed(
+                        "proof @context is not a prefix of the document's".into(),
+                    ));
                 }
             } else {
                 proof_config.insert(
@@ -196,17 +205,16 @@ pub fn verify_object_integrity_proof(
         }
     }
 
-    let proof_canon = serde_json_canonicalizer::to_string(&Value::Object(proof_config))
-        .context("canonicalize proof config")?;
+    let proof_canon = canonical(&Value::Object(proof_config))?;
     let proof_hash = Sha256::digest(proof_canon.as_bytes());
 
-    let signature_bytes = decode_multibase(proof_value).context("decode proofValue")?;
+    let signature_bytes = decode_multibase(proof_value)?;
 
     // The document to hash is the activity with every proof form stripped.
     let mut unsecured = document
         .as_object()
         .cloned()
-        .ok_or_else(|| anyhow!("document is not a JSON object"))?;
+        .ok_or_else(|| Error::Malformed("document is not a JSON object".into()))?;
     unsecured.remove("proof");
     unsecured.remove("https://w3id.org/security#proof");
 
@@ -242,7 +250,13 @@ pub fn verify_object_integrity_proof(
             return Ok(());
         }
     }
-    Err(anyhow!("integrity proof verification failed"))
+    Err(Error::Invalid)
+}
+
+/// `value` as JCS (RFC 8785) writes it.
+fn canonical(value: &Value) -> Result<String, Error> {
+    serde_json_canonicalizer::to_string(value)
+        .map_err(|error| Error::Malformed(format!("cannot canonicalize: {error}")))
 }
 
 /// Generate an Ed25519 signing key, returned as a PKCS#8 PEM.
@@ -254,13 +268,13 @@ pub fn verify_object_integrity_proof(
 ///
 /// # Errors
 /// Returns an error if the key cannot be encoded.
-pub fn generate_ed25519_key() -> Result<String> {
+pub fn generate_ed25519_key(rng: &mut impl CryptoRngCore) -> Result<String, Error> {
     use ed25519_dalek::pkcs8::EncodePrivateKey as _;
 
-    let key = ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng);
+    let key = ed25519_dalek::SigningKey::generate(rng);
     Ok(key
         .to_pkcs8_pem(ed25519_dalek::pkcs8::spki::der::pem::LineEnding::LF)
-        .context("encode Ed25519 key as PKCS#8")?
+        .map_err(|error| Error::Key(format!("Ed25519 key as PKCS#8: {error}")))?
         .to_string())
 }
 
@@ -268,10 +282,11 @@ pub fn generate_ed25519_key() -> Result<String> {
 ///
 /// # Errors
 /// Returns an error if the PEM is not a PKCS#8 Ed25519 private key.
-pub fn parse_ed25519_key(pem: &str) -> Result<([u8; 32], [u8; 32])> {
+pub fn parse_ed25519_key(pem: &str) -> Result<([u8; 32], [u8; 32]), Error> {
     use ed25519_dalek::pkcs8::DecodePrivateKey as _;
 
-    let key = ed25519_dalek::SigningKey::from_pkcs8_pem(pem).context("parse Ed25519 PKCS#8 PEM")?;
+    let key = ed25519_dalek::SigningKey::from_pkcs8_pem(pem)
+        .map_err(|_| Error::Key("not an Ed25519 private key in PKCS#8 PEM".into()))?;
     Ok((key.to_bytes(), key.verifying_key().to_bytes()))
 }
 
@@ -285,8 +300,8 @@ pub fn ed25519_public_key(seed: &[u8; 32]) -> [u8; 32] {
 
 /// A fresh raw 32-byte Ed25519 seed.
 #[must_use]
-pub fn generate_ed25519_seed() -> [u8; 32] {
-    ed25519_dalek::SigningKey::generate(&mut rand_core::OsRng).to_bytes()
+pub fn generate_ed25519_seed(rng: &mut impl CryptoRngCore) -> [u8; 32] {
+    ed25519_dalek::SigningKey::generate(rng).to_bytes()
 }
 
 /// Attach an `eddsa-jcs-2022` integrity proof to `document`.
@@ -305,6 +320,8 @@ pub fn generate_ed25519_seed() -> [u8; 32] {
 /// * `verification_method` – the id of the key, as published in the actor's
 ///   `assertionMethod`
 /// * `signing_key`         – the raw 32-byte Ed25519 seed
+/// * `now`                 – the time, in seconds since the Unix epoch, which
+///   becomes the proof's `created`
 ///
 /// # Errors
 /// Returns an error if the document is not an object or cannot be canonicalized.
@@ -312,17 +329,21 @@ pub fn sign_object_integrity_proof(
     document: &Value,
     verification_method: &str,
     signing_key: &[u8; 32],
-) -> Result<Value> {
+    now: i64,
+) -> Result<Value, Error> {
     use ed25519_dalek::Signer as _;
 
     let mut unsecured = document
         .as_object()
         .cloned()
-        .ok_or_else(|| anyhow!("document is not a JSON object"))?;
+        .ok_or_else(|| Error::Malformed("document is not a JSON object".into()))?;
     unsecured.remove("proof");
     unsecured.remove("https://w3id.org/security#proof");
 
-    let created = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let created = chrono::DateTime::from_timestamp(now, 0)
+        .ok_or_else(|| Error::Malformed(format!("{now} is not a time")))?
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
 
     // The configuration carries the document's `@context`, as the verifier
     // reconstructs it. Field order is irrelevant: JCS sorts keys.
@@ -343,10 +364,8 @@ pub fn sign_object_integrity_proof(
     proof_config.insert("proofPurpose".to_string(), Value::from("assertionMethod"));
     proof_config.insert("created".to_string(), Value::from(created));
 
-    let proof_canon = serde_json_canonicalizer::to_string(&Value::Object(proof_config.clone()))
-        .context("canonicalize proof config")?;
-    let doc_canon = serde_json_canonicalizer::to_string(&Value::Object(unsecured.clone()))
-        .context("canonicalize document")?;
+    let proof_canon = canonical(&Value::Object(proof_config.clone()))?;
+    let doc_canon = canonical(&Value::Object(unsecured.clone()))?;
 
     let mut hash_data = [0u8; 64];
     hash_data[..32].copy_from_slice(&Sha256::digest(proof_canon.as_bytes()));
@@ -384,18 +403,18 @@ fn verify_signature(
     public_key: &PublicKey,
     message: &[u8],
     signature: &[u8],
-) -> Result<bool> {
+) -> Result<bool, Error> {
     match (suite, public_key) {
         (Cryptosuite::EddsaJcs2022, PublicKey::Ed25519(key)) => {
             let signature = ed25519_dalek::Signature::from_slice(signature)
-                .map_err(|e| anyhow!("invalid Ed25519 signature: {e}"))?;
+                .map_err(|e| Error::Malformed(format!("Ed25519 signature: {e}")))?;
             let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(key)
-                .map_err(|e| anyhow!("invalid Ed25519 public key: {e}"))?;
+                .map_err(|e| Error::Key(format!("Ed25519 public key: {e}")))?;
             Ok(verifying_key.verify(message, &signature).is_ok())
         }
         (Cryptosuite::Mldsa44Jcs2024, PublicKey::MlDsa44(key)) => {
             let encoded = ml_dsa::EncodedVerifyingKey::<ml_dsa::MlDsa44>::try_from(&key[..])
-                .map_err(|_| anyhow!("ML-DSA-44 key must be {} bytes", key.len()))?;
+                .map_err(|_| Error::Key(format!("an ML-DSA-44 key of {} bytes", key.len())))?;
             let verifying_key = ml_dsa::VerifyingKey::<ml_dsa::MlDsa44>::decode(&encoded);
             let Ok(encoded_signature) =
                 ml_dsa::EncodedSignature::<ml_dsa::MlDsa44>::try_from(signature)
@@ -409,10 +428,10 @@ fn verify_signature(
             // Empty context string, as the cryptosuite specifies.
             Ok(verifying_key.verify_with_context(message, b"", &signature))
         }
-        (suite, _) => Err(anyhow!(
+        (suite, _) => Err(Error::WrongKey(format!(
             "key type does not match cryptosuite {}",
             suite.as_str()
-        )),
+        ))),
     }
 }
 
@@ -421,13 +440,17 @@ fn verify_signature(
 /// # Errors
 /// Returns an error if the value is not a base58btc multibase string wrapping an
 /// `ed25519-pub` multicodec key.
-pub fn decode_ed25519_multikey(multibase: &str) -> Result<[u8; 32]> {
-    let bytes = decode_multibase(multibase).context("decode multikey")?;
+pub fn decode_ed25519_multikey(multibase: &str) -> Result<[u8; 32], Error> {
+    let bytes = decode_multibase(multibase)?;
     let key = bytes
         .strip_prefix(&ED25519_PUB_MULTICODEC)
-        .ok_or_else(|| anyhow!("multikey is not ed25519-pub"))?;
+        .ok_or_else(|| Error::Key("multikey is not ed25519-pub".into()))?;
+    ed25519_bytes(key)
+}
+
+fn ed25519_bytes(key: &[u8]) -> Result<[u8; 32], Error> {
     key.try_into()
-        .map_err(|_| anyhow!("ed25519 key must be 32 bytes, got {}", key.len()))
+        .map_err(|_| Error::Key(format!("an Ed25519 key of {} bytes", key.len())))
 }
 
 /// Decode a Multikey `publicKeyMultibase` value into an ML-DSA-44 public key.
@@ -435,11 +458,11 @@ pub fn decode_ed25519_multikey(multibase: &str) -> Result<[u8; 32]> {
 /// # Errors
 /// Returns an error if the value is not a base58btc multibase string wrapping
 /// an `mldsa-44-pub` multicodec key.
-pub fn decode_mldsa44_multikey(multibase: &str) -> Result<Vec<u8>> {
-    let bytes = decode_multibase(multibase).context("decode multikey")?;
+pub fn decode_mldsa44_multikey(multibase: &str) -> Result<Vec<u8>, Error> {
+    let bytes = decode_multibase(multibase)?;
     let key = bytes
         .strip_prefix(&MLDSA44_PUB_MULTICODEC)
-        .ok_or_else(|| anyhow!("multikey is not mldsa-44-pub"))?;
+        .ok_or_else(|| Error::Key("multikey is not mldsa-44-pub".into()))?;
     Ok(key.to_vec())
 }
 
@@ -448,18 +471,15 @@ pub fn decode_mldsa44_multikey(multibase: &str) -> Result<Vec<u8>> {
 /// # Errors
 /// Returns an error if the value is not a base58btc multibase string wrapping a
 /// key type this module can verify with.
-pub fn decode_multikey(multibase: &str) -> Result<PublicKey> {
-    let bytes = decode_multibase(multibase).context("decode multikey")?;
+pub fn decode_multikey(multibase: &str) -> Result<PublicKey, Error> {
+    let bytes = decode_multibase(multibase)?;
     if let Some(key) = bytes.strip_prefix(&ED25519_PUB_MULTICODEC) {
-        let key: [u8; 32] = key
-            .try_into()
-            .map_err(|_| anyhow!("ed25519 key must be 32 bytes, got {}", key.len()))?;
-        return Ok(PublicKey::Ed25519(Box::new(key)));
+        return Ok(PublicKey::Ed25519(Box::new(ed25519_bytes(key)?)));
     }
     if let Some(key) = bytes.strip_prefix(&MLDSA44_PUB_MULTICODEC) {
         return Ok(PublicKey::MlDsa44(key.to_vec().into_boxed_slice()));
     }
-    Err(anyhow!("unsupported multikey type"))
+    Err(Error::Unsupported("multikey type".into()))
 }
 
 /// Decode a multibase value into bytes.
@@ -468,25 +488,29 @@ pub fn decode_multikey(multibase: &str) -> Result<PublicKey> {
 /// corner of the fediverse: `z` (base58btc), which Fedify and Mastodon write,
 /// and `u` (base64url, unpadded), which the W3C quantum-resistant cryptosuite
 /// examples use.
-fn decode_multibase(value: &str) -> Result<Vec<u8>> {
+fn decode_multibase(value: &str) -> Result<Vec<u8>, Error> {
     let mut chars = value.chars();
     match chars.next() {
         Some('z') => bs58::decode(chars.as_str())
             .into_vec()
-            .map_err(|e| anyhow!("base58btc decode: {e}")),
+            .map_err(|e| Error::Malformed(format!("base58btc: {e}"))),
         Some('u') => base64::Engine::decode(
             &base64::engine::general_purpose::URL_SAFE_NO_PAD,
             chars.as_str(),
         )
-        .map_err(|e| anyhow!("base64url decode: {e}")),
-        Some(other) => Err(anyhow!("unsupported multibase encoding {other:?}")),
-        None => Err(anyhow!("empty multibase value")),
+        .map_err(|e| Error::Malformed(format!("base64url: {e}"))),
+        Some(other) => Err(Error::Unsupported(format!("multibase encoding {other:?}"))),
+        None => Err(Error::Malformed("empty multibase value".into())),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// When the tests read and sign proofs: after the W3C vectors were
+    /// made, and before the far expiry `ignores_an_expired_proof` sets.
+    const NOW: i64 = 1_759_000_000;
 
     /// FEP-8b32's own test vector (fep-8b32.feature): a proof that restates
     /// the document's `@context`, over a document with decimals, which JCS
@@ -526,7 +550,7 @@ mod tests {
             }
         });
         let key = decode_multikey("z6MkrJVnaZkeFzdQyMZu1cgjg7k1pZZ6pvBQ7XJPt4swbTQ2").unwrap();
-        let (proof, suite, method) = extract_integrity_proof(&document).unwrap();
+        let (proof, suite, method) = extract_integrity_proof(&document, NOW).unwrap();
         assert_eq!(suite, Cryptosuite::EddsaJcs2022);
         assert_eq!(method, "https://server.example/users/alice#ed25519-key");
         verify_object_integrity_proof(&document, &proof, &key).unwrap();
@@ -616,7 +640,7 @@ mod tests {
     #[test]
     fn verifies_w3c_eddsa_jcs_2022_vector() {
         let doc = w3c_signed_credential();
-        let (proof, suite, vm) = extract_integrity_proof(&doc).expect("proof present");
+        let (proof, suite, vm) = extract_integrity_proof(&doc, NOW).expect("proof present");
         assert_eq!(suite, Cryptosuite::EddsaJcs2022);
         assert!(vm.starts_with("did:key:z6MkrJVnaZkeFzdQyMZu1cgjg7k1pZZ6pvBQ7XJPt4swbTQ2"));
 
@@ -631,7 +655,7 @@ mod tests {
     fn rejects_tampered_document() {
         let mut doc = w3c_signed_credential();
         doc["issuer"] = serde_json::json!("https://vc.example/issuers/evil");
-        let (proof, _, _) = extract_integrity_proof(&doc).expect("proof present");
+        let (proof, _, _) = extract_integrity_proof(&doc, NOW).expect("proof present");
         let key = decode_multikey("z6MkrJVnaZkeFzdQyMZu1cgjg7k1pZZ6pvBQ7XJPt4swbTQ2")
             .expect("decode multikey");
         assert!(verify_object_integrity_proof(&doc, &proof, &key).is_err());
@@ -645,12 +669,11 @@ mod tests {
     /// ML-DSA-44 verification itself.
     #[test]
     fn verifies_w3c_mldsa44_jcs_2024_vector() {
-        let doc: Value = serde_json::from_str(include_str!(
-            "../../tests/fixtures/w3c_mldsa44_jcs_2024.json"
-        ))
-        .expect("parse vector");
+        let doc: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/w3c_mldsa44_jcs_2024.json"))
+                .expect("parse vector");
 
-        let (proof, suite, vm) = extract_integrity_proof(&doc).expect("proof present");
+        let (proof, suite, vm) = extract_integrity_proof(&doc, NOW).expect("proof present");
         assert_eq!(suite, Cryptosuite::Mldsa44Jcs2024);
 
         // did:key:<multibase>#<multibase> — the key is the method-specific id.
@@ -669,13 +692,12 @@ mod tests {
 
     #[test]
     fn rejects_a_tampered_mldsa44_document() {
-        let mut doc: Value = serde_json::from_str(include_str!(
-            "../../tests/fixtures/w3c_mldsa44_jcs_2024.json"
-        ))
-        .expect("parse vector");
+        let mut doc: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/w3c_mldsa44_jcs_2024.json"))
+                .expect("parse vector");
         doc["issuer"] = serde_json::json!("did:example:evil");
 
-        let (proof, _, vm) = extract_integrity_proof(&doc).expect("proof present");
+        let (proof, _, vm) = extract_integrity_proof(&doc, NOW).expect("proof present");
         let multibase = vm
             .strip_prefix("did:key:")
             .and_then(|rest| rest.split('#').next())
@@ -689,15 +711,14 @@ mod tests {
     /// rather than a verification failure to retry.
     #[test]
     fn refuses_a_key_of_the_wrong_type() {
-        let doc: Value = serde_json::from_str(include_str!(
-            "../../tests/fixtures/w3c_mldsa44_jcs_2024.json"
-        ))
-        .expect("parse vector");
-        let (proof, _, _) = extract_integrity_proof(&doc).expect("proof present");
+        let doc: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/w3c_mldsa44_jcs_2024.json"))
+                .expect("parse vector");
+        let (proof, _, _) = extract_integrity_proof(&doc, NOW).expect("proof present");
 
         let ed25519 = decode_multikey("z6MkrJVnaZkeFzdQyMZu1cgjg7k1pZZ6pvBQ7XJPt4swbTQ2").unwrap();
         let err = verify_object_integrity_proof(&doc, &proof, &ed25519).unwrap_err();
-        assert!(err.to_string().contains("key type"), "{err}");
+        assert!(matches!(err, Error::WrongKey(_)), "{err}");
     }
 
     #[test]
@@ -714,12 +735,12 @@ mod tests {
         let mut doc = w3c_signed_credential();
         doc["proof"]["expires"] = serde_json::json!("2020-01-01T00:00:00Z");
         assert!(
-            extract_integrity_proof(&doc).is_none(),
+            extract_integrity_proof(&doc, NOW).is_none(),
             "an expired proof must not be offered for verification"
         );
 
         doc["proof"]["expires"] = serde_json::json!("2999-01-01T00:00:00Z");
-        assert!(extract_integrity_proof(&doc).is_some());
+        assert!(extract_integrity_proof(&doc, NOW).is_some());
     }
 
     /// A proof this module produces is one it accepts. Round-tripping is weak
@@ -742,9 +763,10 @@ mod tests {
         });
 
         let vm = "https://local.example/users/alice#ed25519-key";
-        let signed = sign_object_integrity_proof(&document, vm, &seed).unwrap();
+        let signed = sign_object_integrity_proof(&document, vm, &seed, NOW).unwrap();
 
-        let (proof, suite, found_vm) = extract_integrity_proof(&signed).expect("proof attached");
+        let (proof, suite, found_vm) =
+            extract_integrity_proof(&signed, NOW).expect("proof attached");
         assert_eq!(suite, Cryptosuite::EddsaJcs2022);
         assert_eq!(found_vm, vm);
 
@@ -768,12 +790,16 @@ mod tests {
             "type": "Create",
             "actor": "https://local.example/users/alice",
         });
-        let mut signed =
-            sign_object_integrity_proof(&document, "https://local.example/users/alice#k", &seed)
-                .unwrap();
+        let mut signed = sign_object_integrity_proof(
+            &document,
+            "https://local.example/users/alice#k",
+            &seed,
+            NOW,
+        )
+        .unwrap();
         signed["actor"] = serde_json::json!("https://local.example/users/mallory");
 
-        let (proof, _, _) = extract_integrity_proof(&signed).unwrap();
+        let (proof, _, _) = extract_integrity_proof(&signed, NOW).unwrap();
         let key = decode_multikey(&multikey).unwrap();
         assert!(verify_object_integrity_proof(&signed, &proof, &key).is_err());
     }
@@ -784,7 +810,7 @@ mod tests {
     /// a stored private key from — and parses back to the bytes that sign.
     #[test]
     fn generates_a_pem_key_that_parses_back() {
-        let pem = generate_ed25519_key().unwrap();
+        let pem = generate_ed25519_key(&mut rand::rngs::OsRng).unwrap();
         assert!(pem.starts_with("-----BEGIN PRIVATE KEY-----"));
 
         let (seed, public) = parse_ed25519_key(&pem).unwrap();
@@ -801,12 +827,17 @@ mod tests {
             "@context": "https://www.w3.org/ns/activitystreams",
             "type": "Create",
         });
-        let signed = sign_object_integrity_proof(&document, "https://x.test/a#k", &seed).unwrap();
-        let (proof, _, _) = extract_integrity_proof(&signed).unwrap();
+        let signed =
+            sign_object_integrity_proof(&document, "https://x.test/a#k", &seed, NOW).unwrap();
+        let (proof, _, _) = extract_integrity_proof(&signed, NOW).unwrap();
         let key = decode_multikey(&encode_ed25519_multikey(&public)).unwrap();
         verify_object_integrity_proof(&signed, &proof, &key).unwrap();
 
-        assert_ne!(pem, generate_ed25519_key().unwrap(), "keys must differ");
+        assert_ne!(
+            pem,
+            generate_ed25519_key(&mut rand::rngs::OsRng).unwrap(),
+            "keys must differ"
+        );
     }
 
     #[test]
@@ -825,6 +856,6 @@ mod tests {
     #[test]
     fn missing_proof_is_none() {
         let doc = serde_json::json!({ "type": "Note", "content": "hi" });
-        assert!(extract_integrity_proof(&doc).is_none());
+        assert!(extract_integrity_proof(&doc, NOW).is_none());
     }
 }

@@ -34,9 +34,9 @@ main architectural rule has it:
 > a specific platform.
 
 What does no I/O is kept apart from what does.  The vocabulary and JSON-LD
-crates are `no_std`, and signatures and proofs take bytes and keys rather than
-fetch them, so that the parts that decide can one day run where a full server
-cannot.
+crates are `no_std`, and signatures and proofs, in a crate of their own, take
+bytes, keys and the time rather than fetch or read them, so that the parts that
+decide can one day run where a full server cannot.
 
 The application owns its data: it says where its actors, objects and
 collections live and supplies them from its own storage, and Ojak does the

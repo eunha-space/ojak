@@ -1199,24 +1199,17 @@ dependencies = [
  "anyhow",
  "axum",
  "base64",
- "bs58",
  "chrono",
- "ed25519-dalek",
  "futures-util",
  "http",
  "ipnet",
- "ml-dsa",
  "ojak-jsonld",
+ "ojak-sig",
  "ojak-vocab",
  "percent-encoding",
- "rand 0.8.6",
  "rand_core 0.6.4",
  "reqwest",
- "rsa",
  "serde_json",
- "serde_json_canonicalizer",
- "sfv",
- "sha2",
  "tokio",
  "url",
 ]
@@ -1248,6 +1241,25 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+]
+
+[[package]]
+name = "ojak-sig"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "bs58",
+ "chrono",
+ "ed25519-dalek",
+ "ml-dsa",
+ "rand 0.8.6",
+ "rand_core 0.6.4",
+ "rsa",
+ "serde_json",
+ "serde_json_canonicalizer",
+ "sfv",
+ "sha2",
+ "url",
 ]
 
 [[package]]

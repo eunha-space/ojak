@@ -320,9 +320,13 @@ impl Fetcher {
         let mut headers = headers(accept)?;
         match scheme {
             Scheme::DraftCavage => {
-                let signed =
-                    signature::sign_get_with_key(url.as_str(), &key.key_id, &key.private_key)
-                        .map_err(|error| FetchError::Signing(error.to_string()))?;
+                let signed = signature::sign_get_with_key(
+                    url.as_str(),
+                    &key.key_id,
+                    &key.private_key,
+                    chrono::Utc::now().timestamp(),
+                )
+                .map_err(|error| FetchError::Signing(error.to_string()))?;
                 insert(&mut headers, "date", &signed.date)?;
                 insert(&mut headers, "signature", &signed.signature)?;
             }
@@ -333,6 +337,7 @@ impl Fetcher {
                     None,
                     &key.key_id,
                     &rfc9421::SigningKey::Rsa(&key.private_key),
+                    chrono::Utc::now().timestamp(),
                 )
                 .map_err(|error| FetchError::Signing(error.to_string()))?;
                 insert(&mut headers, "signature-input", &signed.signature_input)?;

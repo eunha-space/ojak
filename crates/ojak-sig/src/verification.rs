@@ -21,10 +21,11 @@
 //! ago, could be replayed here. `signature::verify_request` checks a digest
 //! only when one happens to be sent, and never the time or the host.
 
-use crate::sig::digest::{content_digest_matches, digest_matches};
-use crate::sig::{rfc9421, signature};
+use crate::digest::{content_digest_matches, digest_matches};
+use crate::integrity::{self, PublicKey};
+use crate::{rfc9421, signature};
+use core::fmt;
 use serde_json::Value;
-use std::fmt;
 
 /// A request as it arrived.
 #[derive(Clone, Copy, Debug)]
@@ -139,7 +140,7 @@ impl fmt::Display for Rejection {
     }
 }
 
-impl std::error::Error for Rejection {}
+impl core::error::Error for Rejection {}
 
 /// The key a signature is checked against.
 #[derive(Clone, Copy, Debug)]
@@ -456,9 +457,9 @@ pub fn published_key(actor: &Value, key_id: &str) -> Option<PublishedKey> {
             return None;
         }
         let multibase = method.get("publicKeyMultibase")?.as_str()?;
-        match crate::sig::integrity::decode_multikey(multibase).ok()? {
-            crate::sig::integrity::PublicKey::Ed25519(bytes) => Some(PublishedKey::Ed25519(*bytes)),
-            crate::sig::integrity::PublicKey::MlDsa44(_) => None,
+        match integrity::decode_multikey(multibase).ok()? {
+            PublicKey::Ed25519(bytes) => Some(PublishedKey::Ed25519(*bytes)),
+            PublicKey::MlDsa44(_) => None,
         }
     })
 }
