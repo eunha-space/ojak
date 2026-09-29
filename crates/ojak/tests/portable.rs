@@ -617,7 +617,9 @@ async fn a_forwarded_activity_is_taken_from_its_origin() {
     let activities = store.activities.lock().unwrap().clone();
     assert_eq!(activities[0]["object"], alice_actor.as_str());
 
-    // What bob's server does not serve is not established.
+    // What bob's server does not serve is not established: dropped, and
+    // answered 202 as Mastodon answers a relayed activity it cannot verify,
+    // since the forwarder's own signature holds.
     let unserved = follow(2, &alice_actor);
     assert_eq!(
         status_of(
@@ -626,7 +628,7 @@ async fn a_forwarded_activity_is_taken_from_its_origin() {
             signed(&alice_inbox, &forwarder_key, &unserved)
         )
         .await,
-        401
+        202
     );
 
     // Unsigned, it makes this server fetch nothing.

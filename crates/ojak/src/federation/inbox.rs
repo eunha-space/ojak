@@ -391,10 +391,20 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
                             document = established;
                             sender
                         }
+                        // Dropped, and answered 202 as Mastodon answers it:
+                        // the forwarder's own signature verified, so there is
+                        // nothing for it to retry, and a 401 had forwarders
+                        // sending the same activity dozens of times. Mastodon
+                        // accepts a delivery once its signature verifies and
+                        // drops a relayed activity it cannot verify later
+                        // (ActivityPub::ProcessActivityService). The reason
+                        // goes back in the body, for the application to log.
                         Err(unfetched) => {
                             return status(
-                                StatusCode::UNAUTHORIZED,
-                                &format!("forwarded; proof: {unproven}; origin: {unfetched}"),
+                                StatusCode::ACCEPTED,
+                                &format!(
+                                    "dropped: forwarded; proof: {unproven}; origin: {unfetched}"
+                                ),
                             );
                         }
                     }

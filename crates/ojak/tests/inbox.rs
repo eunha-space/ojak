@@ -321,7 +321,9 @@ async fn what_is_not_authenticated_reaches_no_listener() {
     );
 
     // Signed by bob, claiming an actor on another server: taken as
-    // forwarded, and refused when that server does not serve it.
+    // forwarded, and dropped when that server does not serve it — answered
+    // 202, as Mastodon answers a relayed activity it cannot verify, since
+    // bob's own signature holds and a retry would change nothing.
     let forged = json!({
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": "https://elsewhere.test/follows/1",
@@ -336,7 +338,7 @@ async fn what_is_not_authenticated_reaches_no_listener() {
             post("/ap/inbox", &key_id, &forged, &forged)
         )
         .await,
-        401
+        202
     );
 
     // An unverified Delete is accepted and dropped, and the hook sees it.

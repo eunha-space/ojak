@@ -81,10 +81,17 @@ which is answered 202 and dropped: the usual reason a `Delete` does not
 verify is that its actor is gone, key and all, and the server will retry it
 until told otherwise. An `on_unverified` hook sees each one, which is where
 an application removes an actor whose deletion it could not verify but whose
-document is now gone. Two cases are stricter, and answer 401 to a `Delete`
-too: a portable activity whose proof fails, which the hook sees, and a
-forwarded activity that could be established neither by proof nor from its
-origin, which it does not.
+document is now gone. A portable activity whose proof fails is stricter, and
+is answered 401 even as a `Delete`; the hook sees it.
+
+A forwarded activity that could be established neither by proof nor from its
+origin is answered 202 and dropped, whatever its type, and the hook does not
+see it. The forwarder's own signature verified, so a retry would change
+nothing, and a 401 had forwarders resending the same activity dozens of
+times. This is Mastodon's answer too: it accepts a delivery once the
+request's signature verifies, and drops a relayed activity it cannot verify
+afterwards (`ActivityPub::ProcessActivityService` in 4.7.1). The reason it
+was dropped is the response body, for the application to log.
 
 ### Nothing embedded is trusted that the sender cannot vouch for
 
