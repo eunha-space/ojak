@@ -91,8 +91,8 @@ pub struct Signature {
     /// What it covers: header names in lower case for draft-cavage, component
     /// names for RFC 9421.
     pub covered: Vec<String>,
-    /// When it was made, from `created` or the `Date` header, as seconds since
-    /// the Unix epoch.
+    /// When it was made, from a signed `created` or the `Date` header, as
+    /// seconds since the Unix epoch.
     pub created: Option<i64>,
     signature: String,
     signature_input: Option<String>,
@@ -183,13 +183,19 @@ pub fn parse(request: &Request<'_>) -> Result<Signature, Rejection> {
         .split_whitespace()
         .map(str::to_ascii_lowercase)
         .collect();
-    let created = match params.get("created") {
-        Some(created) => Some(
-            created
+    // The `created` parameter is signed only when `(created)` is covered;
+    // otherwise anyone relaying a captured request could set it to now, and
+    // the time the signature vouches for is the `Date` header's.
+    let created = if covered.iter().any(|name| name == "(created)") {
+        Some(
+            params
+                .get("created")
+                .ok_or_else(|| Rejection::Malformed("(created) covered but not given".into()))?
                 .parse()
                 .map_err(|_| Rejection::Malformed("unreadable created".into()))?,
-        ),
-        None => request.header("date").and_then(http_date),
+        )
+    } else {
+        request.header("date").and_then(http_date)
     };
     Ok(Signature {
         scheme: Scheme::DraftCavage,

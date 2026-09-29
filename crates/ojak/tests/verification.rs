@@ -190,6 +190,30 @@ fn an_old_or_future_signature_is_refused() {
 }
 
 #[test]
+fn an_unsigned_created_does_not_make_an_old_signature_fresh() {
+    // A request captured two hours after it was signed over `date`, with a
+    // `created` of the moment it is replayed added to its signature. The
+    // signature still verifies, since `created` is not what it signed.
+    let mut headers = cavage(BODY);
+    let later = now() + 7200;
+    let signature = headers
+        .iter()
+        .find(|(name, _)| name == "signature")
+        .unwrap()
+        .1
+        .clone();
+    replace(
+        &mut headers,
+        "signature",
+        &format!("{signature},created={later}"),
+    );
+    assert!(matches!(
+        accept(&headers, BODY, later),
+        Err(Rejection::Stale { .. })
+    ));
+}
+
+#[test]
 fn a_request_signed_for_another_host_is_refused() {
     for mut headers in [cavage(BODY), rfc9421(BODY)] {
         replace(&mut headers, "host", "other.example");
