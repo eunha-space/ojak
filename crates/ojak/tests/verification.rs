@@ -301,23 +301,38 @@ fn a_key_belongs_to_the_actor_it_is_published_by() {
     assert_eq!(published_key_pem(&several, KEY_ID).as_deref(), Some("NEW"));
 }
 
-/// Headers of a POST signed with draft-cavage over `(created)` and
-/// `(expires)` rather than `date`, as hs2019 signers do.
-fn cavage_created(created: i64, expires: i64) -> Vec<(String, String)> {
+/// The base64 draft-cavage signature over `signing_string`.
+fn sign_cavage(signing_string: &str) -> String {
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD;
     use rsa::pkcs1::DecodeRsaPrivateKey as _;
     use rsa::signature::{SignatureEncoding as _, Signer as _};
-    use sha2::Digest as _;
 
     let key = rsa::pkcs1v15::SigningKey::<sha2::Sha256>::new(
         rsa::RsaPrivateKey::from_pkcs1_pem(PRIVATE_KEY).unwrap(),
     );
-    let digest = format!("SHA-256={}", STANDARD.encode(sha2::Sha256::digest(BODY)));
-    let signing_string = format!(
+    STANDARD.encode(key.sign(signing_string.as_bytes()).to_bytes())
+}
+
+/// The body's digest in `algorithm`, base64.
+fn digest_of(body: &[u8], algorithm: &str) -> String {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
+    use sha2::Digest as _;
+
+    STANDARD.encode(match algorithm {
+        "sha-256" => sha2::Sha256::digest(body).to_vec(),
+        _ => sha2::Sha512::digest(body).to_vec(),
+    })
+}
+
+/// Headers of a POST signed with draft-cavage over `(created)` and
+/// `(expires)` rather than `date`, as hs2019 signers do.
+fn cavage_created(created: i64, expires: i64) -> Vec<(String, String)> {
+    let digest = format!("SHA-256={}", digest_of(BODY, "sha-256"));
+    let signed = sign_cavage(&format!(
         "(request-target): post /users/alice/inbox\nhost: {HOST}\n(created): {created}\n(expires): {expires}\ndigest: {digest}"
-    );
-    let signed = STANDARD.encode(key.sign(signing_string.as_bytes()).to_bytes());
+    ));
     vec![
         ("host".into(), HOST.into()),
         ("digest".into(), digest),
@@ -328,6 +343,37 @@ fn cavage_created(created: i64, expires: i64) -> Vec<(String, String)> {
             ),
         ),
     ]
+}
+
+#[test]
+fn a_digest_may_list_sha_512_beside_sha_256() {
+    let date = chrono::Utc::now()
+        .format("%a, %d %b %Y %H:%M:%S GMT")
+        .to_string();
+    let digest = format!(
+        "SHA-256={}, SHA-512={}",
+        digest_of(BODY, "sha-256"),
+        digest_of(BODY, "sha-512")
+    );
+    let signed = sign_cavage(&format!(
+        "(request-target): post /users/alice/inbox\nhost: {HOST}\ndate: {date}\ndigest: {digest}"
+    ));
+    let headers = vec![
+        ("host".into(), HOST.into()),
+        ("date".into(), date),
+        ("digest".into(), digest),
+        (
+            "signature".into(),
+            format!(
+                r#"keyId="{KEY_ID}",algorithm="rsa-sha256",headers="(request-target) host date digest",signature="{signed}""#
+            ),
+        ),
+    ];
+    assert_eq!(accept(&headers, BODY, now()), Ok(Scheme::DraftCavage));
+    assert_eq!(
+        accept(&headers, b"swapped", now()),
+        Err(Rejection::DigestMismatch)
+    );
 }
 
 #[test]

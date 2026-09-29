@@ -263,13 +263,16 @@ pub fn verify_request(
     headers: &[(&str, &str)],
     key: &VerifyingKey<'_>,
 ) -> anyhow::Result<()> {
-    let (label, covered, params) = parse_signature_input(signature_input)?;
-    let sig_b64 = parse_signature(signature, &label)?;
+    let input = Input::parse(signature_input)?;
+    let sig_b64 = BASE64.encode(signature_bytes(signature, &input.label)?);
+    let Input {
+        covered, params, ..
+    } = &input;
 
     // A stated algorithm must be one this module knows *and* the one the key
     // can check: a signature claiming `ed25519` must not be waved through an
     // RSA verification, or vice versa.
-    if let Some(alg) = param(&params, "alg") {
+    if let Some(alg) = input.string("alg") {
         let stated =
             Algorithm::from_str(&alg).ok_or_else(|| anyhow!("unsupported algorithm {alg:?}"))?;
         anyhow::ensure!(
@@ -282,14 +285,18 @@ pub fn verify_request(
 
     let url = url::Url::parse(target_uri).context("invalid target URI")?;
     let mut components = Vec::with_capacity(covered.len());
-    for name in &covered {
+    for name in covered {
         let value = match name.as_str() {
             "@method" => method.to_uppercase(),
             "@target-uri" => target_uri.to_string(),
-            "@authority" => url
-                .host_str()
-                .context("target URI has no authority")?
-                .to_string(),
+            // The host, and the port when it is not the scheme's default.
+            "@authority" => {
+                let host = url.host_str().context("target URI has no authority")?;
+                match url.port() {
+                    Some(port) => format!("{host}:{port}"),
+                    None => host.to_string(),
+                }
+            }
             "@path" => url.path().to_string(),
             "@scheme" => url.scheme().to_string(),
             "@query" => format!("?{}", url.query().unwrap_or("")),
@@ -301,7 +308,7 @@ pub fn verify_request(
                 let sent =
                     content_digest.context("signature covers content-digest, but none was sent")?;
                 anyhow::ensure!(
-                    sent == crate::sig::rfc9421::content_digest(body),
+                    crate::sig::digest::content_digest_matches(sent, body),
                     "content-digest does not match the body"
                 );
                 sent.to_string()
@@ -325,24 +332,22 @@ pub fn verify_request(
         components.push((name.clone(), value));
     }
 
-    let base = signature_base(&components, &params);
+    let base = signature_base(&components, params);
     key.verify(base.as_bytes(), &sig_b64)
 }
 
 /// The `keyid` parameter of a `Signature-Input`: the URI identifying the key
 /// that signed, which the verifier resolves to a public key.
 pub fn key_id(signature_input: &str) -> Option<String> {
-    let (_, _, params) = parse_signature_input(signature_input).ok()?;
-    param(&params, "keyid")
+    Input::parse(signature_input).ok()?.string("keyid")
 }
 
-/// The components a `Signature-Input` claims to cover, lower-cased.
+/// The components a `Signature-Input` claims to cover.
 ///
 /// Callers check that a signature covers what their protocol requires before
 /// spending anything on verifying it.
 pub fn covered_components(signature_input: &str) -> Option<Vec<String>> {
-    let (_, covered, _) = parse_signature_input(signature_input).ok()?;
-    Some(covered)
+    Some(Input::parse(signature_input).ok()?.covered)
 }
 
 /// The `created` parameter of a `Signature-Input`, as a Unix timestamp.
@@ -350,72 +355,97 @@ pub fn covered_components(signature_input: &str) -> Option<Vec<String>> {
 /// Callers bound a signature's age with it; RFC 9421 leaves the policy to the
 /// application.
 pub fn created_at(signature_input: &str) -> Option<i64> {
-    let (_, _, params) = parse_signature_input(signature_input).ok()?;
-    param(&params, "created")?.parse().ok()
+    Input::parse(signature_input).ok()?.integer("created")
 }
 
 /// The `expires` parameter of a `Signature-Input`, as a Unix timestamp.
 pub fn expires_at(signature_input: &str) -> Option<i64> {
-    let (_, _, params) = parse_signature_input(signature_input).ok()?;
-    param(&params, "expires")?.parse().ok()
+    Input::parse(signature_input).ok()?.integer("expires")
 }
 
-/// Split `label=("a" "b");created=…` into its label, covered components, and
-/// the parameter string exactly as received — the signature covers the latter
-/// byte for byte, so it must not be re-serialised.
-fn parse_signature_input(header: &str) -> anyhow::Result<(String, Vec<String>, String)> {
-    let (label, rest) = header
-        .split_once('=')
-        .context("Signature-Input has no label")?;
-    let rest = rest.trim();
-    anyhow::ensure!(
-        rest.starts_with('('),
-        "Signature-Input does not start with a component list"
-    );
-    let close = rest.find(')').context("unterminated component list")?;
-
-    let covered = rest[1..close]
-        .split_whitespace()
-        .map(|c| c.trim_matches('"').to_ascii_lowercase())
-        .collect();
-
-    Ok((label.trim().to_string(), covered, rest.to_string()))
+/// The signature a `Signature-Input` describes, read as the structured-field
+/// dictionary it is (RFC 8941). A message may carry several signatures, as
+/// when a proxy adds its own beside the sender's; the first is the one read,
+/// and its label is where its value is found in `Signature`.
+struct Input {
+    label: String,
+    /// The covered components, in order.
+    covered: Vec<String>,
+    /// The `@signature-params` line: the component list and its parameters,
+    /// serialized as RFC 8941 serializes them, which is what the signer
+    /// signed however the field was spaced on the wire.
+    params: String,
+    parameters: sfv::Parameters,
 }
 
-/// The base64 signature published under `label` in a `Signature` field.
-fn parse_signature(header: &str, label: &str) -> anyhow::Result<String> {
-    for entry in header.split(',') {
-        let entry = entry.trim();
-        let Some((entry_label, value)) = entry.split_once('=') else {
-            continue;
+impl Input {
+    fn parse(header: &str) -> anyhow::Result<Self> {
+        let dictionary = sfv::Parser::new(header)
+            .parse::<sfv::Dictionary>()
+            .map_err(|error| anyhow!("unreadable Signature-Input: {error}"))?;
+        let (label, entry) = dictionary
+            .first()
+            .context("Signature-Input has no signature")?;
+        let sfv::ListEntry::InnerList(list) = entry else {
+            anyhow::bail!("Signature-Input is not a component list");
         };
-        if entry_label.trim() != label {
-            continue;
+        let mut covered = Vec::with_capacity(list.items.len());
+        for item in &list.items {
+            let name = item
+                .bare_item
+                .as_string()
+                .context("a covered component is not a string")?;
+            // Parameters select a part of a component (`;sf`, `;key`, `;req`),
+            // which is not rebuilt here, so a signature using them is refused
+            // rather than verified against the whole.
+            anyhow::ensure!(
+                item.params.is_empty(),
+                "component {:?} has parameters",
+                name.as_str()
+            );
+            let name = name.as_str().to_owned();
+            anyhow::ensure!(!covered.contains(&name), "{name:?} is covered twice");
+            covered.push(name);
         }
-        let value = value.trim();
-        return Ok(value
-            .strip_prefix(':')
-            .and_then(|v| v.strip_suffix(':'))
+        let mut serializer = sfv::ListSerializer::new();
+        serializer.members([entry]);
+        let params = serializer
+            .finish()
+            .context("Signature-Input has no signature")?;
+        Ok(Self {
+            label: label.as_str().to_owned(),
+            covered,
+            params,
+            parameters: list.params.clone(),
+        })
+    }
+
+    fn string(&self, name: &str) -> Option<String> {
+        let key = sfv::KeyRef::from_str(name).ok()?;
+        Some(self.parameters.get(key)?.as_string()?.as_str().to_owned())
+    }
+
+    fn integer(&self, name: &str) -> Option<i64> {
+        let key = sfv::KeyRef::from_str(name).ok()?;
+        Some(self.parameters.get(key)?.as_integer()?.into())
+    }
+}
+
+/// The signature published under `label` in a `Signature` field.
+fn signature_bytes(header: &str, label: &str) -> anyhow::Result<Vec<u8>> {
+    let dictionary = sfv::Parser::new(header)
+        .parse::<sfv::Dictionary>()
+        .map_err(|error| anyhow!("unreadable Signature: {error}"))?;
+    let key = sfv::KeyRef::from_str(label).map_err(|error| anyhow!("{error}"))?;
+    match dictionary.get(key) {
+        Some(sfv::ListEntry::Item(item)) => Ok(item
+            .bare_item
+            .as_byte_sequence()
             .context("signature is not a byte sequence")?
-            .to_string());
+            .to_vec()),
+        Some(sfv::ListEntry::InnerList(_)) => anyhow::bail!("signature is not a byte sequence"),
+        None => anyhow::bail!("no signature labelled {label:?}"),
     }
-    anyhow::bail!("no signature labelled {label:?}")
-}
-
-/// Read one parameter out of the `;name=value` tail of a signature input.
-fn param(params: &str, name: &str) -> Option<String> {
-    let tail = params.split_once(')')?.1;
-    for part in tail.split(';') {
-        // The tail starts with the separator, so the first piece is empty, and
-        // a bare parameter carries no value at all.
-        let Some((key, value)) = part.trim().split_once('=') else {
-            continue;
-        };
-        if key.trim() == name {
-            return Some(value.trim().trim_matches('"').to_string());
-        }
-    }
-    None
 }
 
 #[cfg(test)]
@@ -627,6 +657,92 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn reads_the_first_signature_when_a_proxy_has_added_its_own() {
+        let body = br#"{"type":"Create"}"#;
+        let signed = sign_request(
+            "post",
+            "https://remote.example/inbox",
+            Some(body),
+            "https://local.example/users/alice#main-key",
+            &SigningKey::RsaPem(TEST_KEY_RSA),
+        )
+        .unwrap();
+        // Spaced as RFC 8941 allows, which is not how it was signed.
+        let input = signed
+            .signature_input
+            .replacen("sig1=(", "sig1=(  ", 1)
+            .replacen(");", "  );", 1);
+        let input = format!("{input}, proxy=(\"@method\");created=1;keyid=\"p;)=\"");
+        let signature = format!("{}, proxy=:AAAA:", signed.signature);
+
+        verify_request(
+            "POST",
+            "https://remote.example/inbox",
+            &input,
+            &signature,
+            signed.content_digest.as_deref(),
+            body,
+            &[],
+            &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
+        )
+        .expect("the sender's signature verifies beside the proxy's");
+        assert_eq!(
+            key_id(&input).as_deref(),
+            Some("https://local.example/users/alice#main-key")
+        );
+    }
+
+    #[test]
+    fn the_authority_has_the_port_when_it_is_not_the_default() {
+        let key = SigningKey::RsaPem(TEST_KEY_RSA);
+        let params = "(\"@method\" \"@authority\");created=1618884480;keyid=\"k\"";
+        let base = signature_base(
+            &[
+                ("@method".into(), "GET".into()),
+                ("@authority".into(), "remote.example:8443".into()),
+            ],
+            params,
+        );
+        let signature = key.sign(base.as_bytes()).unwrap();
+
+        verify_request(
+            "GET",
+            "https://remote.example:8443/users/bob",
+            &format!("sig1={params}"),
+            &format!("sig1=:{signature}:"),
+            None,
+            b"",
+            &[],
+            &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
+        )
+        .expect("the authority is the host and its port");
+    }
+
+    #[test]
+    fn rejects_a_component_covered_twice_or_in_part() {
+        for input in [
+            "sig1=(\"@method\" \"@method\");created=1;keyid=\"k\"",
+            "sig1=(\"@method\" \"x-dict\";key=\"a\");created=1;keyid=\"k\"",
+        ] {
+            assert!(
+                verify_request(
+                    "GET",
+                    "https://remote.example/",
+                    input,
+                    "sig1=:AAAA:",
+                    None,
+                    b"",
+                    &[("x-dict", "a=1")],
+                    &VerifyingKey::RsaPem(TEST_KEY_RSA_PUBLIC),
+                )
+                .is_err(),
+                "{input}"
+            );
+            assert_eq!(covered_components(input), None, "{input}");
+        }
     }
 
     #[test]

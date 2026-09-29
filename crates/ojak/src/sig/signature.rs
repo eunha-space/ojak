@@ -231,8 +231,10 @@ pub fn verify_request(
 
     let digest_val = get("digest");
     if !digest_val.is_empty() {
-        let expected = format!("SHA-256={}", BASE64.encode(Sha256::digest(body)));
-        anyhow::ensure!(digest_val == expected, "body digest mismatch");
+        anyhow::ensure!(
+            super::digest::digest_matches(digest_val, body),
+            "body digest mismatch"
+        );
     }
 
     let signing_string = headers_list

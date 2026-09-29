@@ -9,6 +9,7 @@
 use std::sync::Arc;
 
 pub mod did;
+pub mod digest;
 pub mod integrity;
 pub mod rfc9421;
 pub mod signature;

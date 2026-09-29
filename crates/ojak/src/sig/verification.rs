@@ -21,10 +21,9 @@
 //! ago, could be replayed here. `signature::verify_request` checks a digest
 //! only when one happens to be sent, and never the time or the host.
 
+use crate::sig::digest::{content_digest_matches, digest_matches};
 use crate::sig::{rfc9421, signature};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::Value;
-use sha2::{Digest as _, Sha256};
 use std::fmt;
 
 /// A request as it arrived.
@@ -419,31 +418,6 @@ fn http_date(value: &str) -> Option<i64> {
         .map(|date| date.and_utc().timestamp())
         .or_else(|_| chrono::DateTime::parse_from_rfc2822(value).map(|date| date.timestamp()))
         .ok()
-}
-
-/// Whether a `Digest` header (RFC 3230) holds the body's SHA-256. It may list
-/// several algorithms; the SHA-256 one has to be there and has to match.
-fn digest_matches(header: &str, body: &[u8]) -> bool {
-    let expected = BASE64.encode(Sha256::digest(body));
-    header.split(',').any(|part| {
-        part.trim()
-            .split_once('=')
-            .is_some_and(|(algorithm, value)| {
-                algorithm.eq_ignore_ascii_case("sha-256") && value == expected
-            })
-    })
-}
-
-/// Whether a `Content-Digest` header (RFC 9530) holds the body's SHA-256.
-fn content_digest_matches(header: &str, body: &[u8]) -> bool {
-    let expected = format!(":{}:", BASE64.encode(Sha256::digest(body)));
-    header.split(',').any(|part| {
-        part.trim()
-            .split_once('=')
-            .is_some_and(|(algorithm, value)| {
-                algorithm.eq_ignore_ascii_case("sha-256") && value.trim() == expected
-            })
-    })
 }
 
 #[cfg(test)]
