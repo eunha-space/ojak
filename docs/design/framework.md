@@ -491,6 +491,13 @@ ActivityPub is Mastodon's rule too: `application/activity+json`, or
 `application/ld+json` with the ActivityStreams profile, and never plain JSON,
 which a server that takes uploads would otherwise serve in its own name.
 
+An actor is found by its handle through `Fetcher::webfinger`, which reads
+`@alice@social.example` as an `Address`, asks the host's WebFinger endpoint
+for it with the resource encoded, and returns the actors its `self` links
+name, with their type when the link gives one, as Lemmy's does for a name
+that is both a user and a community. The host answers only for itself: the
+actor is then looked up and established like any other.
+
 An application can allow private addresses for development.
 
 ### Crates

@@ -174,6 +174,19 @@ async fn handle(
         )
             .into_response(),
         "anonymous" => activity(json!({"type": "Note"})),
+        ".well-known/webfinger" if uri.query() == Some("resource=acct:bob@localhost") => (
+            [("content-type", "application/jrd+json")],
+            json!({
+                "subject": "acct:bob@localhost",
+                "links": [{
+                    "rel": "self",
+                    "type": "application/activity+json",
+                    "href": format!("http://{host}/users/bob"),
+                }],
+            })
+            .to_string(),
+        )
+            .into_response(),
         "gone" => StatusCode::GONE.into_response(),
         _ => StatusCode::NOT_FOUND.into_response(),
     }
@@ -429,4 +442,25 @@ async fn a_lookup_reads_into_the_type_asked_for_and_says_what_it_lost() {
 
     let error = fetcher.lookup_as::<Note>(&url, None).await.unwrap_err();
     assert!(matches!(error, FetchError::Read(_)), "{error}");
+}
+
+#[tokio::test]
+async fn a_handle_is_found_through_webfinger_and_looked_up() {
+    let base = serve(Server::default()).await;
+    let address = ojak::webfinger::Address::parse("@bob@localhost").unwrap();
+    let mut url = base.join(".well-known/webfinger").unwrap();
+    url.set_query(address.webfinger_url().query());
+
+    let found = fetcher().webfinger_at(&url).await.unwrap();
+
+    assert_eq!(found.subject.as_deref(), Some("acct:bob@localhost"));
+    let actor = found.actor(None).unwrap();
+    assert_eq!(actor, &base.join("users/bob").unwrap());
+    let document = fetcher().lookup(actor, None).await.unwrap();
+    assert_eq!(document.json["preferredUsername"], "bob");
+
+    let mut unknown = url.clone();
+    unknown.set_query(Some("resource=acct:carol@localhost"));
+    let error = fetcher().webfinger_at(&unknown).await.unwrap_err();
+    assert_eq!(error.status(), Some(404));
 }

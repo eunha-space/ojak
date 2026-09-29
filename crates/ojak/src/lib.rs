@@ -7,8 +7,9 @@
 //! provides ([`deliverer`]), fetching documents from other servers
 //! ([`fetch`]), the key-value store Ojak keeps its caches in ([`kv`]),
 //! serving actors, objects, collections, WebFinger and NodeInfo and
-//! receiving activities ([`federation`]), and portable objects (FEP-ef61)
-//! at gateways ([`portable`]).
+//! receiving activities ([`federation`]), portable objects (FEP-ef61) at
+//! gateways ([`portable`]), and finding an actor by its handle
+//! ([`webfinger`]).
 
 extern crate alloc;
 
@@ -24,3 +25,4 @@ pub mod sig;
 pub mod template;
 #[cfg(feature = "testing")]
 pub mod testing;
+pub mod webfinger;
