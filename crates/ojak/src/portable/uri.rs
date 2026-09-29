@@ -80,13 +80,26 @@ impl ApUri {
             Some((path, query)) => (path, Some(query)),
             None => (rest, None),
         };
-        // The path is required, and opaque.
-        if !path.starts_with('/') {
+        // The path is required, and opaque, but it is a path: something
+        // after its `/`, and not an authority of its own, which would make
+        // `ap://did:key:…//host/x` a second identifier for a host.
+        if !path.starts_with('/') || path.len() == 1 || path.starts_with("//") {
             return None;
         }
         for parameter in query.into_iter().flat_map(|query| query.split('&')) {
-            if let Some(gateway) = parameter.strip_prefix("@gateway=") {
-                let gateway = percent_decode(gateway);
+            // `@gateway` names one gateway; `gateways`, the form FEP-ef61 had
+            // before it, a comma-separated list.
+            let hinted = if let Some(gateway) = parameter.strip_prefix("@gateway=") {
+                alloc::vec![percent_decode(gateway)]
+            } else if let Some(list) = parameter.strip_prefix("gateways=") {
+                percent_decode(list)
+                    .split(',')
+                    .map(str::to_string)
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            for gateway in hinted {
                 if is_gateway(&gateway) && !gateways.contains(&gateway) {
                     gateways.push(gateway);
                 }
@@ -219,18 +232,27 @@ pub fn did_of(did_url: &str) -> Option<&str> {
     is_did(did).then_some(did)
 }
 
-/// `did:method:id`, with a lower-case method and a non-empty id.
+/// `did:method:id` as DID Core writes one: a lower-case method, and an id
+/// of letters, digits, `.`, `-`, `_`, percent-encodings and `:`, not ending
+/// in `:`.
 fn is_did(did: &str) -> bool {
     let mut parts = did.splitn(3, ':');
     let (Some("did"), Some(method), Some(id)) = (parts.next(), parts.next(), parts.next()) else {
         return false;
     };
+    let bytes = id.as_bytes();
     !method.is_empty()
         && method
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
         && !id.is_empty()
-        && !id.contains(['/', '?', '#'])
+        && !id.ends_with(':')
+        && bytes.iter().enumerate().all(|(index, &byte)| match byte {
+            b'%' => bytes
+                .get(index + 1..index + 3)
+                .is_some_and(|hex| hex.iter().all(u8::is_ascii_hexdigit)),
+            byte => byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b':'),
+        })
 }
 
 /// An `http` or `https` URI with no path, query or fragment: what the
@@ -338,6 +360,17 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(compatible.gateways(), ["https://g.example"]);
+
+        // The list FEP-ef61 had before `@gateway`.
+        let listed = ApUri::parse(&alloc::format!(
+            "ap://{DID}/actor?gateways=https%3A%2F%2Fserver1.example,https%3A%2F%2Fserver2.example"
+        ))
+        .unwrap();
+        assert_eq!(
+            listed.gateways(),
+            ["https://server1.example", "https://server2.example"]
+        );
+        assert_eq!(listed, uri);
     }
 
     #[test]
@@ -365,6 +398,13 @@ mod tests {
             "ap://did::z6Mk/actor",
             "ap://did:KEY:z6Mk/actor",
             "ap://host.example/actor",
+            "ap://did:key:z6Mk/",
+            "ap://did:key:z6Mk//host.example/actor",
+            "ap://did:key:z6Mk@evil.example/actor",
+            "ap://did:key:z6Mk%5C@evil.example/actor",
+            "ap://did:key:z6Mk%20x/actor",
+            "ap://did:key:z6Mk:/actor",
+            "ap://did:key:z6Mk%zz/actor",
             "did:key:z6Mk",
             "",
         ] {
