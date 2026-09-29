@@ -2,6 +2,8 @@
 version = "1.95.0"
 profile = "default"
 components = "rust-analyzer,rustfmt,clippy"
+# A target with no standard library, which the no_std crates are built for.
+targets = "thumbv7em-none-eabihf"
 
 [tools.node]
 version = "24"
@@ -17,6 +19,9 @@ linux-arm64 = "hongdown-*-aarch64-unknown-linux-musl.tar.bz2"
 description = "Run type check, lint, and check Markdown format"
 run = [
   "cargo check",
+  # The host always has std, so only a target without one shows that these
+  # still build without it.
+  "cargo check -p ojak-vocab -p ojak-jsonld --target thumbv7em-none-eabihf",
   "cargo clippy",
   "cargo fmt --check",
   "hongdown --check",

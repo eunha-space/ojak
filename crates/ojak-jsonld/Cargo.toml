@@ -14,6 +14,6 @@ serde_json = { version = "1.0.140", default-features = false, features = ["alloc
 workspace = true
 
 [dev-dependencies]
-# Tests are ordinary `std` code; `cargo check -p ojak-jsonld` without them is
-# what shows the library itself still builds `no_std`.
+# Tests are ordinary `std` code; the library itself is checked `no_std` by
+# building it for a target without one, in `mise run check`.
 serde_json.workspace = true
