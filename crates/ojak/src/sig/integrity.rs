@@ -488,6 +488,54 @@ fn decode_multibase(value: &str) -> Result<Vec<u8>> {
 mod tests {
     use super::*;
 
+    /// FEP-8b32's own test vector (fep-8b32.feature): a proof that restates
+    /// the document's `@context`, over a document with decimals, which JCS
+    /// has to write as ECMAScript does.
+    #[test]
+    fn verifies_the_fep_8b32_test_vector() {
+        let document = serde_json::json!({
+            "@context": [
+                "https://www.w3.org/ns/activitystreams",
+                "https://w3id.org/security/data-integrity/v2"
+            ],
+            "id": "https://server.example/activities/1",
+            "type": "Create",
+            "actor": "https://server.example/users/alice",
+            "object": {
+                "id": "https://server.example/objects/1",
+                "type": "Note",
+                "attributedTo": "https://server.example/users/alice",
+                "content": "Hello world",
+                "location": {
+                    "type": "Place",
+                    "longitude": -71.184902,
+                    "latitude": 25.273962
+                }
+            },
+            "proof": {
+                "@context": [
+                    "https://www.w3.org/ns/activitystreams",
+                    "https://w3id.org/security/data-integrity/v2"
+                ],
+                "type": "DataIntegrityProof",
+                "cryptosuite": "eddsa-jcs-2022",
+                "verificationMethod": "https://server.example/users/alice#ed25519-key",
+                "proofPurpose": "assertionMethod",
+                "proofValue": "z42ffGu6AUKPCFcFPiabmUvnGLPJzC7e4DGWC52NUasSSH37UMa9c58tdgVszUcZfytxa4fQ5TYHaJENCxUDe9SdL",
+                "created": "2023-02-24T23:36:38Z"
+            }
+        });
+        let key = decode_multikey("z6MkrJVnaZkeFzdQyMZu1cgjg7k1pZZ6pvBQ7XJPt4swbTQ2").unwrap();
+        let (proof, suite, method) = extract_integrity_proof(&document).unwrap();
+        assert_eq!(suite, Cryptosuite::EddsaJcs2022);
+        assert_eq!(method, "https://server.example/users/alice#ed25519-key");
+        verify_object_integrity_proof(&document, &proof, &key).unwrap();
+
+        let mut moved = document.clone();
+        moved["object"]["location"]["latitude"] = serde_json::json!(25.273963);
+        assert!(verify_object_integrity_proof(&moved, &proof, &key).is_err());
+    }
+
     /// RFC 8785 §3.2.3: keys are sorted by their UTF-16 code units, which is
     /// how a JavaScript signer sorts them, not by their UTF-8 bytes, and
     /// unescaped. Sorted by bytes, U+FB33 would come before the emoji and
