@@ -4,10 +4,6 @@ Contributing to Ojak
 Thank you for your interest in contributing to Ojak. This document outlines
 the development workflow and the tools we use to maintain code quality.
 
-Please also read the project's [AI usage policy](./AI_POLICY.md) before
-submitting issues, discussions, pull requests, or commits that use AI
-assistance.
-
 
 Prerequisites
 -------------
