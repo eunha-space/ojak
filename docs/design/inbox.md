@@ -49,10 +49,14 @@ unauthenticated.
     signature covers `(request-target)`, `host`, and `date` or `(created)`;
     an RFC 9421 one covers `@method` and `@target-uri`. Either way the digest
     is signed and matches the body, and the signature was made for this host,
-    or the canonical one, within the hour.
+    or the canonical one, within the hour, and has not passed an `expires`
+    its signer set.
 4.  The key comes from the application (`known_key`), the key-value store, or
-    is fetched, and has to be one its actor publishes as its own; a key that
-    no longer verifies is fetched once more. The *sender* is that actor. A
+    is fetched, and has to be one its actor publishes as its own: an RSA
+    `publicKey`, or, for RFC 9421, an Ed25519 Multikey it lists in its
+    `assertionMethod`. A key ID that is the actor's own `id`, as PeerTube
+    signs, names its `#main-key`. A key that no longer verifies is fetched
+    once more. The *sender* is that actor. A
     fetched key that verifies and came with its actor's document, handed to
     an application that stores actors (`key_fetched`) and gives their keys
     back (`known_key`), is left to the application rather than cached as

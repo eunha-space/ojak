@@ -9,7 +9,7 @@
 use super::{BoxFuture, Context, DynKv, Error, authority};
 use crate::fetch::Fetcher;
 use crate::sig::SenderKey;
-use crate::sig::verification::{self, Key, Policy, Request, Signature};
+use crate::sig::verification::{self, Policy, PublishedKey, Request, Signature};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
@@ -53,22 +53,38 @@ pub struct KnownKey {
     pub actor: Url,
 }
 
-/// A key, as it is cached: its PEM and the actor that publishes it, and
+/// A key, as it is cached: the key and the actor that publishes it, and
 /// the actor's document when it was just fetched.
 struct Published {
-    pem: String,
+    key: PublishedKey,
     actor: Url,
     document: Option<Value>,
 }
 
 impl Published {
     fn to_json(&self) -> Value {
-        json!({"pem": self.pem, "actor": self.actor.as_str()})
+        match &self.key {
+            PublishedKey::RsaPem(pem) => json!({"pem": pem, "actor": self.actor.as_str()}),
+            PublishedKey::Ed25519(bytes) => json!({
+                "ed25519": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes),
+                "actor": self.actor.as_str(),
+            }),
+        }
     }
 
     fn from_json(value: &Value) -> Option<Self> {
+        let key = match (value.get("pem"), value.get("ed25519")) {
+            (Some(pem), _) => PublishedKey::RsaPem(pem.as_str()?.to_owned()),
+            (None, Some(bytes)) => PublishedKey::Ed25519(
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, bytes.as_str()?)
+                    .ok()?
+                    .try_into()
+                    .ok()?,
+            ),
+            (None, None) => return None,
+        };
         Some(Self {
-            pem: value.get("pem")?.as_str()?.to_owned(),
+            key,
             actor: Url::parse(value.get("actor")?.as_str()?).ok()?,
             document: None,
         })
@@ -121,7 +137,7 @@ pub(super) async fn authenticate<D: Clone + Send + Sync + 'static>(
         match known(context.clone(), signature.key_id.clone()).await {
             Ok(Some(known)) => {
                 let published = Published {
-                    pem: known.pem,
+                    key: PublishedKey::RsaPem(known.pem),
                     actor: known.actor,
                     document: None,
                 };
@@ -299,7 +315,7 @@ fn assertion_method(actor: &Value, method: &str) -> Option<String> {
 }
 
 fn check(signature: &Signature, request: &Request<'_>, published: &Published) -> bool {
-    verification::verify(signature, request, Key::RsaPem(&published.pem)).is_ok()
+    verification::verify(signature, request, published.key.as_key()).is_ok()
 }
 
 /// Fetch the actor the key ID points at, and read the key from it if the
@@ -322,9 +338,9 @@ async fn fetch_key<D: Clone + Send + Sync + 'static>(
         .document(&owner, key.as_ref())
         .await
         .ok()?;
-    let pem = verification::published_key_pem(&document.json, &signature.key_id)?;
+    let key = verification::published_key(&document.json, &signature.key_id)?;
     Some(Published {
-        pem,
+        key,
         actor: Url::parse(&document.id).ok()?,
         document: Some(document.json),
     })

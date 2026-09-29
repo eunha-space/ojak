@@ -416,6 +416,53 @@ pub fn published_key_pem(actor: &Value, key_id: &str) -> Option<String> {
     })
 }
 
+/// A key an actor publishes, as a signature is checked against it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PublishedKey {
+    /// A PEM-encoded RSA public key, from `publicKey`.
+    RsaPem(String),
+    /// A raw Ed25519 public key, from an `assertionMethod` Multikey.
+    Ed25519([u8; 32]),
+}
+
+impl PublishedKey {
+    /// The key, as [`verify`] takes it.
+    #[must_use]
+    pub fn as_key(&self) -> Key<'_> {
+        match self {
+            Self::RsaPem(pem) => Key::RsaPem(pem),
+            Self::Ed25519(bytes) => Key::Ed25519(bytes),
+        }
+    }
+}
+
+/// `key_id` if `actor` publishes it as its own key: as [`published_key_pem`]
+/// reads a `publicKey`, or an Ed25519 `assertionMethod` Multikey (FEP-521a)
+/// whose `id` is `key_id` and whose `controller` is the actor.
+#[must_use]
+pub fn published_key(actor: &Value, key_id: &str) -> Option<PublishedKey> {
+    if let Some(pem) = published_key_pem(actor, key_id) {
+        return Some(PublishedKey::RsaPem(pem));
+    }
+    let actor_id = actor.get("id").and_then(Value::as_str)?;
+    let methods: Vec<&Value> = match actor.get("assertionMethod")? {
+        Value::Array(methods) => methods.iter().collect(),
+        method => vec![method],
+    };
+    methods.into_iter().find_map(|method| {
+        if method.get("id").and_then(Value::as_str) != Some(key_id)
+            || method.get("controller").and_then(Value::as_str) != Some(actor_id)
+        {
+            return None;
+        }
+        let multibase = method.get("publicKeyMultibase")?.as_str()?;
+        match crate::sig::integrity::decode_multikey(multibase).ok()? {
+            crate::sig::integrity::PublicKey::Ed25519(bytes) => Some(PublishedKey::Ed25519(*bytes)),
+            crate::sig::integrity::PublicKey::MlDsa44(_) => None,
+        }
+    })
+}
+
 /// Parse an HTTP-date (RFC 9110), as a `Date` header carries.
 fn http_date(value: &str) -> Option<i64> {
     let value = value.trim();

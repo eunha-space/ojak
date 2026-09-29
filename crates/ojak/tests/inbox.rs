@@ -890,3 +890,114 @@ async fn a_key_the_application_keeps_is_not_cached_twice() {
     }
     assert_eq!(remote.fetches.load(Ordering::SeqCst), 1);
 }
+
+/// A POST of `body` signed with RFC 9421 by bob's Ed25519 key.
+fn post_ed25519(
+    path: &str,
+    key_id: &str,
+    seed: &[u8; 32],
+    body: &Value,
+) -> (http::request::Parts, Vec<u8>) {
+    use ojak::sig::rfc9421;
+
+    let bytes = serde_json::to_vec(body).unwrap();
+    let signed = rfc9421::sign_request(
+        "post",
+        &format!("https://{HOST}{path}"),
+        Some(&bytes),
+        key_id,
+        &rfc9421::SigningKey::Ed25519(seed),
+    )
+    .unwrap();
+    let parts = http::Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("host", HOST)
+        .header("content-type", "application/activity+json")
+        .header("content-digest", signed.content_digest.unwrap())
+        .header("signature-input", signed.signature_input)
+        .header("signature", signed.signature)
+        .body(())
+        .unwrap()
+        .into_parts()
+        .0;
+    (parts, bytes)
+}
+
+/// An RFC 9421 signature by an Ed25519 key the actor lists as an
+/// `assertionMethod` authenticates, as an RSA `publicKey` does.
+#[tokio::test]
+async fn an_ed25519_signature_by_a_listed_multikey_authenticates() {
+    use ojak::sig::integrity;
+
+    let remote = Remote::default();
+    let bob = serve_remote(remote.clone()).await;
+    let pem = integrity::generate_ed25519_key().unwrap();
+    let (seed, public) = integrity::parse_ed25519_key(&pem).unwrap();
+    *remote.multikey.lock().unwrap() = Some(integrity::encode_ed25519_multikey(&public));
+    let federation = federation(|b| b);
+    let store = App::default();
+
+    let activity = follow(&bob, 1);
+    let key_id = format!("{bob}#ed25519-key");
+    assert_eq!(
+        deliver(
+            &federation,
+            &store,
+            post_ed25519("/ap/inbox", &key_id, &seed, &activity)
+        )
+        .await,
+        202
+    );
+    // Again, with the key from the cache rather than bob's document.
+    let activity = follow(&bob, 2);
+    assert_eq!(
+        deliver(
+            &federation,
+            &store,
+            post_ed25519("/ap/inbox", &key_id, &seed, &activity)
+        )
+        .await,
+        202
+    );
+    assert_eq!(remote.fetches.load(Ordering::SeqCst), 1);
+    let seen = store.seen();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[0].sender, bob);
+
+    // A key bob does not list proves nothing.
+    let other = integrity::parse_ed25519_key(&integrity::generate_ed25519_key().unwrap())
+        .unwrap()
+        .0;
+    let activity = follow(&bob, 3);
+    assert_eq!(
+        deliver(
+            &federation,
+            &store,
+            post_ed25519("/ap/inbox", &key_id, &other, &activity)
+        )
+        .await,
+        401
+    );
+}
+
+/// PeerTube signs with its actor's id for the key ID, for the key it
+/// publishes as `#main-key`.
+#[tokio::test]
+async fn a_key_id_that_is_the_actor_names_its_main_key() {
+    let bob = serve_remote(Remote::default()).await;
+    let federation = federation(|b| b);
+    let store = App::default();
+
+    let activity = follow(&bob, 1);
+    assert_eq!(
+        deliver(
+            &federation,
+            &store,
+            post("/ap/inbox", &bob, &activity, &activity)
+        )
+        .await,
+        202
+    );
+    assert_eq!(store.seen()[0].sender, bob);
+}
