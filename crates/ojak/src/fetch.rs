@@ -399,6 +399,10 @@ impl Fetcher {
         }
         match self.document(url, key).await {
             Err(FetchError::CrossOrigin { id, url: served }) => {
+                // An id with no origin names no owner to ask.
+                let Some(Origin::Web { .. }) = Origin::of(&id) else {
+                    return Err(FetchError::CrossOrigin { id, url: served });
+                };
                 let Ok(own) = Url::parse(&id) else {
                     return Err(FetchError::CrossOrigin { id, url: served });
                 };

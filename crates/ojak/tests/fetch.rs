@@ -132,6 +132,13 @@ async fn handle(
             "type": "Person",
             "name": "not bob",
         })),
+        // Served from 127.0.0.1, with an id whose userinfo reads as
+        // 127.0.0.1 to a hand-split authority, and as localhost to a URL
+        // parser, which takes the backslash for a `/`.
+        "backslash" => activity(json!({
+            "id": format!("http://localhost:{port}\\@{host}/users/bob"),
+            "type": "Person",
+        })),
         // Claiming to be on whichever of the two origins it was not
         // fetched from, from both.
         "bounce" => {
@@ -289,6 +296,18 @@ async fn a_document_claiming_another_origin_is_not_trusted() {
     };
     assert_eq!(id, on_localhost(&base).join("users/bob").unwrap().as_str());
     assert_eq!(served, url);
+}
+
+#[tokio::test]
+async fn an_id_that_parses_as_two_origins_is_not_trusted() {
+    let base = serve(Server::default()).await;
+    let url = base.join("backslash").unwrap();
+
+    let error = fetcher().document(&url, None).await.unwrap_err();
+
+    assert!(matches!(error, FetchError::CrossOrigin { .. }), "{error}");
+    let error = fetcher().lookup(&url, None).await.unwrap_err();
+    assert!(matches!(error, FetchError::CrossOrigin { .. }), "{error}");
 }
 
 #[tokio::test]

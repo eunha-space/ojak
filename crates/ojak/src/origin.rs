@@ -38,11 +38,11 @@ impl Origin {
     /// `http`, `https`, `ap` or `did`, or malformed.
     #[must_use]
     pub fn of(iri: &str) -> Option<Self> {
-        let (scheme, rest) = iri.split_once(':')?;
+        let (scheme, _) = iri.split_once(':')?;
         match scheme.to_ascii_lowercase().as_str() {
-            scheme @ ("http" | "https") => match ApUri::parse(iri) {
+            "http" | "https" => match ApUri::parse(iri) {
                 Some(portable) => Some(Self::Did(portable.did().to_string())),
-                None => web(scheme, rest),
+                None => web(iri),
             },
             "ap" | "ap+ef61" => ApUri::parse(iri).map(|uri| Self::Did(uri.did().to_string())),
             "did" => did_of(iri).map(|did| Self::Did(did.to_string())),
@@ -67,44 +67,44 @@ pub fn same_origin(a: &str, b: &str) -> bool {
     }
 }
 
-/// The part of `rest` up to the first `/`, `?` or `#`.
-fn authority(rest: &str) -> &str {
-    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    &rest[..end]
-}
-
-fn web(scheme: &str, rest: &str) -> Option<Origin> {
-    let authority = authority(rest.strip_prefix("//")?);
-    // Userinfo is not part of an origin, and has no business in an
-    // ActivityPub identifier; it is dropped rather than trusted.
-    let host_port = authority
-        .rsplit_once('@')
-        .map_or(authority, |(_, host)| host);
-    let (host, port) = if let Some(bracketed) = host_port.strip_prefix('[') {
-        let (address, after) = bracketed.split_once(']')?;
-        let port = match after {
-            "" => None,
-            port => Some(port.strip_prefix(':')?),
-        };
-        (address, port)
-    } else {
-        match host_port.rsplit_once(':') {
-            Some((host, port)) => (host, Some(port)),
-            None => (host_port, None),
-        }
-    };
+/// The origin of an `http` or `https` IRI, read as the `url` crate reads it,
+/// since that is how every request Ojak makes and every identifier it hands
+/// on is read. An IRI that is not well formed has none: WHATWG URL parsing
+/// forgives what RFC 3987 does not, reading a backslash as `/`, so a hand-split
+/// authority and the parsed one could name different hosts, and an
+/// identifier that means one server to one rule and another to the next is
+/// not an identifier.
+fn web(iri: &str) -> Option<Origin> {
+    if !well_formed(iri) {
+        return None;
+    }
+    let url = url::Url::parse(iri).ok()?;
+    let host = url.host_str()?;
     if host.is_empty() {
         return None;
     }
-    let default = if scheme == "https" { 443 } else { 80 };
-    let port = match port {
-        None | Some("") => default,
-        Some(port) => port.parse().ok()?,
-    };
     Some(Origin::Web {
-        scheme: scheme.to_string(),
-        host: host.to_ascii_lowercase(),
-        port,
+        scheme: url.scheme().to_string(),
+        host: host
+            .strip_prefix('[')
+            .and_then(|host| host.strip_suffix(']'))
+            .unwrap_or(host)
+            .to_string(),
+        port: url.port_or_known_default()?,
+    })
+}
+
+/// Whether `iri` has only what RFC 3987 allows in an IRI: no control
+/// characters, spaces, backslashes or the other characters it excludes, and
+/// `%` only as a percent-encoding.
+fn well_formed(iri: &str) -> bool {
+    let bytes = iri.as_bytes();
+    bytes.iter().enumerate().all(|(index, &byte)| match byte {
+        b'%' => bytes
+            .get(index + 1..index + 3)
+            .is_some_and(|hex| hex.iter().all(u8::is_ascii_hexdigit)),
+        b'"' | b'<' | b'>' | b'\\' | b'^' | b'`' | b'{' | b'|' | b'}' => false,
+        byte => byte > b' ' && byte != 0x7f,
     })
 }
 
@@ -146,6 +146,37 @@ mod tests {
             Origin::of("https://a.example#main-key"),
             web("https", "a.example", 443)
         );
+    }
+
+    #[test]
+    fn a_web_origin_is_the_one_a_url_parser_reads() {
+        // An IDN host is its punycode, as the URL it is fetched at has it.
+        assert_eq!(
+            Origin::of("https://bücher.example/"),
+            web("https", "xn--bcher-kva.example", 443)
+        );
+        assert!(same_origin(
+            "https://bücher.example/a",
+            "https://xn--bcher-kva.example/b"
+        ));
+        // A percent-encoded host is the host it decodes to.
+        assert!(same_origin("https://a%2Eexample/", "https://a.example/"));
+    }
+
+    #[test]
+    fn an_identifier_that_is_not_well_formed_has_no_origin() {
+        // A URL parser reads the backslash as `/`, making the host
+        // a.example; split by hand, the host is after the `@`.
+        for iri in [
+            "https://a.example\\@evil.example/users/alice",
+            "https://a.example\\evil.example/",
+            "https://a.example/users/ alice",
+            "https://a.example/users/%zz",
+            "https://a.example/\u{7f}",
+            "https://a.example/{x}",
+        ] {
+            assert_eq!(Origin::of(iri), None, "{iri:?}");
+        }
     }
 
     #[test]
