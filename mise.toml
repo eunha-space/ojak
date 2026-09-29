@@ -22,7 +22,7 @@ run = [
   # The host always has std, so only a target without one shows that these
   # still build without it.
   "cargo check -p ojak-vocab -p ojak-jsonld --target thumbv7em-none-eabihf",
-  "cargo clippy",
+  "cargo clippy --workspace --all-targets --all-features",
   "cargo fmt --check",
   "hongdown --check",
   "mise fmt --check",

@@ -673,6 +673,18 @@ fn jitter(duration: Duration) -> Duration {
     duration.saturating_sub(cut)
 }
 
+/// A claim under way in [`Deliverer::run_until`].
+type Claim<'a> = std::pin::Pin<Box<dyn Future<Output = Result<Vec<Job>, QueueError>> + Send + 'a>>;
+
+/// Wait on the claim under way, leaving it in place: the caller takes it once
+/// it has finished.
+async fn poll_claim(claiming: &mut Option<(usize, Claim<'_>)>) -> Result<Vec<Job>, QueueError> {
+    match claiming {
+        Some((_, claim)) => claim.as_mut().await,
+        None => std::future::pending().await,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::jitter;
@@ -685,17 +697,5 @@ mod tests {
             let slept = jitter(base);
             assert!(slept <= base && slept >= base * 3 / 4, "{slept:?}");
         }
-    }
-}
-
-/// A claim under way in [`Deliverer::run_until`].
-type Claim<'a> = std::pin::Pin<Box<dyn Future<Output = Result<Vec<Job>, QueueError>> + Send + 'a>>;
-
-/// Wait on the claim under way, leaving it in place: the caller takes it once
-/// it has finished.
-async fn poll_claim(claiming: &mut Option<(usize, Claim<'_>)>) -> Result<Vec<Job>, QueueError> {
-    match claiming {
-        Some((_, claim)) => claim.as_mut().await,
-        None => std::future::pending().await,
     }
 }
