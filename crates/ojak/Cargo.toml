@@ -21,7 +21,7 @@ percent-encoding = "2"
 rand_core = { version = "0.6", features = ["getrandom"] }
 reqwest.workspace = true
 rsa.workspace = true
-serde_jcs.workspace = true
+serde_json_canonicalizer.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tokio = { version = "1", features = ["net", "sync", "time", "macros"] }

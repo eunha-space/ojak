@@ -185,8 +185,8 @@ pub fn verify_object_integrity_proof(
         }
     }
 
-    let proof_canon =
-        serde_jcs::to_string(&Value::Object(proof_config)).context("canonicalize proof config")?;
+    let proof_canon = serde_json_canonicalizer::to_string(&Value::Object(proof_config))
+        .context("canonicalize proof config")?;
     let proof_hash = Sha256::digest(proof_canon.as_bytes());
 
     let signature_bytes = decode_multibase(proof_value).context("decode proofValue")?;
@@ -219,7 +219,7 @@ pub fn verify_object_integrity_proof(
     }
 
     for candidate in candidates {
-        let doc_canon = match serde_jcs::to_string(&Value::Object(candidate)) {
+        let doc_canon = match serde_json_canonicalizer::to_string(&Value::Object(candidate)) {
             Ok(c) => c,
             Err(_) => continue,
         };
@@ -332,10 +332,10 @@ pub fn sign_object_integrity_proof(
     proof_config.insert("proofPurpose".to_string(), Value::from("assertionMethod"));
     proof_config.insert("created".to_string(), Value::from(created));
 
-    let proof_canon = serde_jcs::to_string(&Value::Object(proof_config.clone()))
+    let proof_canon = serde_json_canonicalizer::to_string(&Value::Object(proof_config.clone()))
         .context("canonicalize proof config")?;
-    let doc_canon =
-        serde_jcs::to_string(&Value::Object(unsecured.clone())).context("canonicalize document")?;
+    let doc_canon = serde_json_canonicalizer::to_string(&Value::Object(unsecured.clone()))
+        .context("canonicalize document")?;
 
     let mut hash_data = [0u8; 64];
     hash_data[..32].copy_from_slice(&Sha256::digest(proof_canon.as_bytes()));
@@ -476,6 +476,47 @@ fn decode_multibase(value: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// RFC 8785 §3.2.3: keys are sorted by their UTF-16 code units, which is
+    /// how a JavaScript signer sorts them, not by their UTF-8 bytes, and
+    /// unescaped. Sorted by bytes, U+FB33 would come before the emoji and
+    /// `\r` after `1`.
+    #[test]
+    fn canonical_json_sorts_keys_as_rfc_8785_does() {
+        let object = serde_json::json!({
+            "\u{20ac}": "Euro Sign",
+            "\r": "Carriage Return",
+            "\u{fb33}": "Hebrew Letter Dalet With Dagesh",
+            "1": "One",
+            "\u{1f600}": "Emoji: Grinning Face",
+            "\u{80}": "Control",
+            "\u{f6}": "Latin Small Letter O With Diaeresis"
+        });
+        let canonical = serde_json_canonicalizer::to_string(&object).unwrap();
+        let order: Vec<&str> = [
+            "Carriage Return",
+            "One",
+            "Control",
+            "Latin Small Letter O With Diaeresis",
+            "Euro Sign",
+            "Emoji: Grinning Face",
+            "Hebrew Letter Dalet With Dagesh",
+        ]
+        .into_iter()
+        .collect();
+        let mut positions: Vec<usize> = order
+            .iter()
+            .map(|value| canonical.find(value).unwrap())
+            .collect();
+        let sorted = {
+            let mut sorted = positions.clone();
+            sorted.sort_unstable();
+            sorted
+        };
+        assert_eq!(positions, sorted, "{canonical}");
+        positions.dedup();
+        assert_eq!(positions.len(), order.len());
+    }
 
     // Worked example from the W3C "Data Integrity EdDSA Cryptosuites"
     // specification (§ "Representation: eddsa-jcs-2022"). Verifying it end to end
