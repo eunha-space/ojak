@@ -7,8 +7,7 @@ be on the server. *framework.md* says why this belongs in the model; this is
 how each part of Ojak does it.
 
 *Status: done.* Everything below is implemented. What was designed and not
-built is listed at the end; the [showcase](../showcase.md) says how
-applications use it.
+built is listed at the end.
 
 
 Identifiers

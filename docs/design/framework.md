@@ -9,8 +9,7 @@ and Ojak does the protocol around them.
 
 *Status: built.* The seven steps in *Sequence* below are done. Each decision
 says where what was built differs from what was designed. *serving.md*,
-*inbox.md* and *portable.md* have the details of their steps, and the
-[showcase](../showcase.md) says how applications use it.
+*inbox.md* and *portable.md* have the details of their steps.
 
 The governing rule is the one *CONTRIBUTING.md* already states, applied to
 data as well as to I/O:

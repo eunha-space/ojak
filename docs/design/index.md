@@ -14,8 +14,7 @@ built differs from what was designed.
  -  [Portable objects](./portable.md): objects whose identity is a key rather
     than a host (FEP-ef61). Done.
 
-How applications use what these records describe is in the
-[showcase](../showcase.md).
+Applications built on Ojak are in the [showcase](../showcase.md).
 
 
 What is left

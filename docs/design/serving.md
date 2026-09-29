@@ -8,8 +8,7 @@ application registers; WebFinger, host-meta and NodeInfo follow from them.
 *Status: done.* Everything below is implemented in `ojak::federation`, with
 *ojak-axum* for axum applications. The same `Federation` also receives
 activities (*inbox.md*) and serves portable objects at gateways
-(*portable.md*). What was designed and not built is listed at the end; the
-[showcase](../showcase.md) says how applications use it.
+(*portable.md*). What was designed and not built is listed at the end.
 
 
 What this step removes

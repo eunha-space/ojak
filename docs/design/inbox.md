@@ -9,8 +9,7 @@ security problem.
 
 *Status: done.* The inbox is part of `ojak::federation`, beside serving. It
 also accepts portable activities at gateways (*portable.md*). What was
-designed and not built is listed at the end; the
-[showcase](../showcase.md) says how applications use it.
+designed and not built is listed at the end.
 
 
 What this step prevents
