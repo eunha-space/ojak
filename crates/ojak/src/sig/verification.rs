@@ -394,6 +394,9 @@ pub fn key_owner(key_id: &str) -> &str {
 /// This is the other half of the claim a key ID makes. The key ID says which
 /// actor it belongs to; the actor has to say so too, or anyone who can put a
 /// key document on a server could sign as any actor there.
+///
+/// PeerTube signs with its actor's `id` for the key ID while publishing the
+/// key as `#main-key`; a key ID that is the actor's own `id` names that key.
 #[must_use]
 pub fn published_key_pem(actor: &Value, key_id: &str) -> Option<String> {
     let actor_id = actor.get("id").and_then(Value::as_str)?;
@@ -404,7 +407,9 @@ pub fn published_key_pem(actor: &Value, key_id: &str) -> Option<String> {
     keys.into_iter().find_map(|key| {
         let id = key.get("id").and_then(Value::as_str)?;
         let owner = key.get("owner").and_then(Value::as_str);
-        (id == key_id && owner.is_none_or(|owner| owner == actor_id))
+        let named =
+            id == key_id || (key_id == actor_id && id.strip_prefix(actor_id) == Some("#main-key"));
+        (named && owner.is_none_or(|owner| owner == actor_id))
             .then(|| key.get("publicKeyPem").and_then(Value::as_str))
             .flatten()
             .map(str::to_owned)

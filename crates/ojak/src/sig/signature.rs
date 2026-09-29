@@ -344,17 +344,47 @@ pub(crate) fn rsa_verify_pkcs1v15(
     sig_b64: &str,
 ) -> anyhow::Result<()> {
     use rsa::pkcs1v15::{Signature, VerifyingKey};
-    use rsa::pkcs8::DecodePublicKey as _;
     use rsa::signature::Verifier as _;
 
     let sig_bytes = BASE64.decode(sig_b64).context("decode base64 signature")?;
-    let public_key =
-        rsa::RsaPublicKey::from_public_key_pem(public_key_pem).context("parse RSA public key")?;
+    let public_key = rsa_public_key_from_pem(public_key_pem)?;
     let verifying_key = VerifyingKey::<Sha256>::new(public_key);
     let sig = Signature::try_from(sig_bytes.as_slice()).context("parse signature bytes")?;
     verifying_key
         .verify(message, &sig)
         .context("signature verification failed")
+}
+
+/// An RSA public key from a PEM as actors publish them: SubjectPublicKeyInfo
+/// (`PUBLIC KEY`) or PKCS#1 (`RSA PUBLIC KEY`), with whatever line length and
+/// surrounding whitespace it was written with. The PEM parser holds a key to
+/// 64-character lines, which not every implementation writes.
+pub(crate) fn rsa_public_key_from_pem(pem: &str) -> anyhow::Result<rsa::RsaPublicKey> {
+    use rsa::pkcs1::DecodeRsaPublicKey as _;
+    use rsa::pkcs8::DecodePublicKey as _;
+
+    let pem = pem.trim();
+    if let Ok(key) = rsa::RsaPublicKey::from_public_key_pem(pem) {
+        return Ok(key);
+    }
+    let (label, der) = pem_body(pem).context("parse RSA public key")?;
+    match label {
+        "PUBLIC KEY" => rsa::RsaPublicKey::from_public_key_der(&der),
+        "RSA PUBLIC KEY" => rsa::RsaPublicKey::from_pkcs1_der(&der).map_err(Into::into),
+        _ => anyhow::bail!("not an RSA public key: {label}"),
+    }
+    .context("parse RSA public key")
+}
+
+/// The label and decoded body of a PEM block, read leniently: any line
+/// length, and whitespace anywhere in the body.
+fn pem_body(pem: &str) -> anyhow::Result<(&str, Vec<u8>)> {
+    let rest = pem.strip_prefix("-----BEGIN ").context("no PEM header")?;
+    let (label, rest) = rest.split_once("-----").context("no PEM header")?;
+    let end = format!("-----END {label}-----");
+    let (body, _) = rest.split_once(end.as_str()).context("no PEM footer")?;
+    let body: String = body.split_whitespace().collect();
+    Ok((label, BASE64.decode(body).context("decode PEM body")?))
 }
 
 pub(crate) fn parse_params(header: &str) -> std::collections::HashMap<String, String> {
@@ -415,6 +445,37 @@ mod tests {
             ("signature", signed.signature.as_str()),
         ];
         verify_request("post", "/inbox", &headers, b"{}", &public).unwrap();
+    }
+
+    #[test]
+    fn a_public_key_is_read_in_the_forms_actors_publish() {
+        use rsa::pkcs1::{DecodeRsaPrivateKey as _, EncodeRsaPublicKey as _};
+
+        let private = rsa::RsaPrivateKey::from_pkcs1_pem(include_str!(
+            "../../tests/fixtures/rfc9421_test_key_rsa.pem"
+        ))
+        .unwrap();
+        let public = rsa::RsaPublicKey::from(&private);
+        let spki = public
+            .to_public_key_pem(rsa::pkcs8::LineEnding::LF)
+            .unwrap();
+        let pkcs1 = public.to_pkcs1_pem(rsa::pkcs1::LineEnding::LF).unwrap();
+        assert!(pkcs1.starts_with("-----BEGIN RSA PUBLIC KEY-----"));
+        // One long line, and indented, as some servers write them.
+        let unwrapped = {
+            let body: String = spki
+                .lines()
+                .filter(|line| !line.starts_with("-----"))
+                .collect();
+            format!("\n  -----BEGIN PUBLIC KEY-----\n{body}\n-----END PUBLIC KEY-----  \n")
+        };
+        for pem in [spki.as_str(), pkcs1.as_str(), unwrapped.as_str()] {
+            assert_eq!(rsa_public_key_from_pem(pem).unwrap(), public, "{pem}");
+        }
+        assert!(
+            rsa_public_key_from_pem("-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----")
+                .is_err()
+        );
     }
 
     fn keypair() -> (String, String) {

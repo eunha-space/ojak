@@ -299,6 +299,23 @@ fn a_key_belongs_to_the_actor_it_is_published_by() {
         ]
     });
     assert_eq!(published_key_pem(&several, KEY_ID).as_deref(), Some("NEW"));
+
+    // PeerTube's key ID is its actor's id, for the key it publishes as
+    // #main-key; no other key is named by it.
+    assert_eq!(
+        published_key_pem(&actor, "https://remote.example/users/bob").as_deref(),
+        Some("PEM")
+    );
+    assert_eq!(
+        published_key_pem(
+            &json!({
+                "id": "https://remote.example/users/bob",
+                "publicKey": {"id": "https://remote.example/users/bob#other", "publicKeyPem": "PEM"}
+            }),
+            "https://remote.example/users/bob"
+        ),
+        None
+    );
 }
 
 /// The base64 draft-cavage signature over `signing_string`.
