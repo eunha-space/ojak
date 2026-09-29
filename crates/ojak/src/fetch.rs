@@ -65,6 +65,10 @@ pub enum FetchError {
     /// The document's `id` is not on the origin it was served from, and
     /// nothing else vouches for it.
     CrossOrigin { id: String, url: Url },
+    /// The document names an author, in `attributedTo` or `actor`, on
+    /// another origin than its own `id`: its server cannot vouch that the
+    /// author wrote it.
+    ForeignAuthor { id: String, author: String },
     /// The document was established but is not a value of the type asked
     /// for.
     Read(ReadError),
@@ -99,6 +103,9 @@ impl fmt::Display for FetchError {
             Self::NoId => f.write_str("document has no id"),
             Self::CrossOrigin { id, url } => {
                 write!(f, "document served from {url} claims id {id}")
+            }
+            Self::ForeignAuthor { id, author } => {
+                write!(f, "{id} claims to be by {author}, on another origin")
             }
             Self::Read(error) => error.fmt(f),
             Self::Portable(tried) if tried.is_empty() => {
@@ -336,13 +343,14 @@ impl Fetcher {
     }
 
     /// Fetch the ActivityPub document at `url` and establish it: served as
-    /// ActivityPub with success, a JSON object, and with an `id` on the
-    /// origin it was finally served from.
+    /// ActivityPub with success, a JSON object, with an `id` on the origin
+    /// it was finally served from, and naming no author on another origin.
     ///
     /// # Errors
     ///
     /// As [`Fetcher::get`], and when the document is not established; a
-    /// document whose `id` is elsewhere is [`FetchError::CrossOrigin`].
+    /// document whose `id` is elsewhere is [`FetchError::CrossOrigin`], and
+    /// one by an author elsewhere [`FetchError::ForeignAuthor`].
     pub async fn document(
         &self,
         url: &Url,
@@ -375,6 +383,9 @@ impl Fetcher {
                 id,
                 url: response.url,
             });
+        }
+        if let Some(author) = foreign_author(&json, &id) {
+            return Err(FetchError::ForeignAuthor { id, author });
         }
         Ok(Document {
             id,
@@ -519,6 +530,31 @@ fn served_by_its_origin(id: &str, url: &Url) -> bool {
         (Some(id @ Origin::Web { .. }), Some(served)) => id == served,
         _ => false,
     }
+}
+
+/// The first author `document` names, in `attributedTo` or `actor`, that is
+/// not on the origin of `id`. A server vouches for what it serves under its
+/// own origin, and a note it serves that is attributed to someone elsewhere
+/// is its claim, not that someone's.
+fn foreign_author(document: &Value, id: &str) -> Option<String> {
+    fn ids(value: &Value) -> Vec<&str> {
+        match value {
+            Value::String(id) => vec![id.as_str()],
+            Value::Object(object) => object
+                .get("id")
+                .and_then(Value::as_str)
+                .into_iter()
+                .collect(),
+            Value::Array(items) => items.iter().flat_map(ids).collect(),
+            _ => Vec::new(),
+        }
+    }
+    ["attributedTo", "actor"]
+        .iter()
+        .filter_map(|key| document.get(*key))
+        .flat_map(ids)
+        .find(|author| !crate::origin::same_origin(author, id))
+        .map(str::to_owned)
 }
 
 /// Whether `content_type` is ActivityStreams: `application/activity+json`,

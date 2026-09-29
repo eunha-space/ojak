@@ -152,6 +152,18 @@ async fn handle(
                 "type": "Person",
             }))
         }
+        // A note on 127.0.0.1 attributed to an actor on localhost.
+        "forged-note" => activity(json!({
+            "id": format!("http://{host}/forged-note"),
+            "type": "Note",
+            "attributedTo": format!("http://localhost:{port}/users/bob"),
+            "content": "not by bob",
+        })),
+        "note" => activity(json!({
+            "id": format!("http://{host}/note"),
+            "type": "Note",
+            "attributedTo": [format!("http://{host}/users/bob"), {"id": format!("http://{host}/users/carol")}],
+        })),
         "portable" => activity(json!({
             "id": "ap://did:key:z6MkrJVnaZkeFzdQyMZu1cgjg7k1pZZ6pvBQ7XJPt4swbTQ2/actor",
             "type": "Person",
@@ -308,6 +320,28 @@ async fn an_id_that_parses_as_two_origins_is_not_trusted() {
     assert!(matches!(error, FetchError::CrossOrigin { .. }), "{error}");
     let error = fetcher().lookup(&url, None).await.unwrap_err();
     assert!(matches!(error, FetchError::CrossOrigin { .. }), "{error}");
+}
+
+#[tokio::test]
+async fn a_document_by_an_author_on_another_origin_is_not_trusted() {
+    let base = serve(Server::default()).await;
+
+    let error = fetcher()
+        .lookup(&base.join("forged-note").unwrap(), None)
+        .await
+        .unwrap_err();
+
+    let FetchError::ForeignAuthor { author, .. } = error else {
+        panic!("{error}");
+    };
+    assert_eq!(
+        author,
+        on_localhost(&base).join("users/bob").unwrap().as_str()
+    );
+    fetcher()
+        .document(&base.join("note").unwrap(), None)
+        .await
+        .expect("a note by authors on its own origin");
 }
 
 #[tokio::test]

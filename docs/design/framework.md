@@ -484,10 +484,12 @@ another origin than the URL it came from is not trusted as that object
 without a proof, and a portable object is not trusted without one at all. A
 lookup, as Mastodon's does, fetches such an object once more from its own
 `id`, and trusts what the owner of the `id` serves there; a second
-disagreement is refused. What counts as ActivityPub is Mastodon's rule too:
-`application/activity+json`, or `application/ld+json` with the
-ActivityStreams profile, and never plain JSON, which a server that takes
-uploads would otherwise serve in its own name.
+disagreement is refused. A document that names an author, in `attributedTo`
+or `actor`, on another origin than its `id` is refused too: its server can
+vouch for its own objects, not for who wrote them elsewhere. What counts as
+ActivityPub is Mastodon's rule too: `application/activity+json`, or
+`application/ld+json` with the ActivityStreams profile, and never plain JSON,
+which a server that takes uploads would otherwise serve in its own name.
 
 An application can allow private addresses for development.
 
