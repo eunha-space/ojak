@@ -102,6 +102,7 @@ will run the `check` task every time you commit.
 mise generate git-pre-commit --write --task=check
 ~~~~
 
+
 Development workflow
 --------------------
 
