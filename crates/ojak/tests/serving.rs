@@ -824,3 +824,86 @@ async fn an_iri_is_parsed_as_an_actor_or_object_of_one_kind() {
         None
     );
 }
+
+#[tokio::test]
+async fn uris_can_be_kept_apart_from_the_federation_and_name_keys() {
+    let uris = federation().uris(canonical());
+    // No data and no federation: what an application keeps in its state.
+    fn kept(uris: ojak::federation::Uris) -> ojak::federation::Uris {
+        uris
+    }
+    let uris = kept(uris.clone());
+    assert_eq!(
+        uris.key_id("person", "1").unwrap().as_str(),
+        "https://oeee.test/ap/users/1#main-key"
+    );
+    let tenant = uris.with_origin(Url::parse("https://other.test").unwrap());
+    assert_eq!(
+        tenant.actor_uri("person", "1").unwrap().as_str(),
+        "https://other.test/ap/users/1"
+    );
+    assert_eq!(uris.origin().as_str(), "https://oeee.test/");
+
+    let ctx = federation().context(canonical(), App::default());
+    assert_eq!(
+        ctx.key_id("person", "1").unwrap(),
+        uris.key_id("person", "1").unwrap()
+    );
+}
+
+#[tokio::test]
+async fn an_object_is_served_and_recognised_at_its_alias_and_named_by_its_template() {
+    let federation = builder()
+        .object_alias("note", "/@{handle}/{post_id}")
+        .build()
+        .unwrap();
+    let answer = get(&federation, "/@alice/10").await;
+    assert_eq!(answer.status, 200);
+    assert_eq!(
+        answer.json()["id"],
+        "https://oeee.test/ap/posts/10",
+        "the document names the object by its template"
+    );
+
+    let ctx = federation.context(canonical(), App::default());
+    let values = ctx
+        .parse_object("note", "https://oeee.test/@alice/10")
+        .unwrap();
+    assert_eq!((&values["post_id"], &values["handle"]), ("10", "alice"));
+    assert_eq!(
+        ctx.object_uri("note", &[("post_id", "10")])
+            .unwrap()
+            .as_str(),
+        "https://oeee.test/ap/posts/10",
+        "URIs are built from the template, never the alias"
+    );
+}
+
+#[tokio::test]
+async fn an_alias_is_authorized_as_its_kind() {
+    let federation = with_signed_fetch(
+        builder()
+            .object_alias("note", "/@{handle}/{post_id}")
+            .authorize("note", |_, _, signer: Option<Url>| async move {
+                Ok::<_, String>(signer.is_some())
+            }),
+    );
+    assert_eq!(get(&federation, "/ap/posts/10").await.status, 401);
+    assert_eq!(get(&federation, "/@alice/10").await.status, 401);
+}
+
+#[tokio::test]
+async fn an_alias_has_to_be_of_an_object_kind_and_name_its_values() {
+    let error =
+        |builder: ojak::federation::Builder<App>| builder.build().err().unwrap().to_string();
+    assert!(error(builder().object_alias("robot", "/robots/{id}")).contains("no object kind"));
+    assert!(
+        error(builder().object_alias("person", "/people/{user_id}")).contains("no object kind")
+    );
+    assert!(error(builder().object_alias("note", "/@{handle}")).contains("does not name post_id"));
+    assert!(
+        error(builder().object_alias("note", "/ap/{handle}/{post_id}"))
+            .contains("could match one path"),
+        "an alias is held to the same rules as any template"
+    );
+}

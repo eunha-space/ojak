@@ -106,7 +106,9 @@ ctx.parse_actor("person", &iri) // Some(identifier) when it is one of our people
 
 Each builder returns `Result<Url, UriError>`, an unknown kind or a template
 that did not expand.  `federation.uris(origin)` builds the same URIs with
-no request and no data, for what has to be named before either exists.
+no request and no data, as a `Uris` your application can keep in its own
+state.  `key_id(kind, identifier)` names an actor's key, `#main-key` on the
+actor's IRI.
 `parse_uri` accepts the canonical origin and its aliases, with the origin's
 scheme, and nothing else.
 
@@ -163,6 +165,18 @@ Objects, by kind
 
 An object template may have any number of expressions, and the dispatcher
 receives them by name in `Values`.
+
+An object known by more than one path, such as Mastodon's `/@{username}/{id}`
+beside `/users/{username}/statuses/{id}`, takes the others as aliases:
+
+~~~~ rust
+.object_alias("note", "/@{username}/{post_id}")
+~~~~
+
+An alias is served by the same dispatcher, authorised as its kind, and
+recognised by `parse_uri` and `parse_object`, but URIs are always built from
+the template the kind was registered with.  It has to name every expression
+that template does, since the dispatcher reads them.
 
 
 What a dispatcher returns is a document

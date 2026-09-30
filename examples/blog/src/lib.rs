@@ -69,11 +69,11 @@ impl Blog {
         let federation = activitypub::federation(&config, fetcher.clone())?;
         // The key is named after the author, whose IRI the federation builds
         // from its template before there is any request.
-        let author = federation
+        let key_id = federation
             .uris(config.origin.clone())
-            .actor_uri(activitypub::AUTHOR, &config.username)?;
+            .key_id(activitypub::AUTHOR, &config.username)?;
         let key = SenderKey {
-            key_id: format!("{author}#main-key"),
+            key_id: key_id.to_string(),
             private_key: Arc::new(PrivateKey::from_pem(&config.private_key_pem)?),
         };
         // The blog has one author, so one key signs everything it sends.

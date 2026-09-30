@@ -43,9 +43,8 @@ pub fn federation(config: &Config, fetcher: Arc<Fetcher>) -> Result<Federation<A
         // WebFinger.
         .actor(AUTHOR, AUTHOR_PATH, author)
         .key_pairs(|ctx: Context<App>, actor: ActorRef| async move {
-            let id = ctx.actor_uri(&actor.kind, &actor.identifier)?;
             Ok::<_, Error>(vec![PublicKey::Rsa {
-                id: format!("{id}#main-key"),
+                id: ctx.key_id(&actor.kind, &actor.identifier)?.to_string(),
                 pem: ctx.data().config.public_key_pem.clone(),
             }])
         })

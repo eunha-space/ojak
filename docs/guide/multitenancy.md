@@ -91,6 +91,9 @@ Work outside a request keeps its tenant
 A listener that sends a reply, or a timed job that delivers a post, runs
 outside any request, but still needs the tenant's URIs.
 `Federation::context(origin, data)` builds a context for a given tenant.
+Code that only needs URIs can keep a `Uris`, from
+`federation.uris(origin)`, in the tenant's state: it holds none of your data,
+and `uris.with_origin(…)` gives another tenant's from the same templates.
 
 An activity queued by the inbox keeps the origin it arrived at, and the
 worker that runs it is built with that tenant's data, so its listener sees

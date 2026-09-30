@@ -164,9 +164,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .origin(ORIGIN.parse()?)
         .actor("person", "/users/{username}", alice)
         .key_pairs(|ctx: Context<App>, actor: ActorRef| async move {
-            let id = ctx.actor_uri(&actor.kind, &actor.identifier)?;
             Ok::<_, Error>(vec![PublicKey::Rsa {
-                id: format!("{id}#main-key"),
+                id: ctx.key_id(&actor.kind, &actor.identifier)?.to_string(),
                 pem: ctx.data().public_pem.clone(),
             }])
         })

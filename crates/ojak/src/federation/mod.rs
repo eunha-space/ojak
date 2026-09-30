@@ -227,6 +227,8 @@ struct Entry<D> {
     template: Template,
     dispatcher: Dispatcher<D>,
     authorize: Option<AuthorizeFn<D>>,
+    /// Another path the kind is served and recognised at, never built.
+    alias: bool,
 }
 
 impl<D> Entry<D> {
@@ -247,6 +249,7 @@ enum OriginRule<D> {
 struct Inner<D> {
     origin: OriginRule<D>,
     entries: Vec<Entry<D>>,
+    templates: Arc<Templates>,
     key_pairs: Option<KeysFn<D>>,
     handle: Option<LookupFn<D, String>>,
     map_alias: Option<LookupFn<D, Url>>,
@@ -309,6 +312,7 @@ pub struct Builder<D> {
     on_error: Option<ErrorFn>,
     inboxes: Vec<(String, String)>,
     shared_inbox: Option<String>,
+    object_aliases: Vec<(String, String)>,
     listeners: std::collections::HashMap<&'static str, inbox::ListenerFn<D>>,
     fallback_listener: Option<inbox::ListenerFn<D>>,
     blocked: Option<inbox::BlockedFn<D>>,
@@ -337,6 +341,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             on_error: None,
             inboxes: Vec::new(),
             shared_inbox: None,
+            object_aliases: Vec::new(),
             listeners: std::collections::HashMap::new(),
             fallback_listener: None,
             blocked: None,
@@ -354,9 +359,9 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
     /// data: for what has to be named before the application's data
     /// exists, such as the ID of the key an actor signs with.
     #[must_use]
-    pub fn uris(&self, origin: Url) -> Uris<D> {
+    pub fn uris(&self, origin: Url) -> Uris {
         Uris {
-            federation: self.inner.clone(),
+            templates: self.inner.templates.clone(),
             origin,
         }
     }
@@ -674,6 +679,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                 template,
                 dispatcher,
                 authorize: None,
+                alias: false,
             }),
             Err(error) => self.errors.push(error.to_string()),
         }
@@ -714,6 +720,20 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
             template,
             Dispatcher::Object(Arc::new(move |context, values| load((context, values)))),
         );
+        self
+    }
+
+    /// Serve the objects of `kind` at `template` as well, and recognise it
+    /// in [`Context::parse_uri`] and [`Context::parse_object`]: another path
+    /// the same objects are known by, such as Mastodon's `/@{username}/{id}`
+    /// beside `/users/{username}/statuses/{id}`. URIs are still built from
+    /// the template `kind` was registered with. The dispatcher receives this
+    /// template's values, so it has to name every expression the first
+    /// template does, and may name more.
+    #[must_use]
+    pub fn object_alias(mut self, kind: &str, template: &str) -> Self {
+        self.object_aliases
+            .push((kind.to_owned(), template.to_owned()));
         self
     }
 
@@ -1085,6 +1105,48 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         if origin.is_none() {
             errors.push("no origin: call origin or origin_with".into());
         }
+        for (kind, template) in std::mem::take(&mut self.object_aliases) {
+            let template = match Template::parse(&template) {
+                Ok(template) => template,
+                Err(error) => {
+                    errors.push(error.to_string());
+                    continue;
+                }
+            };
+            let Some((load, primary)) =
+                self.entries
+                    .iter()
+                    .find_map(|entry| match &entry.dispatcher {
+                        Dispatcher::Object(load) if entry.kind == kind && !entry.alias => {
+                            Some((load.clone(), &entry.template))
+                        }
+                        _ => None,
+                    })
+            else {
+                errors.push(format!(
+                    "object_alias for {kind:?}, which is no object kind"
+                ));
+                continue;
+            };
+            if let Some(missing) = primary
+                .names()
+                .find(|name| !template.names().any(|alias| alias == *name))
+            {
+                errors.push(format!(
+                    "object_alias {} does not name {missing}, which {} does",
+                    template.as_str(),
+                    primary.as_str()
+                ));
+                continue;
+            }
+            self.entries.push(Entry {
+                kind,
+                template,
+                dispatcher: Dispatcher::Object(load),
+                authorize: None,
+                alias: true,
+            });
+        }
         for (index, entry) in self.entries.iter().enumerate() {
             let expressions = entry.template.names().count();
             if !matches!(entry.dispatcher, Dispatcher::Object(_)) && expressions > 1 {
@@ -1104,7 +1166,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                 }
             }
             for other in &self.entries[index + 1..] {
-                if entry.kind == other.kind {
+                if entry.kind == other.kind && !entry.alias && !other.alias {
                     errors.push(format!("two dispatchers of kind {:?}", entry.kind));
                 }
                 if entry.template.overlaps(&other.template) {
@@ -1184,16 +1246,31 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
             errors.push("an inbox needs signed_fetch, to fetch and cache senders' keys".into());
         }
         for (kind, authorize) in std::mem::take(&mut self.authorize) {
-            match self.entries.iter_mut().find(|entry| entry.kind == kind) {
-                Some(entry) => entry.authorize = Some(authorize),
-                None => errors.push(format!("authorize names no dispatcher of kind {kind:?}")),
+            let mut found = false;
+            for entry in self.entries.iter_mut().filter(|entry| entry.kind == kind) {
+                entry.authorize = Some(authorize.clone());
+                found = true;
+            }
+            if !found {
+                errors.push(format!("authorize names no dispatcher of kind {kind:?}"));
             }
         }
+        let templates = Arc::new(Templates {
+            routes: self
+                .entries
+                .iter()
+                .filter(|entry| !entry.alias)
+                .map(|entry| (entry.kind.clone(), entry.noun(), entry.template.clone()))
+                .collect(),
+            inboxes: inboxes.clone(),
+            shared_inbox: shared_inbox.clone(),
+        });
         match origin {
             Some(origin) if errors.is_empty() => Ok(Federation {
                 inner: Arc::new(Inner {
                     origin,
                     entries: self.entries,
+                    templates,
                     key_pairs: self.key_pairs,
                     handle: self.handle,
                     map_alias: self.map_alias,
@@ -1255,22 +1332,55 @@ struct ContextInner<D> {
     signer: tokio::sync::OnceCell<Option<Url>>,
 }
 
+/// The templates URIs are built from, apart from what serves them.
+#[derive(Debug)]
+struct Templates {
+    /// Each kind's template, by kind and noun; aliases are not built.
+    routes: Vec<(String, &'static str, Template)>,
+    inboxes: Vec<(String, Template)>,
+    shared_inbox: Option<Template>,
+}
+
+/// The fragment of an actor's IRI its key is named by, as Mastodon names
+/// it.
+const KEY_FRAGMENT: &str = "main-key";
+
 /// The URIs of what a federation serves, in one origin, built from the
-/// templates their routes were registered with. [`Federation::uris`] gives
-/// them where there is no request and no context yet, such as the ID of a
-/// key needed to build the application's data; [`Context::uris`] within
-/// one.
-pub struct Uris<D> {
-    federation: Arc<Inner<D>>,
+/// templates their routes were registered with.
+///
+/// [`Federation::uris`] gives them where there is no request, and
+/// [`Context::uris`] within one. They carry none of the application's data
+/// and are cheap to clone, so an application can keep them in its own
+/// state, for code that runs outside any request: creating an account,
+/// sending a post from a background job. An application serving several
+/// hosts keeps one and takes each tenant's with [`Uris::with_origin`].
+#[derive(Clone, Debug)]
+pub struct Uris {
+    templates: Arc<Templates>,
     origin: Url,
 }
 
-impl<D> Uris<D> {
-    fn entry(&self, kind: &str, noun: &str) -> Result<&Entry<D>, UriError> {
-        self.federation
-            .entries
+impl Uris {
+    /// The origin these URIs are in.
+    #[must_use]
+    pub fn origin(&self) -> &Url {
+        &self.origin
+    }
+
+    /// The same URIs, in `origin`.
+    #[must_use]
+    pub fn with_origin(&self, origin: Url) -> Self {
+        Self {
+            templates: self.templates.clone(),
+            origin,
+        }
+    }
+
+    fn template(&self, kind: &str, noun: &str) -> Result<&Template, UriError> {
+        self.templates
+            .routes
             .iter()
-            .find(|entry| entry.kind == kind && entry.noun() == noun)
+            .find_map(|(k, n, template)| (k == kind && *n == noun).then_some(template))
             .ok_or_else(|| UriError::UnknownKind(kind.to_owned()))
     }
 
@@ -1297,8 +1407,21 @@ impl<D> Uris<D> {
     /// When no actor dispatcher is of `kind`, or `identifier` is empty for a
     /// template that needs one.
     pub fn actor_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
-        let entry = self.entry(kind, "actor")?;
-        self.uri(&entry.template, &Self::single(&entry.template, identifier))
+        let template = self.template(kind, "actor")?;
+        self.uri(template, &Self::single(template, identifier))
+    }
+
+    /// The ID of the key the actor of `kind` with `identifier` signs with:
+    /// its IRI with the fragment `main-key`, as Mastodon names it, and as
+    /// the actor document should publish it.
+    ///
+    /// # Errors
+    ///
+    /// As [`Uris::actor_uri`].
+    pub fn key_id(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
+        let mut uri = self.actor_uri(kind, identifier)?;
+        uri.set_fragment(Some(KEY_FRAGMENT));
+        Ok(uri)
     }
 
     /// The URI of the object of `kind` with `values`.
@@ -1308,8 +1431,8 @@ impl<D> Uris<D> {
     /// When no object dispatcher is of `kind`, or `values` do not fill its
     /// template.
     pub fn object_uri(&self, kind: &str, values: &[(&str, &str)]) -> Result<Url, UriError> {
-        let entry = self.entry(kind, "object")?;
-        self.uri(&entry.template, &values.iter().copied().collect())
+        let template = self.template(kind, "object")?;
+        self.uri(template, &values.iter().copied().collect())
     }
 
     /// The URI of the collection `kind` of what `identifier` names.
@@ -1318,8 +1441,8 @@ impl<D> Uris<D> {
     ///
     /// As [`Uris::actor_uri`], for collections.
     pub fn collection_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
-        let entry = self.entry(kind, "collection")?;
-        self.uri(&entry.template, &Self::single(&entry.template, identifier))
+        let template = self.template(kind, "collection")?;
+        self.uri(template, &Self::single(template, identifier))
     }
 
     /// The URI of the inbox of the actor of `kind` with `identifier`.
@@ -1330,7 +1453,7 @@ impl<D> Uris<D> {
     /// its template.
     pub fn inbox_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
         let template = self
-            .federation
+            .templates
             .inboxes
             .iter()
             .find_map(|(inbox, template)| (inbox == kind).then_some(template))
@@ -1345,7 +1468,7 @@ impl<D> Uris<D> {
     /// When no shared inbox is registered.
     pub fn shared_inbox_uri(&self) -> Result<Url, UriError> {
         let template = self
-            .federation
+            .templates
             .shared_inbox
             .as_ref()
             .ok_or_else(|| UriError::UnknownKind("shared inbox".to_owned()))?;
@@ -1394,9 +1517,9 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
 
     /// The URIs of what is registered, in the canonical origin.
     #[must_use]
-    pub fn uris(&self) -> Uris<D> {
+    pub fn uris(&self) -> Uris {
         Uris {
-            federation: self.inner.federation.clone(),
+            templates: self.inner.federation.templates.clone(),
             origin: self.inner.origin.clone(),
         }
     }
@@ -1409,6 +1532,16 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
     /// template that needs one.
     pub fn actor_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
         self.uris().actor_uri(kind, identifier)
+    }
+
+    /// The ID of the key the actor of `kind` with `identifier` signs with;
+    /// see [`Uris::key_id`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Context::actor_uri`].
+    pub fn key_id(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
+        self.uris().key_id(kind, identifier)
     }
 
     /// The URI of the object of `kind` with `values`.

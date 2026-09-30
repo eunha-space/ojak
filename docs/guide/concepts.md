@@ -128,10 +128,13 @@ ctx.parse_actor("person", &iri) // the identifier, if it is one of our people
 to.  Because the router and every call site read the same template, they
 cannot disagree about where something lives.
 
-Some URIs are needed before there is any request, or any of your data: the
-ID of an actor's key, for instance, which your application's data holds.
-`federation.uris(origin)` builds them from the same templates, with no
-context.
+Some URIs are needed outside any request: the ID of an actor's key, which
+your application's data holds, or the URIs a background job writes into a
+post it sends.  `federation.uris(origin)` gives a `Uris` that builds them
+from the same templates.  It carries none of your data and is cheap to
+clone, so you can keep it in your application's state, and
+`uris.with_origin(…)` gives a tenant's.  `key_id(kind, identifier)` names an
+actor's key: its IRI with `#main-key`, as Mastodon names it.
 
 
 An origin is a host or a key
