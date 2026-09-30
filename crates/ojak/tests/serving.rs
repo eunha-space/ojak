@@ -907,3 +907,48 @@ async fn an_alias_has_to_be_of_an_object_kind_and_name_its_values() {
         "an alias is held to the same rules as any template"
     );
 }
+
+#[tokio::test]
+async fn an_alias_leaves_the_application_what_it_does_not_serve() {
+    let federation = builder()
+        .object_alias("note", "/@{handle}/{post_id}")
+        .build()
+        .unwrap();
+    let handled = |method: &'static str, path: &'static str| {
+        let federation = federation.clone();
+        async move {
+            federation
+                .handle(
+                    &request(method, "oeee.test", path, Some(ACCEPT_AP)),
+                    App::default(),
+                )
+                .await
+        }
+    };
+    assert!(
+        matches!(handled("POST", "/@alice/follow").await, Handled::NotFound),
+        "a form posted to a page at the alias's shape is the application's"
+    );
+    assert!(
+        matches!(handled("GET", "/@alice/guestbook").await, Handled::NotFound),
+        "and so is a page there that is no object"
+    );
+    assert_eq!(
+        send(
+            &federation,
+            request("POST", "oeee.test", "/ap/posts/10", None)
+        )
+        .await
+        .status,
+        405,
+        "the kind's own template is still Ojak's alone"
+    );
+
+    let gone = get(&federation, "/@alice/12").await;
+    assert_eq!(gone.status, 410);
+    assert_eq!(
+        gone.json()["id"],
+        "https://oeee.test/ap/posts/12",
+        "a Tombstone at an alias names the object, not the alias"
+    );
+}

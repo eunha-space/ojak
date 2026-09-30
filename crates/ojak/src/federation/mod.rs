@@ -533,7 +533,15 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             return Handled::NotFound;
         };
         let head = request.method == Method::HEAD;
+        // An alias is a path the application serves too, such as a post's
+        // page, whose other methods are the application's.
+        let alias = matched
+            .as_ref()
+            .is_some_and(|(index, _)| self.inner.entries[*index].alias);
         if request.method != Method::GET && !head {
+            if alias {
+                return Handled::NotFound;
+            }
             return Handled::Response(method_not_allowed());
         }
 
@@ -577,6 +585,11 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
                 context.report(&error);
                 empty(StatusCode::INTERNAL_SERVER_ERROR)
             });
+        // What an alias's dispatcher does not find is the application's to
+        // answer at that path, as if the alias did not match.
+        if entry.alias && response.status() == StatusCode::NOT_FOUND {
+            return Handled::NotFound;
+        }
         Handled::Response(without_body_if(head, response))
     }
 
@@ -600,7 +613,16 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
                 let identifier = values.single().unwrap_or_default().to_owned();
                 Ok(found(load(context.clone(), identifier).await?, &url))
             }
-            Dispatcher::Object(load) => Ok(found(load(context.clone(), values).await?, &url)),
+            Dispatcher::Object(load) => {
+                // A Tombstone names the object, and an alias is not its name.
+                let url = if entry.alias {
+                    let values: Vec<(&str, &str)> = values.iter().collect();
+                    context.object_uri(&entry.kind, &values).unwrap_or(url)
+                } else {
+                    url
+                };
+                Ok(found(load(context.clone(), values).await?, &url))
+            }
             Dispatcher::Collection(collection) => {
                 let identifier = values.single().unwrap_or_default().to_owned();
                 collection

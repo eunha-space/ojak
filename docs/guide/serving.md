@@ -175,8 +175,15 @@ beside `/users/{username}/statuses/{id}`, takes the others as aliases:
 
 An alias is served by the same dispatcher, authorised as its kind, and
 recognised by `parse_uri` and `parse_object`, but URIs are always built from
-the template the kind was registered with.  It has to name every expression
-that template does, since the dispatcher reads them.
+the template the kind was registered with, and a Tombstone at an alias names
+the object by that template too.  It has to name every expression that
+template does, since the dispatcher reads them.
+
+An alias is usually a path your application serves pages at, so Ojak takes
+only what it can answer there: an ActivityPub GET for an object the
+dispatcher finds.  Anything else, a form POSTed to `/@alice/follow` or a
+request for `/@alice/guestbook`, which no dispatcher finds, is
+`Handled::NotFound`, and goes on to your application.
 
 
 What a dispatcher returns is a document
