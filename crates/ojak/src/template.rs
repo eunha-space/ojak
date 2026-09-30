@@ -239,6 +239,27 @@ impl Template {
         Some(values)
     }
 
+    /// How specific `self` is next to `other`, for a path that matches
+    /// both: at the first segment where they differ, a literal is more
+    /// specific than an expression, and an expression with a longer prefix
+    /// than one with a shorter. `Equal` when no segment tells them apart, so
+    /// that neither can be preferred.
+    #[must_use]
+    pub fn specificity(&self, other: &Self) -> std::cmp::Ordering {
+        fn rank(segment: &Segment) -> (u8, usize) {
+            match segment {
+                Segment::Literal(literal) => (1, literal.len()),
+                Segment::Expression { prefix, .. } => (0, prefix.len()),
+            }
+        }
+        self.segments
+            .iter()
+            .zip(&other.segments)
+            .map(|(a, b)| rank(a).cmp(&rank(b)))
+            .find(|order| order.is_ne())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }
+
     /// Whether some path matches both `self` and `other`.
     #[must_use]
     pub fn overlaps(&self, other: &Self) -> bool {
@@ -306,6 +327,25 @@ mod tests {
         assert_eq!(t.names().collect::<Vec<_>>(), ["username", "id"]);
         assert_eq!(t.matches("/users/alice/statuses/42"), None);
         assert!(t.expand(&values(&[("username", "alice")])).is_err());
+    }
+
+    #[test]
+    fn a_literal_is_more_specific_than_an_expression() {
+        use std::cmp::Ordering;
+        let followers = template("/@{username}/followers");
+        let status = template("/@{username}/{status_id}");
+        assert!(followers.overlaps(&status));
+        assert_eq!(followers.specificity(&status), Ordering::Greater);
+        assert_eq!(status.specificity(&followers), Ordering::Less);
+        assert_eq!(
+            template("/@{name}").specificity(&template("/{name}")),
+            Ordering::Greater,
+            "a longer prefix is more specific"
+        );
+        assert_eq!(
+            template("/users/{a}").specificity(&template("/users/{b}")),
+            Ordering::Equal
+        );
     }
 
     #[test]

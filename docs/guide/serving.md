@@ -85,11 +85,18 @@ matching decodes it, so an identifier may be anything, a UUID, a login name or
 a DID, and survives the round trip. An expression never matches an empty
 value.
 
+A path that two templates match goes to the more specific one: reading from
+the left, at the first segment where they differ, a literal is more specific
+than an expression, and an expression with a longer prefix than one with a
+shorter.  So `/@{username}/followers` takes `/@alice/followers`, and
+`/@{username}/{status_id}` takes `/@alice/123`, as Mastodon routes them.
+
 `build` refuses, rather than a request discovering, two templates that could
-match one path, a template on a path Ojak reserves (WebFinger, host-meta,
-NodeInfo), two dispatchers with one kind, an actor or collection template
-with more than one expression, and an `authorize` for a kind that is not
-registered.
+match one path and that nothing tells apart, such as `/users/{id}` and
+`/users/{username}`, a template on a path Ojak reserves (WebFinger,
+host-meta, NodeInfo), two dispatchers with one kind, an actor or collection
+template with more than one expression, and an `authorize` for a kind that
+is not registered.
 
 The context builds URIs from templates and parses them back:
 

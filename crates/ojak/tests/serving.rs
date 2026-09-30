@@ -902,9 +902,9 @@ async fn an_alias_has_to_be_of_an_object_kind_and_name_its_values() {
     );
     assert!(error(builder().object_alias("note", "/@{handle}")).contains("does not name post_id"));
     assert!(
-        error(builder().object_alias("note", "/ap/{handle}/{post_id}"))
+        error(builder().object_alias("note", "/ap/posts/{post_id}"))
             .contains("could match one path"),
-        "an alias is held to the same rules as any template"
+        "an alias that nothing tells apart from a template is ambiguous"
     );
 }
 
@@ -1002,4 +1002,33 @@ async fn a_collection_alias_has_to_be_of_a_collection_kind_and_name_its_owner() 
         error(builder().collection_alias("followers", "/followers"))
             .contains("has to name its owner")
     );
+}
+
+#[tokio::test]
+async fn a_path_goes_to_the_most_specific_template_it_matches() {
+    // Mastodon's shapes: a status at /@{username}/{id}, and the account's
+    // followers at /@{username}/followers, which the first also matches.
+    let federation = builder()
+        .object_alias("note", "/@{handle}/{post_id}")
+        .collection_alias("followers", "/@{handle}/followers")
+        .build()
+        .unwrap();
+    assert_eq!(
+        get(&federation, "/@1/followers").await.json()["id"],
+        "https://oeee.test/ap/users/1/followers",
+        "the literal followers is more specific than {{post_id}}"
+    );
+    assert_eq!(
+        get(&federation, "/@alice/10").await.json()["id"],
+        "https://oeee.test/ap/posts/10"
+    );
+    let ctx = federation.context(canonical(), App::default());
+    assert!(matches!(
+        ctx.parse_uri("https://oeee.test/@1/followers"),
+        Some(Route::Collection { .. })
+    ));
+    assert!(matches!(
+        ctx.parse_uri("https://oeee.test/@alice/10"),
+        Some(Route::Object { .. })
+    ));
 }

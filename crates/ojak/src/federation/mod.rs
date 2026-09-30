@@ -270,6 +270,22 @@ struct Inner<D> {
     read_as_written: bool,
 }
 
+impl<D> Inner<D> {
+    /// The entry `path` is routed to, with its values: of every template it
+    /// matches, the most specific, as `build` made sure there is one.
+    fn route(&self, path: &str) -> Option<(usize, Values)> {
+        self.entries
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| Some((index, entry.template.matches(path)?)))
+            .max_by(|(a, _), (b, _)| {
+                self.entries[*a]
+                    .template
+                    .specificity(&self.entries[*b].template)
+            })
+    }
+}
+
 /// Everything Ojak serves, and the URIs it builds. Cheap to clone.
 pub struct Federation<D> {
     inner: Arc<Inner<D>>,
@@ -516,12 +532,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
         let matched = if special.is_some() {
             None
         } else {
-            let found = self
-                .inner
-                .entries
-                .iter()
-                .enumerate()
-                .find_map(|(index, entry)| Some((index, entry.template.matches(path)?)));
+            let found = self.inner.route(path);
             if found.is_none() {
                 return Handled::NotFound;
             }
@@ -1220,7 +1231,11 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                 if entry.kind == other.kind && !entry.alias && !other.alias {
                     errors.push(format!("two dispatchers of kind {:?}", entry.kind));
                 }
-                if entry.template.overlaps(&other.template) {
+                // A path both match goes to the more specific; two that
+                // nothing tells apart are ambiguous.
+                if entry.template.overlaps(&other.template)
+                    && entry.template.specificity(&other.template).is_eq()
+                {
                     errors.push(format!(
                         "{} and {} could match one path",
                         entry.template.as_str(),
@@ -1653,22 +1668,21 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
         if url.scheme() != self.inner.origin.scheme() || !self.is_our_host(&authority(&url)) {
             return None;
         }
-        self.inner.federation.entries.iter().find_map(|entry| {
-            let values = entry.template.matches(url.path())?;
-            Some(match entry.dispatcher {
-                Dispatcher::Actor(_) => Route::Actor(ActorRef::new(
-                    entry.kind.clone(),
-                    values.single().unwrap_or_default(),
-                )),
-                Dispatcher::Object(_) => Route::Object {
-                    kind: entry.kind.clone(),
-                    values,
-                },
-                Dispatcher::Collection(_) => Route::Collection {
-                    kind: entry.kind.clone(),
-                    identifier: values.single().unwrap_or_default().to_owned(),
-                },
-            })
+        let (index, values) = self.inner.federation.route(url.path())?;
+        let entry = &self.inner.federation.entries[index];
+        Some(match entry.dispatcher {
+            Dispatcher::Actor(_) => Route::Actor(ActorRef::new(
+                entry.kind.clone(),
+                values.single().unwrap_or_default(),
+            )),
+            Dispatcher::Object(_) => Route::Object {
+                kind: entry.kind.clone(),
+                values,
+            },
+            Dispatcher::Collection(_) => Route::Collection {
+                kind: entry.kind.clone(),
+                identifier: values.single().unwrap_or_default().to_owned(),
+            },
         })
     }
 
