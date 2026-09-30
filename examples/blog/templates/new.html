@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Write a post · {{ blog_title }}{% endblock %}
+{% block main %}
+<h1>Write a post</h1>
+<form method="post" action="/new">
+  <p><label>Title<br><input name="title" required></label></p>
+  <p><label>Post<br><textarea name="body" required rows="12"></textarea></label></p>
+  <p><small>Leave a blank line between paragraphs.</small></p>
+  <p><label>Token<br><input name="token" type="password" required></label></p>
+  <p><button>Publish</button></p>
+</form>
+{% endblock %}

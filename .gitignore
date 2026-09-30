@@ -2,3 +2,7 @@
 /docs/node_modules
 /docs/.vitepress/cache
 /docs/.vitepress/dist
+
+# The example blog's key, made where it is run.
+/blog.pem
+/blog.pub.pem

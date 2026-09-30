@@ -7,6 +7,7 @@ members = [
   "crates/ojak-sig",
   "crates/ojak-vocab",
   "crates/ojak-vocab-gen",
+  "examples/blog",
 ]
 resolver = "3"
 

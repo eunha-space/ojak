@@ -40,8 +40,9 @@ Documents are read by what their keys mean rather than how they are spelled,
 so a Mastodon `Follow` and one written with an unusual `@context` reach the
 same listener.  The contexts this needs ship with Ojak and are never fetched.
 
-[Getting started](./getting-started.md) builds a small server with all of
-this in about a hundred lines.
+[Getting started](./getting-started.md) builds a small server in about a
+hundred lines, and the [tutorial](./tutorial.md) walks through a whole blog
+that federates.
 
 
 What it runs on

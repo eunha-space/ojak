@@ -235,6 +235,8 @@ at the origin it claims, here `https://example.com`.
 Where to go next
 ----------------
 
+ -  Build something whole: the [tutorial](./tutorial.md) walks through a blog
+    that people follow, read, reply to and like from Mastodon.
  -  Replace `MemoryQueue` and `MemoryKvStore` with *ojak-postgres*'s, so that
     deliveries survive a restart.  See [Concepts](./guide/concepts.md).
  -  Serve posts and collections, and decide who may fetch them: [Serving].

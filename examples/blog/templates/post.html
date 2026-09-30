@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · {{ blog_title }}{% endblock %}
+{% block main %}
+<h1>{{ title }}</h1>
+<p><small>{{ date }}</small></p>
+{% include "content.html" %}
+<p>♥ {{ likes }}</p>
+<h2>Replies</h2>
+<ul>
+  {% for comment in comments %}
+  <li><a href="{{ comment.author }}">{{ comment.author }}</a>: {{ comment.text }}</li>
+  {% else %}
+  <li>Reply from the fediverse, and it will show up here.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block main %}
+<p>Follow <code>{{ handle }}</code> from Mastodon, or from anywhere else in
+the fediverse.</p>
+<p><a href="/new">Write a post</a></p>
+<ul>
+  {% for post in posts %}
+  <li><a href="/posts/{{ post.id }}">{{ post.title }}</a> <small>{{ post.date }}</small></li>
+  {% else %}
+  <li>Nothing yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

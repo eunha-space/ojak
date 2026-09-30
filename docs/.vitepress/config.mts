@@ -13,6 +13,7 @@ export default defineConfig({
     nav: [
       { text: "Introduction", link: "/intro" },
       { text: "Getting started", link: "/getting-started" },
+      { text: "Tutorial", link: "/tutorial" },
       { text: "Guide", link: "/guide/" },
       { text: "Crates", link: "/crates" },
       { text: "Showcase", link: "/showcase" },
@@ -23,6 +24,7 @@ export default defineConfig({
         items: [
           { text: "What is Ojak?", link: "/intro" },
           { text: "Getting started", link: "/getting-started" },
+          { text: "Tutorial: a blog", link: "/tutorial" },
           { text: "Crates", link: "/crates" },
           { text: "Showcase", link: "/showcase" },
         ],
