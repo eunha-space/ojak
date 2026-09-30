@@ -17,6 +17,7 @@ mod nodeinfo;
 mod signer;
 mod webfinger;
 
+pub use crate::template::Values;
 pub use collection::{Collection, First, Page};
 pub use inbox::{
     CollectionRef, Forward, ForwardTo, GatewayInbox, InboxWorker, InboxWorkerConfig,
@@ -28,7 +29,7 @@ pub use signer::KnownKey;
 use crate::fetch::Fetcher;
 use crate::kv::{KvError, KvStore};
 use crate::portable::ApUri;
-use crate::template::{Template, TemplateError, Values};
+use crate::template::{Template, TemplateError};
 use chrono::{DateTime, SecondsFormat, Utc};
 use http::{HeaderValue, Method, StatusCode, header};
 use serde_json::{Value, json};
@@ -346,6 +347,17 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             forward: None,
             read_as_written: false,
             errors: Vec::new(),
+        }
+    }
+
+    /// The URIs of what is registered, in `origin`, with no request and no
+    /// data: for what has to be named before the application's data
+    /// exists, such as the ID of the key an actor signs with.
+    #[must_use]
+    pub fn uris(&self, origin: Url) -> Uris<D> {
+        Uris {
+            federation: self.inner.clone(),
+            origin,
         }
     }
 
@@ -1243,48 +1255,19 @@ struct ContextInner<D> {
     signer: tokio::sync::OnceCell<Option<Url>>,
 }
 
-/// What every callback receives: the application's data, the canonical
-/// origin, and the request, if there is one. Cheap to clone.
-pub struct Context<D> {
-    inner: Arc<ContextInner<D>>,
+/// The URIs of what a federation serves, in one origin, built from the
+/// templates their routes were registered with. [`Federation::uris`] gives
+/// them where there is no request and no context yet, such as the ID of a
+/// key needed to build the application's data; [`Context::uris`] within
+/// one.
+pub struct Uris<D> {
+    federation: Arc<Inner<D>>,
+    origin: Url,
 }
 
-impl<D> Clone for Context<D> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl<D: Clone + Send + Sync + 'static> Context<D> {
-    fn new(federation: Arc<Inner<D>>, data: D, origin: Url, request: Option<RequestInfo>) -> Self {
-        Self {
-            inner: Arc::new(ContextInner {
-                federation,
-                data,
-                origin,
-                request,
-                signer: tokio::sync::OnceCell::new(),
-            }),
-        }
-    }
-
-    /// The application's data.
-    #[must_use]
-    pub fn data(&self) -> &D {
-        &self.inner.data
-    }
-
-    /// The canonical origin every URI is built in.
-    #[must_use]
-    pub fn origin(&self) -> &Url {
-        &self.inner.origin
-    }
-
+impl<D> Uris<D> {
     fn entry(&self, kind: &str, noun: &str) -> Result<&Entry<D>, UriError> {
-        self.inner
-            .federation
+        self.federation
             .entries
             .iter()
             .find(|entry| entry.kind == kind && entry.noun() == noun)
@@ -1293,7 +1276,7 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
 
     fn uri(&self, template: &Template, values: &Values) -> Result<Url, UriError> {
         let path = template.expand(values).map_err(UriError::Template)?;
-        let mut url = self.inner.origin.clone();
+        let mut url = self.origin.clone();
         url.set_path(&path);
         url.set_query(None);
         url.set_fragment(None);
@@ -1333,10 +1316,136 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
     ///
     /// # Errors
     ///
-    /// As [`Context::actor_uri`], for collections.
+    /// As [`Uris::actor_uri`], for collections.
     pub fn collection_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
         let entry = self.entry(kind, "collection")?;
         self.uri(&entry.template, &Self::single(&entry.template, identifier))
+    }
+
+    /// The URI of the inbox of the actor of `kind` with `identifier`.
+    ///
+    /// # Errors
+    ///
+    /// When no inbox is registered for `kind`, or `identifier` does not fill
+    /// its template.
+    pub fn inbox_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
+        let template = self
+            .federation
+            .inboxes
+            .iter()
+            .find_map(|(inbox, template)| (inbox == kind).then_some(template))
+            .ok_or_else(|| UriError::UnknownKind(kind.to_owned()))?;
+        self.uri(template, &Self::single(template, identifier))
+    }
+
+    /// The URI of the shared inbox.
+    ///
+    /// # Errors
+    ///
+    /// When no shared inbox is registered.
+    pub fn shared_inbox_uri(&self) -> Result<Url, UriError> {
+        let template = self
+            .federation
+            .shared_inbox
+            .as_ref()
+            .ok_or_else(|| UriError::UnknownKind("shared inbox".to_owned()))?;
+        self.uri(template, &Values::new())
+    }
+}
+
+/// What every callback receives: the application's data, the canonical
+/// origin, and the request, if there is one. Cheap to clone.
+pub struct Context<D> {
+    inner: Arc<ContextInner<D>>,
+}
+
+impl<D> Clone for Context<D> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<D: Clone + Send + Sync + 'static> Context<D> {
+    fn new(federation: Arc<Inner<D>>, data: D, origin: Url, request: Option<RequestInfo>) -> Self {
+        Self {
+            inner: Arc::new(ContextInner {
+                federation,
+                data,
+                origin,
+                request,
+                signer: tokio::sync::OnceCell::new(),
+            }),
+        }
+    }
+
+    /// The application's data.
+    #[must_use]
+    pub fn data(&self) -> &D {
+        &self.inner.data
+    }
+
+    /// The canonical origin every URI is built in.
+    #[must_use]
+    pub fn origin(&self) -> &Url {
+        &self.inner.origin
+    }
+
+    /// The URIs of what is registered, in the canonical origin.
+    #[must_use]
+    pub fn uris(&self) -> Uris<D> {
+        Uris {
+            federation: self.inner.federation.clone(),
+            origin: self.inner.origin.clone(),
+        }
+    }
+
+    /// The URI of the actor of `kind` with `identifier`.
+    ///
+    /// # Errors
+    ///
+    /// When no actor dispatcher is of `kind`, or `identifier` is empty for a
+    /// template that needs one.
+    pub fn actor_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
+        self.uris().actor_uri(kind, identifier)
+    }
+
+    /// The URI of the object of `kind` with `values`.
+    ///
+    /// # Errors
+    ///
+    /// When no object dispatcher is of `kind`, or `values` do not fill its
+    /// template.
+    pub fn object_uri(&self, kind: &str, values: &[(&str, &str)]) -> Result<Url, UriError> {
+        self.uris().object_uri(kind, values)
+    }
+
+    /// The URI of the collection `kind` of what `identifier` names.
+    ///
+    /// # Errors
+    ///
+    /// As [`Context::actor_uri`], for collections.
+    pub fn collection_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
+        self.uris().collection_uri(kind, identifier)
+    }
+
+    /// The URI of the inbox of the actor of `kind` with `identifier`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Context::actor_uri`], for inboxes.
+    pub fn inbox_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
+        self.uris().inbox_uri(kind, identifier)
+    }
+
+    /// The URI of the shared inbox.
+    ///
+    /// # Errors
+    ///
+    /// When no shared inbox is registered.
+    pub fn shared_inbox_uri(&self) -> Result<Url, UriError> {
+        self.uris().shared_inbox_uri()
     }
 
     /// Whether `host`, with its port if it has one, is the canonical
@@ -1379,6 +1488,30 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
         })
     }
 
+    /// The identifier of the actor of `kind` that `iri` is, if it is one of
+    /// ours: what a listener checks a `Follow`'s object against.
+    #[must_use]
+    pub fn parse_actor(&self, kind: &str, iri: &str) -> Option<String> {
+        match self.parse_uri(iri)? {
+            Route::Actor(actor) if actor.kind == kind => Some(actor.identifier),
+            _ => None,
+        }
+    }
+
+    /// The values of the object of `kind` that `iri` is, if it is one of
+    /// ours: what a listener checks an `inReplyTo` or a `Like`'s object
+    /// against.
+    #[must_use]
+    pub fn parse_object(&self, kind: &str, iri: &str) -> Option<Values> {
+        match self.parse_uri(iri)? {
+            Route::Object {
+                kind: found,
+                values,
+            } if found == kind => Some(values),
+            _ => None,
+        }
+    }
+
     /// The public keys `actor` publishes, from the key-pairs dispatcher; none
     /// when there is no such dispatcher.
     ///
@@ -1407,7 +1540,13 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
 
     /// Load the actor `actor` through its dispatcher.
     async fn load_actor(&self, actor: &ActorRef) -> Result<Found<Value>, Error> {
-        let Ok(entry) = self.entry(&actor.kind, "actor") else {
+        let Some(entry) = self
+            .inner
+            .federation
+            .entries
+            .iter()
+            .find(|entry| entry.kind == actor.kind && entry.noun() == "actor")
+        else {
             return Ok(Found::NotFound);
         };
         match &entry.dispatcher {

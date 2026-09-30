@@ -1,75 +1,19 @@
 //! The blog federating with a reader on another server: the reader follows,
 //! is sent each new post, replies, likes, deletes the reply and unfollows.
 //!
-//! The reader's server runs on the loopback interface, which the blog's
-//! client is allowed to reach here, and signs what it sends the way a real
-//! server would. The blog is `blog.test`, reached without a network.
+//! The reader's server is Ojak's [`Remote`], on the loopback interface,
+//! which the blog's client is allowed to reach here; it signs what it sends
+//! the way a real server would. The blog is `blog.test`, reached without a
+//! network.
 
-use axum::Router;
-use axum::body::{Body, Bytes, to_bytes};
-use axum::extract::State;
-use axum::routing::{get, post};
+use axum::body::{Body, to_bytes};
 use http::{Request, StatusCode};
-use ojak::client::ClientConfig;
-use ojak::sig::signature::{PrivateKey, sign_request_with_key};
-use ojak_example_blog::{App, Blog, Config, activitypub, router};
+use ojak::testing::{PRIVATE_KEY_PEM, PUBLIC_KEY_PEM, Remote, client_config};
+use ojak_example_blog::{App, Blog, Config, router};
 use serde_json::{Value, json};
-use std::sync::{Arc, Mutex};
 use tower::ServiceExt as _;
 
-const PRIVATE_KEY: &str =
-    include_str!("../../../crates/ojak/tests/fixtures/rfc9421_test_key_rsa.pem");
-const PUBLIC_KEY: &str =
-    include_str!("../../../crates/ojak/tests/fixtures/rfc9421_test_key_rsa_public.pem");
 const BLOG: &str = "https://blog.test";
-const INBOX: &str = "/users/blog/inbox";
-
-/// What the reader's server was sent.
-type Received = Arc<Mutex<Vec<Value>>>;
-
-// #region reader
-/// The reader's server: their actor, and an inbox that keeps what arrives.
-async fn serve_reader(received: Received) -> String {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let origin = format!("http://{}", listener.local_addr().unwrap());
-    let actor = json!({
-        "@context": ["https://www.w3.org/ns/activitystreams", "https://w3id.org/security/v1"],
-        "id": format!("{origin}/users/reader"),
-        "type": "Person",
-        "preferredUsername": "reader",
-        "inbox": format!("{origin}/users/reader/inbox"),
-        "endpoints": {"sharedInbox": format!("{origin}/inbox")},
-        "publicKey": {
-            "id": format!("{origin}/users/reader#main-key"),
-            "owner": format!("{origin}/users/reader"),
-            "publicKeyPem": PUBLIC_KEY,
-        },
-    });
-    let app = Router::new()
-        .route(
-            "/users/reader",
-            get(move || async move {
-                (
-                    [("content-type", "application/activity+json")],
-                    actor.to_string(),
-                )
-            }),
-        )
-        .route(
-            "/inbox",
-            post(|State(received): State<Received>, body: Bytes| async move {
-                received
-                    .lock()
-                    .unwrap()
-                    .push(serde_json::from_slice(&body).unwrap());
-                StatusCode::ACCEPTED
-            }),
-        )
-        .with_state(received);
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    format!("{origin}/users/reader")
-}
-// #endregion reader
 
 fn blog() -> App {
     Blog::new(Config {
@@ -77,40 +21,22 @@ fn blog() -> App {
         username: "blog".to_owned(),
         title: "A test blog".to_owned(),
         token: "secret".to_owned(),
-        private_key_pem: PRIVATE_KEY.to_owned(),
-        public_key_pem: PUBLIC_KEY.to_owned(),
-        client: ClientConfig {
-            allow_private: vec!["127.0.0.0/8".parse().unwrap()],
-            ..ClientConfig::default()
-        },
+        private_key_pem: PRIVATE_KEY_PEM.to_owned(),
+        public_key_pem: PUBLIC_KEY_PEM.to_owned(),
+        // The reader's server is on the loopback interface, which a real
+        // client refuses to reach.
+        client: client_config(),
     })
     .unwrap()
 }
 
 // #region send
-/// `activity`, POSTed to the blog's inbox and signed by the reader.
-async fn send(blog: &App, reader: &str, activity: &Value) -> StatusCode {
-    let body = serde_json::to_vec(activity).unwrap();
-    let signed = sign_request_with_key(
-        "post",
-        &format!("{BLOG}{INBOX}"),
-        &body,
-        &format!("{reader}#main-key"),
-        &PrivateKey::from_pem(PRIVATE_KEY).unwrap(),
-        &[],
-        chrono::Utc::now().timestamp(),
-    )
-    .unwrap();
-    let request = Request::post(INBOX)
-        .header("host", "blog.test")
-        .header("content-type", "application/activity+json")
-        .header("date", signed.date)
-        .header("digest", signed.digest)
-        .header("signature", signed.signature)
-        .body(Body::from(body))
-        .unwrap();
+/// `activity`, delivered to the blog's inbox by the reader's server, signed
+/// by the reader.
+async fn send(blog: &App, remote: &Remote, activity: &Value) -> StatusCode {
+    let request = remote.sign("reader", &format!("{BLOG}/users/blog/inbox"), activity);
     router(blog.clone())
-        .oneshot(request)
+        .oneshot(request.map(Body::from))
         .await
         .unwrap()
         .status()
@@ -131,8 +57,8 @@ async fn get_page(blog: &App, path: &str, accept: &str) -> (StatusCode, String) 
 
 #[tokio::test]
 async fn a_reader_follows_reads_replies_likes_and_leaves() {
-    let received = Received::default();
-    let reader = serve_reader(received.clone()).await;
+    let remote = Remote::start().await;
+    let reader = remote.actor("reader");
     let blog = blog();
     let author = format!("{BLOG}/users/blog");
 
@@ -152,15 +78,15 @@ async fn a_reader_follows_reads_replies_likes_and_leaves() {
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": format!("{reader}/follows/1"),
         "type": "Follow",
-        "actor": reader,
+        "actor": reader.as_str(),
         "object": author,
     });
-    assert_eq!(send(&blog, &reader, &follow).await, StatusCode::ACCEPTED);
+    assert_eq!(send(&blog, &remote, &follow).await, StatusCode::ACCEPTED);
     assert_eq!(blog.store().follower_count(), 1);
 
     // The blog accepts, delivering to the reader's shared inbox.
     blog.deliverer.run_once().await.unwrap();
-    let accept = received.lock().unwrap().pop().expect("an Accept");
+    let accept = remote.received().pop().expect("an Accept");
     assert_eq!(accept["type"], "Accept");
     assert_eq!(accept["actor"], author);
     assert_eq!(accept["object"]["id"], follow["id"]);
@@ -177,7 +103,7 @@ async fn a_reader_follows_reads_replies_likes_and_leaves() {
     let response = router(blog.clone()).oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
     blog.deliverer.run_once().await.unwrap();
-    let create = received.lock().unwrap().pop().expect("a Create");
+    let create = remote.received().pop().expect("a Create");
     assert_eq!(create["type"], "Create");
     assert_eq!(create["object"]["type"], "Article");
     assert_eq!(create["object"]["name"], "Hello");
@@ -199,24 +125,24 @@ async fn a_reader_follows_reads_replies_likes_and_leaves() {
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": format!("{note}/activity"),
         "type": "Create",
-        "actor": reader,
+        "actor": reader.as_str(),
         "object": {
             "id": note,
             "type": "Note",
-            "attributedTo": reader,
+            "attributedTo": reader.as_str(),
             "inReplyTo": post,
             "content": "<p>Nice <b>post</b>!</p><script>alert(1)</script>",
         },
     });
-    assert_eq!(send(&blog, &reader, &reply).await, StatusCode::ACCEPTED);
+    assert_eq!(send(&blog, &remote, &reply).await, StatusCode::ACCEPTED);
     let like = json!({
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": format!("{reader}/likes/1"),
         "type": "Like",
-        "actor": reader,
+        "actor": reader.as_str(),
         "object": post,
     });
-    assert_eq!(send(&blog, &reader, &like).await, StatusCode::ACCEPTED);
+    assert_eq!(send(&blog, &remote, &like).await, StatusCode::ACCEPTED);
     let (_, html) = get_page(&blog, "/posts/1", "text/html").await;
     assert!(html.contains("Nice post!"), "{html}");
     assert!(!html.contains("<script>"), "{html}");
@@ -227,26 +153,26 @@ async fn a_reader_follows_reads_replies_likes_and_leaves() {
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": format!("{note}#delete"),
         "type": "Delete",
-        "actor": reader,
+        "actor": reader.as_str(),
         "object": {"id": note, "type": "Tombstone"},
     });
-    assert_eq!(send(&blog, &reader, &delete).await, StatusCode::ACCEPTED);
+    assert_eq!(send(&blog, &remote, &delete).await, StatusCode::ACCEPTED);
     assert!(blog.store().comments(1).is_empty());
     let undo = json!({
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": format!("{reader}/follows/1/undo"),
         "type": "Undo",
-        "actor": reader,
+        "actor": reader.as_str(),
         "object": follow,
     });
-    assert_eq!(send(&blog, &reader, &undo).await, StatusCode::ACCEPTED);
+    assert_eq!(send(&blog, &remote, &undo).await, StatusCode::ACCEPTED);
     assert_eq!(blog.store().follower_count(), 0);
 }
 
 #[tokio::test]
 async fn an_unsigned_activity_is_refused() {
     let blog = blog();
-    let request = Request::post(INBOX)
+    let request = Request::post("/users/blog/inbox")
         .header("host", "blog.test")
         .body(Body::from(
             json!({"type": "Follow", "actor": "https://elsewhere.test/users/x"}).to_string(),
@@ -276,20 +202,6 @@ async fn publishing_takes_the_token() {
         .status();
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(blog.store().posts().count(), 0);
-}
-
-#[test]
-fn the_key_is_named_after_the_author_the_federation_serves() {
-    let blog = blog();
-    let served = blog
-        .context()
-        .actor_uri(activitypub::AUTHOR, &blog.config.username)
-        .unwrap();
-    assert_eq!(
-        activitypub::author_id(&blog.config).unwrap(),
-        served,
-        "the key ID and the actor's IRI agree"
-    );
 }
 
 #[tokio::test]

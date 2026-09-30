@@ -46,13 +46,13 @@ use std::time::Duration;
 
 use axum::Router;
 use ojak::client::{Client, ClientConfig};
-use ojak::deliverer::{Deliverer, DelivererConfig, SenderKeys};
+use ojak::deliverer::{Deliverer, DelivererConfig};
 use ojak::federation::{
     ActorRef, Context, Error, Federation, Found, PublicKey, Received, with_keys,
 };
 use ojak::fetch::Fetcher;
 use ojak::kv::MemoryKvStore;
-use ojak::queue::{MemoryQueue, QueueError};
+use ojak::queue::MemoryQueue;
 use ojak::sig::{PrivateKey, Scheme, SenderKey};
 use ojak_vocab::Follow;
 use serde_json::{Value, json};
@@ -65,22 +65,12 @@ struct App {
     public_pem: String,
     key: SenderKey,
     fetcher: Arc<Fetcher>,
-    deliverer: Arc<Deliverer<MemoryQueue, Keys>>,
+    deliverer: Arc<Deliverer<MemoryQueue, SenderKey>>,
 }
 ~~~~
 
-The deliverer asks which key signs for a sender through `SenderKeys`:
-
-~~~~ rust
-#[derive(Clone)]
-struct Keys(SenderKey);
-
-impl SenderKeys for Keys {
-    async fn key(&self, sender: &str) -> Result<Option<SenderKey>, QueueError> {
-        Ok((sender == ALICE).then(|| self.0.clone()))
-    }
-}
-~~~~
+The deliverer is given Alice's key, which signs everything it sends.  An
+application with many actors gives it a map of keys by sender instead.
 
 
 Serve the actor
@@ -101,7 +91,7 @@ async fn alice(ctx: Context<App>, username: String) -> Result<Found<Value>, Erro
         "id": id.as_str(),
         "type": "Person",
         "preferredUsername": "alice",
-        "inbox": format!("{id}/inbox"),
+        "inbox": ctx.inbox_uri("person", &username)?.as_str(),
     });
     let keys = ctx.actor_keys(&ActorRef::new("person", username)).await?;
     with_keys(&mut actor, &keys);
@@ -159,7 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fetcher = Arc::new(Fetcher::new(client.clone(), Scheme::DraftCavage));
     let deliverer = Arc::new(Deliverer::new(
         MemoryQueue::new(),
-        Keys(key.clone()),
+        key.clone(),
         client,
         DelivererConfig::default(),
     ));

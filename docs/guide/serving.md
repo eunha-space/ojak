@@ -97,12 +97,18 @@ The context builds URIs from templates and parses them back:
 ctx.actor_uri("person", &user_id)?            // https://example.com/ap/users/{user_id}
 ctx.object_uri("note", &[("post_id", &id)])?  // https://example.com/ap/posts/{post_id}
 ctx.collection_uri("followers", &user_id)?
+ctx.inbox_uri("person", &user_id)?            // the inbox registered for the kind
+ctx.shared_inbox_uri()?
 ctx.parse_uri(&iri) // Some(Route::Object { kind, values }) when it is ours
+ctx.parse_object("note", &iri) // Some(values) when it is one of our notes
+ctx.parse_actor("person", &iri) // Some(identifier) when it is one of our people
 ~~~~
 
 Each builder returns `Result<Url, UriError>`, an unknown kind or a template
-that did not expand. `parse_uri` accepts the canonical origin and its aliases,
-with the origin's scheme, and nothing else.
+that did not expand.  `federation.uris(origin)` builds the same URIs with
+no request and no data, for what has to be named before either exists.
+`parse_uri` accepts the canonical origin and its aliases, with the origin's
+scheme, and nothing else.
 
 
 Actors, by kind

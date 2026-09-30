@@ -16,10 +16,10 @@ pub mod store;
 pub mod web;
 
 use ojak::client::{Client, ClientConfig};
-use ojak::deliverer::{Deliverer, DelivererConfig, SenderKeys};
+use ojak::deliverer::{Deliverer, DelivererConfig};
 use ojak::federation::{Context, Federation};
 use ojak::fetch::Fetcher;
-use ojak::queue::{MemoryQueue, QueueError};
+use ojak::queue::MemoryQueue;
 use ojak::sig::{PrivateKey, Scheme, SenderKey};
 use std::sync::{Arc, Mutex};
 use url::Url;
@@ -53,7 +53,7 @@ pub struct Blog {
     /// The author's key, which signs deliveries and fetches.
     pub key: SenderKey,
     pub fetcher: Arc<Fetcher>,
-    pub deliverer: Deliverer<MemoryQueue, AuthorKey>,
+    pub deliverer: Deliverer<MemoryQueue, SenderKey>,
     pub federation: Federation<App>,
 }
 // #endregion blog
@@ -64,20 +64,22 @@ impl Blog {
     /// When the private key cannot be read, or the HTTP client or the
     /// federation cannot be built.
     pub fn new(config: Config) -> Result<App, Box<dyn std::error::Error>> {
-        let author = activitypub::author_id(&config)?.to_string();
+        let client = Client::new(config.client.clone())?;
+        let fetcher = Arc::new(Fetcher::new(client.clone(), Scheme::DraftCavage));
+        let federation = activitypub::federation(&config, fetcher.clone())?;
+        // The key is named after the author, whose IRI the federation builds
+        // from its template before there is any request.
+        let author = federation
+            .uris(config.origin.clone())
+            .actor_uri(activitypub::AUTHOR, &config.username)?;
         let key = SenderKey {
             key_id: format!("{author}#main-key"),
             private_key: Arc::new(PrivateKey::from_pem(&config.private_key_pem)?),
         };
-        let client = Client::new(config.client.clone())?;
-        let fetcher = Arc::new(Fetcher::new(client.clone(), Scheme::DraftCavage));
-        let federation = activitypub::federation(&config, fetcher.clone())?;
+        // The blog has one author, so one key signs everything it sends.
         let deliverer = Deliverer::new(
             MemoryQueue::new(),
-            AuthorKey {
-                author,
-                key: key.clone(),
-            },
+            key.clone(),
             client,
             DelivererConfig::default(),
         );
@@ -106,18 +108,6 @@ impl Blog {
     /// When a thread panicked while holding it.
     pub fn store(&self) -> std::sync::MutexGuard<'_, store::Store> {
         self.store.lock().expect("the store is not poisoned")
-    }
-}
-
-/// Which key signs for a sender: the author's, for the author.
-pub struct AuthorKey {
-    author: String,
-    key: SenderKey,
-}
-
-impl SenderKeys for AuthorKey {
-    async fn key(&self, sender: &str) -> Result<Option<SenderKey>, QueueError> {
-        Ok((sender == self.author).then(|| self.key.clone()))
     }
 }
 

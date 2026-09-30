@@ -109,7 +109,9 @@ that talk to other servers:
     actor, through a client that refuses to reach private addresses.
  -  The `Deliverer` sends activities to other servers' inboxes through a
     queue, retrying each inbox on its own, and signs them with the author's
-    key.
+    key.  A single `SenderKey` signs for every sender, which suits a blog
+    with one author; an application with many actors gives it a map of keys
+    by sender instead.
  -  The `Federation` answers requests from other servers.  It is built once,
     at start-up.
 
@@ -140,8 +142,8 @@ author is a `Person`:
 
 <<< @/../examples/blog/src/activitypub.rs#author
 
- -  `ctx.actor_uri` and `ctx.collection_uri` build URIs from the templates
-    registered above.
+ -  `ctx.actor_uri`, `ctx.inbox_uri`, `ctx.shared_inbox_uri` and
+    `ctx.collection_uri` build URIs from the templates registered above.
  -  `with_keys` adds the author's public key, which `.key_pairs(…)` supplied,
     so other servers can check what the blog signs.
  -  `endpoints.sharedInbox` offers one inbox for the whole server.  A server
@@ -275,8 +277,10 @@ posts:
 
 <<< @/../examples/blog/src/inbox.rs#our-post
 
-`ctx.parse_uri` is the templates used backwards: it says whether an IRI is
-one of the blog's, and which kind and values it has.
+`ctx.parse_object` is the templates used backwards: it says whether an IRI
+is one of the blog's posts, and with which values.  `ctx.parse_actor` does
+the same for actors, and the follow listener uses it to check that a
+`Follow` is for the author.
 
 A reply's content is HTML from another server.  The blog stores only its
 text, with the tags removed.  To keep a reply's links and formatting, run
@@ -325,22 +329,28 @@ Testing it
 ----------
 
 *tests/federation.rs* runs the blog against a second server, a reader, which
-is the part that's hard to test by hand.  The reader's server runs on the
-loopback interface.  It serves the reader's actor, with a public key, and
-keeps what arrives in its inbox:
+is the part that's hard to test by hand.  Ojak provides that server, with
+its `testing` feature:
 
-<<< @/../examples/blog/tests/federation.rs#reader
+~~~~ toml
+[dev-dependencies]
+ojak = { git = "https://github.com/eunha-space/ojak.git", features = ["testing"] }
+~~~~
 
-The test sends the blog activities the way a real server would, signed
-with the reader's key:
+`ojak::testing::Remote` runs on the loopback interface.  Any name is one of
+its actors, with a public key, and it keeps whatever is delivered to its
+inboxes.  It also signs activities for the blog's inbox, the way a real
+server would:
 
 <<< @/../examples/blog/tests/federation.rs#send
 
-The blog's client is allowed to reach the loopback interface only in the
-test, through `ClientConfig::allow_private`.  Then the reader follows,
-receives the `Accept` and the new post, replies, likes, deletes the reply
-and unfollows, and the test checks each step.  `deliverer.run_once()` sends
-what's queued, so the test doesn't have to wait for the delivery loop.
+The blog's client refuses to reach the loopback interface, as any server's
+should, so the test builds the blog with `ojak::testing::client_config()`,
+which allows it.  Then the reader follows, receives the `Accept` and the new
+post, replies, likes, deletes the reply and unfollows, and the test checks
+each step against `remote.received()` and the blog's pages.
+`deliverer.run_once()` sends what's queued, so the test doesn't have to wait
+for the delivery loop.
 
 Run the tests with:
 

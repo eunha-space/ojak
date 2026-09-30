@@ -9,7 +9,7 @@
 use crate::App;
 use crate::activitypub::{AUTHOR, POST};
 use crate::store::{Comment, Follower};
-use ojak::federation::{Context, Error, Received, Route};
+use ojak::federation::{Context, Error, Received};
 use ojak_vocab::{AnyObject, Create, Delete, Follow, Like, Undo};
 use serde_json::json;
 use url::Url;
@@ -19,7 +19,12 @@ use url::Url;
 pub async fn follow(ctx: Context<App>, follow: Received<Follow>) -> Result<(), Error> {
     let blog = ctx.data();
     let author = ctx.actor_uri(AUTHOR, &blog.config.username)?;
-    if !names(&follow.activity.objects, author.as_str()) {
+    let names_author = |object: &AnyObject| {
+        object
+            .id()
+            .is_some_and(|iri| ctx.parse_actor(AUTHOR, iri.as_str()).is_some())
+    };
+    if !follow.activity.objects.iter().any(names_author) {
         return Ok(());
     }
     let Some(id) = follow.activity.id.as_ref().map(ToString::to_string) else {
@@ -123,19 +128,9 @@ pub async fn delete(ctx: Context<App>, delete: Received<Delete>) -> Result<(), E
 }
 // #endregion delete
 
-/// Whether `objects` names the IRI `id`.
-fn names(objects: &[AnyObject], id: &str) -> bool {
-    objects
-        .iter()
-        .any(|object| object.id().is_some_and(|iri| iri.as_str() == id))
-}
-
 // #region our-post
 /// The post `iri` is, if it is one of ours.
 fn our_post(ctx: &Context<App>, iri: &str) -> Option<u64> {
-    match ctx.parse_uri(iri)? {
-        Route::Object { kind, values } if kind == POST => values["id"].parse().ok(),
-        _ => None,
-    }
+    ctx.parse_object(POST, iri)?["id"].parse().ok()
 }
 // #endregion our-post

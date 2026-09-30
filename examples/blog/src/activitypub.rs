@@ -8,15 +8,13 @@ use crate::store::Post;
 use crate::{App, Config, inbox, web};
 use ojak::federation::{
     ActorRef, BuildError, Collection, Context, Error, Federation, First, Found, NodeInfo, Page,
-    PublicKey, Software, with_keys,
+    PublicKey, Software, Values, with_keys,
 };
 use ojak::fetch::Fetcher;
 use ojak::kv::MemoryKvStore;
-use ojak::template::Values;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
-use url::Url;
 
 /// The kinds everything is registered under, and their templates.
 pub const AUTHOR: &str = "author";
@@ -100,17 +98,6 @@ pub fn federation(config: &Config, fetcher: Arc<Fetcher>) -> Result<Federation<A
 }
 // #endregion federation
 
-/// The author's IRI. The key that signs for the author is named after it
-/// before any request comes in, so it is joined here; [`author`] serves the
-/// same one, built from its template.
-///
-/// # Errors
-///
-/// When the origin cannot take a path.
-pub fn author_id(config: &Config) -> Result<Url, url::ParseError> {
-    config.origin.join(&format!("users/{}", config.username))
-}
-
 // #region author
 /// The author, as a `Person`.
 async fn author(ctx: Context<App>, username: String) -> Result<Found<Value>, Error> {
@@ -125,10 +112,10 @@ async fn author(ctx: Context<App>, username: String) -> Result<Found<Value>, Err
         "preferredUsername": username,
         "name": config.title,
         "url": ctx.origin().as_str(),
-        "inbox": ctx.origin().join(&format!("users/{username}/inbox"))?.as_str(),
+        "inbox": ctx.inbox_uri(AUTHOR, &username)?.as_str(),
         "outbox": ctx.collection_uri(OUTBOX, &username)?.as_str(),
         "followers": ctx.collection_uri(FOLLOWERS, &username)?.as_str(),
-        "endpoints": {"sharedInbox": ctx.origin().join("inbox")?.as_str()},
+        "endpoints": {"sharedInbox": ctx.shared_inbox_uri()?.as_str()},
         "manuallyApprovesFollowers": false,
         "discoverable": true,
     });

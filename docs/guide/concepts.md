@@ -117,12 +117,21 @@ builds URIs with it:
 ctx.actor_uri("person", &user_id)?
 ctx.object_uri("note", &[("post_id", &id)])?
 ctx.collection_uri("followers", &user_id)?
-ctx.parse_uri(&iri) // which dispatcher an IRI of ours belongs to, if any
+ctx.inbox_uri("person", &user_id)?
+ctx.shared_inbox_uri()?
+ctx.parse_object("note", &iri)  // the values, if it is one of our notes
+ctx.parse_actor("person", &iri) // the identifier, if it is one of our people
 ~~~~
 
-`parse_uri` is what an inbox listener uses to recognise a local post in
-`inReplyTo`.  Because the router and every call site read the same template,
-they cannot disagree about where something lives.
+`parse_object` is what an inbox listener uses to recognise a local post in
+`inReplyTo`, and `parse_uri` says which dispatcher any IRI of ours belongs
+to.  Because the router and every call site read the same template, they
+cannot disagree about where something lives.
+
+Some URIs are needed before there is any request, or any of your data: the
+ID of an actor's key, for instance, which your application's data holds.
+`federation.uris(origin)` builds them from the same templates, with no
+context.
 
 
 An origin is a host or a key
@@ -225,3 +234,11 @@ Ojak's decisions are plain functions, tested by passing values in and
 checking what comes out, and you can test your application the same way.
 `MemoryQueue` records what was queued, so a test can run a listener and read
 what it would have sent.
+
+To test federating with another server, turn on the `testing` feature in
+your dev-dependencies.  `ojak::testing::Remote` is a server on the loopback
+interface: any name is one of its actors, with a public key, it keeps what
+is delivered to its inboxes, and it signs activities for your inbox the way
+a real server would.  `ojak::testing::client_config()` lets your client
+reach it.  The [tutorial](../tutorial.md#testing-it) shows a test that
+follows, replies, likes and unfollows through it.

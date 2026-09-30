@@ -29,8 +29,9 @@ Not yet supported
  -  Pausing delivery to a host that keeps failing, and attaching integrity
     proofs as part of delivery.  Your application can sign an activity with
     its `ProofSigner` before sending it.
- -  A test federation that records what would have been sent.  `MemoryQueue`
-    records what was queued, which is the nearest thing.
+ -  A test federation that records what a whole federation would have
+    sent.  `MemoryQueue` records what was queued, and
+    `ojak::testing::Remote` is another server to federate with in tests.
  -  Running a relay.  Receiving from one works (see [The
     inbox](./inbox.md#relays)).
  -  A configurable inbox body limit.  It is 1 MiB.

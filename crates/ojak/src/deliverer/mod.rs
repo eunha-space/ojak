@@ -43,6 +43,38 @@ pub trait SenderKeys: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Option<SenderKey>, QueueError>> + Send;
 }
 
+/// One key, for an application with one sender: it signs whatever is sent.
+impl SenderKeys for SenderKey {
+    fn key(
+        &self,
+        _sender: &str,
+    ) -> impl Future<Output = Result<Option<SenderKey>, QueueError>> + Send {
+        std::future::ready(Ok(Some(self.clone())))
+    }
+}
+
+/// A key for each sender, by the name it is sent as.
+impl<S: std::hash::BuildHasher + Send + Sync + 'static> SenderKeys
+    for HashMap<String, SenderKey, S>
+{
+    fn key(
+        &self,
+        sender: &str,
+    ) -> impl Future<Output = Result<Option<SenderKey>, QueueError>> + Send {
+        std::future::ready(Ok(self.get(sender).cloned()))
+    }
+}
+
+/// A key for each sender, by the name it is sent as.
+impl SenderKeys for std::collections::BTreeMap<String, SenderKey> {
+    fn key(
+        &self,
+        sender: &str,
+    ) -> impl Future<Output = Result<Option<SenderKey>, QueueError>> + Send {
+        std::future::ready(Ok(self.get(sender).cloned()))
+    }
+}
+
 /// A delivery that will not be tried again.
 #[derive(Clone, Debug)]
 pub struct DeliveryFailure {

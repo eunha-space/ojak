@@ -1,13 +1,261 @@
-//! Checks every [`Queue`] and [`KvStore`] backend has to pass.
+//! What an application's tests, and a backend's, need.
 //!
-//! A backend that is right about the easy cases and wrong about a lease is
-//! the kind of bug that loses deliveries once a week, so each backend runs
-//! [`check_queue`] or [`check_kv`] in its own tests, over its own storage.
+//!  -  [`Remote`]: another server, on the loopback interface, with actors
+//!     that follow, reply and like the way a real server's do. It serves
+//!     their documents and keys, keeps what is delivered to it, and signs
+//!     activities for the application's inbox.
+//!  -  [`signed_post`]: an activity POSTed to an inbox, signed as a server
+//!     signs it.
+//!  -  [`client_config`]: a client allowed to reach the loopback interface,
+//!     which a real one refuses.
+//!  -  [`check_queue`] and [`check_kv`]: the checks every [`Queue`] and
+//!     [`KvStore`] backend has to pass. A backend that is right about the
+//!     easy cases and wrong about a lease is the kind of bug that loses
+//!     deliveries once a week, so each backend runs them in its own tests,
+//!     over its own storage.
 
+use crate::client::ClientConfig;
 use crate::kv::KvStore;
 use crate::queue::{Job, Queue};
-use serde_json::json;
+use crate::sig::signature::{PrivateKey, sign_request_with_key};
+use serde_json::{Value, json};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use url::Url;
+
+/// The private key every [`Remote`] actor signs with: RFC 9421's test key,
+/// which is public, and so fit for nothing but tests.
+pub const PRIVATE_KEY_PEM: &str = include_str!("../tests/fixtures/rfc9421_test_key_rsa.pem");
+/// Its public key, which every [`Remote`] actor publishes.
+pub const PUBLIC_KEY_PEM: &str = include_str!("../tests/fixtures/rfc9421_test_key_rsa_public.pem");
+
+/// A client configuration that may reach the loopback interface, where a
+/// [`Remote`] runs. Never use it outside tests: the client refuses private
+/// addresses so that nobody can make a server fetch from its own network.
+#[must_use]
+pub fn client_config() -> ClientConfig {
+    ClientConfig {
+        allow_private: vec![
+            "127.0.0.0/8".parse().expect("a network"),
+            "::1/128".parse().expect("a network"),
+        ],
+        ..ClientConfig::default()
+    }
+}
+
+/// `activity`, POSTed to the inbox at `url` and signed with `key_id` and
+/// the private key `pem`, as a server signs a delivery (draft-cavage, with
+/// a digest of the body). The request's target is `url`'s path, with its
+/// host in `Host`, as a server receives it.
+///
+/// # Panics
+///
+/// When `url` or `pem` cannot be read.
+#[must_use]
+pub fn signed_post(url: &str, activity: &Value, key_id: &str, pem: &str) -> http::Request<Vec<u8>> {
+    let url = Url::parse(url).expect("an inbox URL");
+    let body = serde_json::to_vec(activity).expect("JSON");
+    let key = PrivateKey::from_pem(pem).expect("a private key");
+    let signed = sign_request_with_key(
+        "post",
+        url.as_str(),
+        &body,
+        key_id,
+        &key,
+        &[],
+        chrono::Utc::now().timestamp(),
+    )
+    .expect("a signature");
+    let host = match url.port() {
+        Some(port) => format!("{}:{port}", url.host_str().unwrap_or_default()),
+        None => url.host_str().unwrap_or_default().to_owned(),
+    };
+    let target = match url.query() {
+        Some(query) => format!("{}?{query}", url.path()),
+        None => url.path().to_owned(),
+    };
+    http::Request::post(target)
+        .header("host", host)
+        .header("content-type", "application/activity+json")
+        .header("date", signed.date)
+        .header("digest", signed.digest)
+        .header("signature", signed.signature)
+        .body(body)
+        .expect("a request")
+}
+
+/// Another server, on the loopback interface, for an application's tests to
+/// federate with.
+///
+/// Any name is an actor: `/users/{name}` serves a `Person` with an inbox, a
+/// shared inbox and [`PUBLIC_KEY_PEM`] as its key. Whatever is POSTed to an
+/// inbox is kept, for [`Remote::received`]. The server runs until the test's
+/// runtime stops. The application's client has to be allowed to reach it,
+/// with [`client_config`].
+///
+/// ~~~~ ignore
+/// let remote = Remote::start().await;
+/// let follow = json!({
+///     "id": format!("{}/follows/1", remote.actor("alice")),
+///     "type": "Follow",
+///     "actor": remote.actor("alice").as_str(),
+///     "object": "https://blog.test/users/blog",
+/// });
+/// let request = remote.sign("alice", "https://blog.test/users/blog/inbox", &follow);
+/// // … hand `request` to the application, then:
+/// assert_eq!(remote.received()[0]["type"], "Accept");
+/// ~~~~
+#[derive(Clone, Debug)]
+pub struct Remote {
+    origin: Url,
+    received: Arc<Mutex<Vec<Value>>>,
+}
+
+impl Remote {
+    /// Start one, on a port of its own.
+    ///
+    /// # Panics
+    ///
+    /// When no port is free.
+    pub async fn start() -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a free port");
+        let origin = Url::parse(&format!(
+            "http://{}",
+            listener.local_addr().expect("an address")
+        ))
+        .expect("an origin");
+        let remote = Self {
+            origin,
+            received: Arc::default(),
+        };
+        let server = remote.clone();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let server = server.clone();
+                tokio::spawn(async move { server.answer(stream).await });
+            }
+        });
+        remote
+    }
+
+    /// Where it is, such as `http://127.0.0.1:49152/`.
+    #[must_use]
+    pub fn origin(&self) -> &Url {
+        &self.origin
+    }
+
+    /// The actor `name`'s IRI.
+    ///
+    /// # Panics
+    ///
+    /// When `name` cannot be a path segment.
+    #[must_use]
+    pub fn actor(&self, name: &str) -> Url {
+        self.origin
+            .join(&format!("users/{name}"))
+            .expect("an actor IRI")
+    }
+
+    /// The ID of the key the actor `name` signs with.
+    #[must_use]
+    pub fn key_id(&self, name: &str) -> String {
+        format!("{}#main-key", self.actor(name))
+    }
+
+    /// `activity`, POSTed to the inbox at `url` and signed by the actor
+    /// `name`; see [`signed_post`].
+    #[must_use]
+    pub fn sign(&self, name: &str, url: &str, activity: &Value) -> http::Request<Vec<u8>> {
+        signed_post(url, activity, &self.key_id(name), PRIVATE_KEY_PEM)
+    }
+
+    /// Everything delivered to any of its inboxes so far, oldest first.
+    ///
+    /// # Panics
+    ///
+    /// When a thread panicked while delivering.
+    #[must_use]
+    pub fn received(&self) -> Vec<Value> {
+        self.received.lock().expect("not poisoned").clone()
+    }
+
+    fn actor_document(&self, name: &str) -> Value {
+        let id = self.actor(name);
+        json!({
+            "@context": [
+                "https://www.w3.org/ns/activitystreams",
+                "https://w3id.org/security/v1"
+            ],
+            "id": id.as_str(),
+            "type": "Person",
+            "preferredUsername": name,
+            "inbox": format!("{id}/inbox"),
+            "endpoints": {"sharedInbox": self.origin.join("inbox").expect("an inbox").as_str()},
+            "publicKey": {
+                "id": self.key_id(name),
+                "owner": id.as_str(),
+                "publicKeyPem": PUBLIC_KEY_PEM,
+            },
+        })
+    }
+
+    /// Answer one request on `stream`, and close it.
+    async fn answer(&self, mut stream: tokio::net::TcpStream) {
+        let mut buffer = Vec::new();
+        let mut chunk = [0; 8192];
+        let head_end = loop {
+            match stream.read(&mut chunk).await {
+                Ok(0) | Err(_) => return,
+                Ok(n) => buffer.extend_from_slice(&chunk[..n]),
+            }
+            if let Some(end) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
+                break end + 4;
+            }
+        };
+        let head = String::from_utf8_lossy(&buffer[..head_end]).into_owned();
+        let mut lines = head.lines();
+        let mut request_line = lines.next().unwrap_or_default().split(' ');
+        let method = request_line.next().unwrap_or_default().to_owned();
+        let path = request_line.next().unwrap_or_default().to_owned();
+        let length = lines
+            .filter_map(|line| line.split_once(':'))
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+            .and_then(|(_, value)| value.trim().parse::<usize>().ok())
+            .unwrap_or(0);
+        while buffer.len() < head_end + length {
+            match stream.read(&mut chunk).await {
+                Ok(0) | Err(_) => return,
+                Ok(n) => buffer.extend_from_slice(&chunk[..n]),
+            }
+        }
+        let body = &buffer[head_end..head_end + length];
+
+        let (status, content) = match (method.as_str(), path.strip_prefix("/users/")) {
+            ("GET", Some(name)) if !name.is_empty() && !name.contains('/') => {
+                ("200 OK", self.actor_document(name).to_string())
+            }
+            ("POST", _) if path == "/inbox" || path.ends_with("/inbox") => {
+                match serde_json::from_slice(body) {
+                    Ok(activity) => {
+                        self.received.lock().expect("not poisoned").push(activity);
+                        ("202 Accepted", String::new())
+                    }
+                    Err(_) => ("400 Bad Request", String::new()),
+                }
+            }
+            _ => ("404 Not Found", String::new()),
+        };
+        let response = format!(
+            "HTTP/1.1 {status}\r\ncontent-type: application/activity+json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{content}",
+            content.len()
+        );
+        let _ = stream.write_all(response.as_bytes()).await;
+        let _ = stream.shutdown().await;
+    }
+}
 
 /// Run every check against `queue`, which must be empty.
 ///

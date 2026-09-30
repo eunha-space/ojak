@@ -751,3 +751,76 @@ async fn authorize_refuses_what_it_does_not_allow() {
     .await;
     assert_eq!(instance.status, 200, "the instance actor stays public");
 }
+
+#[tokio::test]
+async fn inboxes_have_uris_and_uris_need_no_data() {
+    let with_inboxes = with_signed_fetch(
+        builder()
+            .inbox("person", "/ap/users/{user_id}/inbox")
+            .shared_inbox("/ap/inbox"),
+    );
+
+    // Before there is any request or data, as for the ID of a key.
+    let uris = with_inboxes.uris(canonical());
+    assert_eq!(
+        uris.actor_uri("person", "1").unwrap().as_str(),
+        "https://oeee.test/ap/users/1"
+    );
+    assert_eq!(
+        uris.inbox_uri("person", "1").unwrap().as_str(),
+        "https://oeee.test/ap/users/1/inbox"
+    );
+    assert_eq!(
+        uris.shared_inbox_uri().unwrap().as_str(),
+        "https://oeee.test/ap/inbox"
+    );
+    assert!(
+        uris.inbox_uri("group", "cafe").is_err(),
+        "a kind with no inbox has no inbox URI"
+    );
+    assert!(
+        federation().uris(canonical()).shared_inbox_uri().is_err(),
+        "nor does a federation with no shared inbox"
+    );
+
+    let ctx = with_inboxes.context(canonical(), App::default());
+    assert_eq!(
+        ctx.inbox_uri("person", "1").unwrap(),
+        uris.inbox_uri("person", "1").unwrap()
+    );
+    assert_eq!(
+        ctx.shared_inbox_uri().unwrap(),
+        uris.shared_inbox_uri().unwrap()
+    );
+}
+
+#[tokio::test]
+async fn an_iri_is_parsed_as_an_actor_or_object_of_one_kind() {
+    let ctx = federation().context(canonical(), App::default());
+    assert_eq!(
+        ctx.parse_actor("person", "https://www.oeee.test/ap/users/1"),
+        Some("1".to_owned()),
+        "an alias's IRI is ours"
+    );
+    assert_eq!(
+        ctx.parse_actor("group", "https://oeee.test/ap/users/1"),
+        None
+    );
+    assert_eq!(
+        ctx.parse_actor("person", "https://oeee.test/ap/posts/10"),
+        None
+    );
+    assert_eq!(
+        ctx.parse_object("note", "https://oeee.test/ap/posts/10")
+            .map(|values| values["post_id"].to_owned()),
+        Some("10".to_owned())
+    );
+    assert_eq!(
+        ctx.parse_object("note", "https://oeee.test/ap/users/1"),
+        None
+    );
+    assert_eq!(
+        ctx.parse_object("note", "https://elsewhere.test/ap/posts/10"),
+        None
+    );
+}
