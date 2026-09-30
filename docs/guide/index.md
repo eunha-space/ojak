@@ -16,6 +16,8 @@ together in one small server.
     other servers' documents, and finding an actor by its handle.
  -  [Portable objects](./portable.md): objects whose identity is a key rather
     than a host (FEP-ef61).
+ -  [Serving many instances](./multitenancy.md): how one process serves
+    many fediverse instances, and the choices in Ojak that come from it.
 
 
 Not yet supported
