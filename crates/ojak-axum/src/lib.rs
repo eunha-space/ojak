@@ -19,8 +19,8 @@
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::StatusCode;
 use axum::http::request::Parts;
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use ojak::federation::{Federation, Handled, MAX_INBOX_BODY};
@@ -86,8 +86,30 @@ async fn serve<D: Clone + Send + Sync + 'static>(
             _ => next.run(Request::from_parts(parts, Body::from(body))).await,
         };
     }
-    if let Handled::Response(response) = serving.federation.handle(&parts, data).await {
-        return response.map(Body::from);
+    match serving.federation.handle(&parts, data).await {
+        Handled::Response(response) => response.map(Body::from),
+        // A route of Ojak's that a browser asked for: the application's page
+        // is at the same URL as an ActivityPub document, so a cache has to
+        // keep the two apart by Accept.
+        Handled::NotAcceptable => {
+            let mut response = next.run(Request::from_parts(parts, body)).await;
+            vary_on_accept(response.headers_mut());
+            response
+        }
+        _ => next.run(Request::from_parts(parts, body)).await,
     }
-    next.run(Request::from_parts(parts, body)).await
+}
+
+/// Add `Accept` to `headers`' `Vary`, unless it is there already.
+fn vary_on_accept(headers: &mut axum::http::HeaderMap) {
+    let covered = headers
+        .get_all(header::VARY)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .any(|name| name == "*" || name.eq_ignore_ascii_case("accept"));
+    if !covered {
+        headers.append(header::VARY, HeaderValue::from_static("Accept"));
+    }
 }

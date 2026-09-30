@@ -952,3 +952,54 @@ async fn an_alias_leaves_the_application_what_it_does_not_serve() {
         "a Tombstone at an alias names the object, not the alias"
     );
 }
+
+#[tokio::test]
+async fn a_collection_is_served_at_its_alias_and_named_by_its_template() {
+    let federation = builder()
+        .collection_alias("followers", "/@{handle}/followers")
+        .build()
+        .unwrap();
+    let collection = get(&federation, "/@1/followers").await.json();
+    assert_eq!(collection["id"], "https://oeee.test/ap/users/1/followers");
+    assert_eq!(
+        collection["first"], "https://oeee.test/ap/users/1/followers?cursor=0",
+        "its pages are linked by its template too"
+    );
+    let page = get(&federation, "/@1/followers?cursor=2").await.json();
+    assert_eq!(page["partOf"], "https://oeee.test/ap/users/1/followers");
+
+    let ctx = federation.context(canonical(), App::default());
+    assert_eq!(
+        ctx.parse_uri("https://oeee.test/@1/followers"),
+        Some(Route::Collection {
+            kind: "followers".into(),
+            identifier: "1".into()
+        })
+    );
+    assert!(
+        matches!(
+            federation
+                .handle(
+                    &request("POST", "oeee.test", "/@1/followers", Some(ACCEPT_AP)),
+                    App::default()
+                )
+                .await,
+            Handled::NotFound
+        ),
+        "other methods at an alias are the application's"
+    );
+}
+
+#[tokio::test]
+async fn a_collection_alias_has_to_be_of_a_collection_kind_and_name_its_owner() {
+    let error =
+        |builder: ojak::federation::Builder<App>| builder.build().err().unwrap().to_string();
+    assert!(
+        error(builder().collection_alias("note", "/@{handle}/notes"))
+            .contains("no collection kind")
+    );
+    assert!(
+        error(builder().collection_alias("followers", "/followers"))
+            .contains("has to name its owner")
+    );
+}

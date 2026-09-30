@@ -111,3 +111,34 @@ async fn an_inbox_post_is_read_and_received() {
         .unwrap();
     assert_eq!(huge.status(), StatusCode::PAYLOAD_TOO_LARGE);
 }
+
+#[tokio::test]
+async fn a_page_at_an_activitypub_url_varies_on_accept() {
+    let vary = |path: &'static str| async move {
+        let response = app()
+            .oneshot(
+                Request::get(path)
+                    .header("host", "oeee.test")
+                    .header("accept", "text/html")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        response
+            .headers()
+            .get_all("vary")
+            .iter()
+            .map(|value| value.to_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        vary("/ap/users/1").await,
+        vec!["Accept"],
+        "a cache must not hand the page to a server asking for the actor"
+    );
+    assert!(
+        vary("/about").await.is_empty(),
+        "a page Ojak has no route at is left as it is"
+    );
+}

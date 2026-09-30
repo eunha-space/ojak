@@ -312,7 +312,7 @@ pub struct Builder<D> {
     on_error: Option<ErrorFn>,
     inboxes: Vec<(String, String)>,
     shared_inbox: Option<String>,
-    object_aliases: Vec<(String, String)>,
+    aliases: Vec<(String, &'static str, String)>,
     listeners: std::collections::HashMap<&'static str, inbox::ListenerFn<D>>,
     fallback_listener: Option<inbox::ListenerFn<D>>,
     blocked: Option<inbox::BlockedFn<D>>,
@@ -341,7 +341,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             on_error: None,
             inboxes: Vec::new(),
             shared_inbox: None,
-            object_aliases: Vec::new(),
+            aliases: Vec::new(),
             listeners: std::collections::HashMap::new(),
             fallback_listener: None,
             blocked: None,
@@ -754,8 +754,22 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     /// template does, and may name more.
     #[must_use]
     pub fn object_alias(mut self, kind: &str, template: &str) -> Self {
-        self.object_aliases
-            .push((kind.to_owned(), template.to_owned()));
+        self.aliases
+            .push((kind.to_owned(), "object", template.to_owned()));
+        self
+    }
+
+    /// Serve the collection `kind` at `template` as well, and recognise it in
+    /// [`Context::parse_uri`]: another path the same collection is known by,
+    /// such as Mastodon's `/@{username}/followers` beside
+    /// `/users/{username}/followers`. The collection is still named by the
+    /// template `kind` was registered with, in its `id` and its pages'
+    /// links. The alias names the owner in as many expressions as that
+    /// template does: one, or none.
+    #[must_use]
+    pub fn collection_alias(mut self, kind: &str, template: &str) -> Self {
+        self.aliases
+            .push((kind.to_owned(), "collection", template.to_owned()));
         self
     }
 
@@ -1127,7 +1141,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         if origin.is_none() {
             errors.push("no origin: call origin or origin_with".into());
         }
-        for (kind, template) in std::mem::take(&mut self.object_aliases) {
+        for (kind, noun, template) in std::mem::take(&mut self.aliases) {
             let template = match Template::parse(&template) {
                 Ok(template) => template,
                 Err(error) => {
@@ -1135,36 +1149,51 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     continue;
                 }
             };
-            let Some((load, primary)) =
-                self.entries
-                    .iter()
-                    .find_map(|entry| match &entry.dispatcher {
-                        Dispatcher::Object(load) if entry.kind == kind && !entry.alias => {
-                            Some((load.clone(), &entry.template))
-                        }
-                        _ => None,
-                    })
+            let Some(primary) = self
+                .entries
+                .iter()
+                .find(|entry| entry.kind == kind && entry.noun() == noun && !entry.alias)
             else {
                 errors.push(format!(
-                    "object_alias for {kind:?}, which is no object kind"
+                    "{noun}_alias for {kind:?}, which is no {noun} kind"
                 ));
                 continue;
             };
-            if let Some(missing) = primary
-                .names()
-                .find(|name| !template.names().any(|alias| alias == *name))
-            {
-                errors.push(format!(
-                    "object_alias {} does not name {missing}, which {} does",
-                    template.as_str(),
-                    primary.as_str()
-                ));
+            let problem = match &primary.dispatcher {
+                // An object's dispatcher reads its values by name.
+                Dispatcher::Object(_) => primary
+                    .template
+                    .names()
+                    .find(|name| !template.names().any(|alias| alias == *name))
+                    .map(|missing| {
+                        format!(
+                            "object_alias {} does not name {missing}, which {} does",
+                            template.as_str(),
+                            primary.template.as_str()
+                        )
+                    }),
+                // A collection's reads its one expression, whatever its name.
+                _ => (template.names().count() != primary.template.names().count()).then(|| {
+                    format!(
+                        "collection_alias {} has to name its owner as {} does",
+                        template.as_str(),
+                        primary.template.as_str()
+                    )
+                }),
+            };
+            if let Some(problem) = problem {
+                errors.push(problem);
                 continue;
             }
+            let dispatcher = match &primary.dispatcher {
+                Dispatcher::Object(load) => Dispatcher::Object(load.clone()),
+                Dispatcher::Collection(collection) => Dispatcher::Collection(collection.clone()),
+                Dispatcher::Actor(load) => Dispatcher::Actor(load.clone()),
+            };
             self.entries.push(Entry {
                 kind,
                 template,
-                dispatcher: Dispatcher::Object(load),
+                dispatcher,
                 authorize: None,
                 alias: true,
             });

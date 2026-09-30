@@ -58,6 +58,18 @@ pub struct Collection<D> {
     uri: Option<UriFn<D>>,
 }
 
+impl<D> Clone for Collection<D> {
+    fn clone(&self) -> Self {
+        Self {
+            page: self.page.clone(),
+            count: self.count.clone(),
+            first: self.first.clone(),
+            last: self.last.clone(),
+            uri: self.uri.clone(),
+        }
+    }
+}
+
 impl<D: Clone + Send + Sync + 'static> Collection<D> {
     /// A collection read through `page`, which receives the identifier of
     /// what the collection belongs to and a cursor, and returns that page, or

@@ -179,10 +179,21 @@ the template the kind was registered with, and a Tombstone at an alias names
 the object by that template too.  It has to name every expression that
 template does, since the dispatcher reads them.
 
+A collection takes aliases the same way, such as Mastodon's
+`/@{username}/followers`:
+
+~~~~ rust
+.collection_alias("followers", "/@{username}/followers")
+~~~~
+
+It is still named by its own template, in its `id` and its pages' links,
+and its alias names the owner in as many expressions as that template does.
+
 An alias is usually a path your application serves pages at, so Ojak takes
-only what it can answer there: an ActivityPub GET for an object the
-dispatcher finds.  Anything else, a form POSTed to `/@alice/follow` or a
-request for `/@alice/guestbook`, which no dispatcher finds, is
+only what it can answer there: an ActivityPub GET for something the
+dispatcher finds.  A browser's request is your application's, as at any of
+Ojak's routes, and so is anything else: a form POSTed to `/@alice/follow` or
+a request for `/@alice/guestbook`, which no dispatcher finds, is
 `Handled::NotFound`, and goes on to your application.
 
 
@@ -345,9 +356,13 @@ zero. Reading is strict about the ActivityStreams profile, since it decides
 what is trusted; asking is not, since it decides only which representation
 of our own document is sent. Anything else, including a bare `*/*` or a
 browser's `text/html`, is `NotAcceptable`, and the application serves the page
-at that URL or answers 406 itself. This lets an application keep one URL for a
-post, and an unrouted path never answers a peer with HTML: it is Ojak's 404 or
-the application's. WebFinger, host-meta and NodeInfo ignore `Accept`.
+at that URL or answers 406 itself. The page is then at the same URL as an
+ActivityPub document, so its response has to carry `Vary: Accept`, or a
+shared cache may hand the page to the next server that asks for the document;
+*ojak-axum* adds it, and an application calling `handle` itself adds it
+when it serves a `NotAcceptable` request. This lets an application keep one URL
+for a post, and an unrouted path never answers a peer with HTML: it is Ojak's
+404 or the application's. WebFinger, host-meta and NodeInfo ignore `Accept`.
 
 `HEAD` is answered as `GET` without a body. The method is checked before
 `Accept`: any other method on a matched route is 405 with `Allow: GET, HEAD`,
