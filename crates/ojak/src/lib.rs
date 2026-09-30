@@ -1,7 +1,7 @@
 //! Ojak: an ActivityPub application framework.
 //!
 //! The application owns its data, and Ojak does the protocol around it; see
-//! *docs/design/framework.md*. It has the guarded HTTP client every
+//! *docs/guide/concepts.md*. It has the guarded HTTP client every
 //! outgoing request goes through ([`client`]), signatures and proofs
 //! ([`sig`]), delivery of activities through a queue the application
 //! provides ([`deliverer`]), fetching documents from other servers

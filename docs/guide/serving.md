@@ -1,45 +1,30 @@
 Serving
 =======
 
-Step 4 of *framework.md*: what Ojak answers when another server, or a
-person, sends a GET. Actors, objects and collections come from dispatchers the
-application registers; WebFinger, host-meta and NodeInfo follow from them.
+What Ojak answers when another server, or a person, sends a GET.  Actors,
+objects and collections come from dispatchers your application registers,
+and WebFinger, host-meta and NodeInfo follow from them.  All of it is in
+`ojak::federation`, with *ojak-axum* for axum applications.  The same
+`Federation` also receives activities ([The inbox](./inbox.md)) and serves
+portable objects at gateways ([Portable objects](./portable.md)).
 
-*Status: done.* Everything below is implemented in `ojak::federation`, with
-*ojak-axum* for axum applications. The same `Federation` also receives
-activities (*inbox.md*) and serves portable objects at gateways
-(*portable.md*). What was designed and not built is listed at the end.
+Registering dispatchers means:
 
-
-What this step removes
-----------------------
-
-An application that serves ActivityPub by hand, at paths of its own and
-without reading `Accept`, tends to collect the same problems:
-
- -  *Routes advertised and not served.* An actor names an outbox or a
-    followers collection that 404s, or an unrouted path falls through to the
-    web app's HTML, which a peer then fails to parse.
- -  *URIs built twice.* Each call site formats `https://{domain}/ap/…` and
-    parses it back by prefix.
- -  *`@context` repeated.* Each handler writes its own literal.
- -  *Nothing gone is gone.* A deleted post is a 404, not a Tombstone or a 410.
- -  *No authorized fetch.* No signature is checked on a GET.
- -  *WebFinger by hand.* A `profile-page` link that points at the actor
-    document rather than the page, or a lookup that accepts only the canonical
-    domain and one of several actor URI forms.
- -  *NodeInfo* in one version, or none.
-
-Registering dispatchers removes each of these by construction, except where
-an application still builds URIs itself rather than through the context.
+ -  every route an actor advertises is served, and an unrouted path never
+    answers a peer with HTML;
+ -  URIs are built from the same templates requests are routed by, never
+    formatted by hand;
+ -  `@context` is added for you;
+ -  a deleted object is a Tombstone with 410, not a 404;
+ -  authorized fetch is one predicate per kind;
+ -  WebFinger answers every form of an actor's name, and NodeInfo is served
+    in both versions peers ask for.
 
 
-Decisions
----------
+Ojak answers requests in `http` types, with an axum adapter
+-----------------------------------------------------------
 
-### Ojak answers requests in `http` types, with an axum adapter
-
-The core is framework-neutral:
+The federation itself is framework-neutral:
 
 ~~~~ rust
 match federation.handle(&parts, data).await {
@@ -70,7 +55,9 @@ the extensions; `None` passes
 the request to the application untouched. For an inbox path it reads the body,
 up to `MAX_INBOX_BODY`, and answers 413 beyond that.
 
-### The origin is the canonical one, from the request
+
+The origin is the canonical one, from the request
+-------------------------------------------------
 
 Every URI Ojak builds, in a document or a link, uses the origin the
 application calls canonical for the request's host:
@@ -88,7 +75,9 @@ scheme is the one the origin's `Url` carries: behind TLS termination the
 request no longer knows. `Federation::context(origin, data)` builds a context
 outside a request, for URIs in activities an application sends.
 
-### Routes and URIs come from the same template
+
+Routes and URIs come from the same template
+-------------------------------------------
 
 Templates are RFC 6570 level 1: a path with `{name}` expressions, each a
 whole segment or a suffix of one. Expansion percent-encodes each value, and
@@ -115,7 +104,9 @@ Each builder returns `Result<Url, UriError>`, an unknown kind or a template
 that did not expand. `parse_uri` accepts the canonical origin and its aliases,
 with the origin's scheme, and nothing else.
 
-### Actors, by kind
+
+Actors, by kind
+---------------
 
 ~~~~ rust
 .actor("person", "/ap/users/{user_id}", |ctx, id| async move { … })
@@ -123,13 +114,13 @@ with the origin's scheme, and nothing else.
 .actor("instance", "/actor", load_instance_actor)
 ~~~~
 
-Fedify allows one actor dispatcher and one identifier space. Both
-applications have more than one kind of actor at different paths, so an actor
-here is a *kind* and an identifier. A template with no expression, such as
-`/actor`, is an actor with the empty identifier. Since a kind is registered
-once, an actor served at two URIs is two kinds: an application following
-Mastodon's two URI schemes registers `actor` at `/users/{username}` and
-`actor_by_id` at `/ap/users/{id}`, and the same for each of its collections.
+An actor is a *kind* and an identifier, so an application can have several
+kinds of actor at different paths, such as people and groups. A template with
+no expression, such as `/actor`, is an actor with the empty identifier. Since a
+kind is registered once, an actor served at two URIs is two kinds: an
+application following Mastodon's two URI schemes registers `actor` at
+`/users/{username}` and `actor_by_id` at `/ap/users/{id}`, and the same for
+each of its collections.
 
 A dispatcher is `Fn(Context<D>, String) -> Result<Found<Value>, E>`:
 
@@ -155,7 +146,9 @@ every Multikey in `assertionMethod`.
 Ojak does not require an actor's `id` to be the URL it was served at, so an
 account served at two URIs can be named by the one the account uses.
 
-### Objects, by kind
+
+Objects, by kind
+----------------
 
 ~~~~ rust
 .object("note", "/ap/posts/{post_id}", |ctx, values| async move { … })
@@ -163,11 +156,11 @@ account served at two URIs can be named by the one the account uses.
 ~~~~
 
 An object template may have any number of expressions, and the dispatcher
-receives them by name in `Values`. Kinds are names. *ojak-vocab*'s generated
-types are its API now (step 6), but typed dispatch, `object::<Note>`, has not
-been built.
+receives them by name in `Values`.
 
-### What a dispatcher returns is a document
+
+What a dispatcher returns is a document
+---------------------------------------
 
 Dispatchers return a `serde_json::Value`. A document without an `@context`
 gets Ojak's default, `default_context()`: ActivityStreams with the security
@@ -175,7 +168,9 @@ and Multikey contexts; one with its own keeps it. The content type is
 `application/activity+json`, with `Vary: Accept`. The gateway serves portable
 objects as `application/ld+json` with the ActivityStreams profile instead.
 
-### Collections, paged by cursor
+
+Collections, paged by cursor
+----------------------------
 
 ~~~~ rust
 .collection("followers", "/ap/users/{user_id}/followers",
@@ -208,10 +203,13 @@ application links the ones it serves. Linking them with `ctx.collection_uri`
 makes a route that is advertised a route that is registered, since otherwise
 the URI cannot be built.
 
-Moving from Mastodon's `?page=true&max_id=` to `?cursor=` breaks no peer:
-peers follow the `first` and `next` they are given.
+Peers follow the `first` and `next` links they are given, so an application
+moving from Mastodon's `?page=true&max_id=` to `?cursor=` breaks none of
+them.
 
-### Authorized fetch is a question the dispatcher asks
+
+Authorized fetch is a question the dispatcher asks
+--------------------------------------------------
 
 A GET may be signed. Ojak verifies it only when asked, because verifying
 may mean fetching the signer's key:
@@ -241,11 +239,11 @@ picks a fetcher per tenant, `.known_key` offers keys the application already
 holds before any are fetched, and `.key_fetched` sees each actor document a
 key was fetched from.
 
-`ctx.signer()` runs the checks of *inbox.md* that apply to a GET: the
-signature's shape, host and age, then the key, from the application, the
-key-value store or fetched, and the key owner's origin. It returns the
-verified actor's IRI, once per request however often it is asked. The key
-cache it fills is the one the inbox uses.
+`ctx.signer()` runs the checks of [the inbox](./inbox.md) that apply to a GET:
+the signature's shape, host and age, then the key, from the application, the
+key-value store or fetched, and the key owner's origin. It returns the verified
+actor's IRI, once per request however often it is asked. The key cache it fills
+is the one the inbox uses.
 
 For the common case, a kind takes an `authorize` predicate instead:
 
@@ -259,7 +257,9 @@ at all. There is no global switch; each kind is authorised on its own. An
 unauthorised request is 401 with `Vary: Accept, Signature`, and, when it was
 unsigned, `WWW-Authenticate: Signature`.
 
-### WebFinger follows from the actors
+
+WebFinger follows from the actors
+---------------------------------
 
 ~~~~ rust
 .handle(|ctx, username| async move { … })       // -> Option<ActorRef>
@@ -291,7 +291,9 @@ One namespace or two is the application's business: `handle` may look a name
 up as a user and then as a group, or map the server's own domain to the
 instance actor.
 
-### NodeInfo from one dispatcher
+
+NodeInfo from one dispatcher
+----------------------------
 
 ~~~~ rust
 .nodeinfo(|ctx| async move {
@@ -306,7 +308,9 @@ and closed registrations. Ojak serves `/.well-known/nodeinfo` linking both
 2.0 and 2.1, and each at its own path with its schema's profile, the 2.0
 document being the 2.1 one without the software's repository and homepage.
 
-### Content negotiation
+
+Content negotiation
+-------------------
 
 A request to a matched route is ActivityPub when its `Accept` names
 `application/activity+json` or `application/ld+json`, with a quality above
@@ -322,19 +326,11 @@ the application's. WebFinger, host-meta and NodeInfo ignore `Accept`.
 `Accept`: any other method on a matched route is 405 with `Allow: GET, HEAD`,
 and anything but `POST` on an inbox is 405 with `Allow: POST`.
 
-### Errors
+
+Errors
+------
 
 A dispatcher returns `Result<_, E>` for any `E: Into<ojak::federation::Error>`,
 a boxed error. An error is a 500 with no body, and `.on_error(|error| …)` sees
 it for the log. The body never carries the error, since it is whatever the
 database said.
-
-
-Not built
----------
-
- -  *Typed dispatch*, `object::<Note>`, and returning a vocabulary type rather
-    than a `Value`.
- -  *Followers collection synchronisation* (FEP-8fcf), which needs a filter
-    on the followers page by host. The page function's arguments leave room
-    for it.

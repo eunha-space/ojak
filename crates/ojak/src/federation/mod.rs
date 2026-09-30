@@ -5,7 +5,7 @@
 //! dispatcher for each kind of actor, object and collection it serves, each
 //! with the URI template that both routes requests to it and builds its URIs.
 //! WebFinger and host-meta follow from the actors, and NodeInfo from one more
-//! dispatcher. *docs/design/serving.md* has the reasoning.
+//! dispatcher. *docs/guide/serving.md* explains it.
 //!
 //! [`Federation::handle`] answers a request in `http` types, so that it works
 //! under any server framework; *ojak-axum* adapts it to axum.

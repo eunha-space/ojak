@@ -1,40 +1,33 @@
 The inbox
 =========
 
-Step 5 of *framework.md*: what Ojak does with an activity another server
-POSTs. Listeners registered per activity type receive it typed, from a
-sender Ojak has authenticated, with nothing in it trusted that the sender
-could not vouch for. It was last among the steps because a mistake here is a
-security problem.
-
-*Status: done.* The inbox is part of `ojak::federation`, beside serving. It
-also accepts portable activities at gateways (*portable.md*). What was
-designed and not built is listed at the end.
+What Ojak does with an activity another server POSTs.  Listeners you
+register per activity type receive it typed, from a sender Ojak has
+authenticated, with nothing in it trusted that the sender could not vouch
+for.  The inbox is part of `ojak::federation`, beside [serving](./serving.md),
+and also accepts portable activities at gateways ([Portable
+objects](./portable.md)).
 
 
-What this step prevents
+Why the inbox is strict
 -----------------------
 
-An inbox written by hand has to verify signatures to a policy strict enough
-to matter, and most of all has to check that an activity acts only on what
-its sender owns. The ways of not checking are ordinary: deleting any local
-post a remote `Delete` names; undoing any reaction or follow a remote `Undo`
-names, a local user's included; rewriting any account an `Update` names,
-public key included, which is an account takeover; editing any post an
-`Update(Note)` names; storing an embedded note under whatever URI and author
-it claims. This step makes the rule the framework's, so that no listener has
-the chance to forget it.
+An inbox has to verify signatures to a policy strict enough to matter, and
+above all has to check that an activity acts only on what its sender owns.
+Without that check, a remote `Delete` could delete any local post, an `Undo`
+could undo a local user's follow, and an `Update` naming an account could
+replace its public key, which is an account takeover.  Ojak makes the check
+the framework's, so no listener can forget it.
 
 
-Decisions
----------
-
-### The sender is authenticated, and is the only one trusted
+The sender is authenticated, and is the only one trusted
+--------------------------------------------------------
 
 Before a listener sees anything, Ojak establishes one fact: which actor sent
 the activity. Everything the activity says about anyone else is a claim.
 
-Authentication needs the signed-fetch settings of *serving.md*
+Authentication needs the signed-fetch settings described in
+[Serving](./serving.md#authorized-fetch-is-a-question-the-dispatcher-asks)
 (`.signed_fetch`), which hold the fetcher and the key cache. Without them no
 HTTP signature can be verified, and every request but a portable actor's is
 unauthenticated.
@@ -45,7 +38,7 @@ unauthenticated.
     portable actor's DID, before any key is fetched, so a blocked server costs
     nothing. A blocked activity is answered 202 and dropped, so the server
     does not retry it. A hook that fails is a 500.
-3.  The HTTP signature is parsed and held to step 2's policy. A draft-cavage
+3.  The HTTP signature is parsed and checked. A draft-cavage
     signature covers `(request-target)`, `host`, and `date` or `(created)`;
     an RFC 9421 one covers `@method` and `@target-uri`. Either way the digest
     is signed and matches the body, and the signature was made for this host,
@@ -69,14 +62,14 @@ unauthenticated.
     sender's origin. A server vouches for its own actors, as Mastodon's rule
     has it, and for nobody else's.
 7.  A request signed by a server other than the actor's was forwarded: by a
-    gateway (*portable.md*), or by a server passing a reply on to its
-    followers. Its signature says nothing of the actor, so a proof by the
-    actor is looked for, and failing that the activity is fetched from its
+    gateway ([Portable objects](./portable.md)), or by a server passing a reply
+    on to its followers. Its signature says nothing of the actor, so a proof by
+    the actor is looked for, and failing that the activity is fetched from its
     `id` and processed as the actor's server serves it, if it is the same
-    activity by the same actor. Only a request that verified gets this far,
-    so an unsigned POST cannot make the server fetch.
+    activity by the same actor. Only a request that verified gets this far, so
+    an unsigned POST cannot make the server fetch.
 
-A portable actor, whose identity is a key (*portable.md*), is authenticated
+A portable actor, whose identity is a key, is authenticated
 by the proof on its activity alone, checked against its DID; an HTTP
 signature on the request is ignored.
 
@@ -91,13 +84,13 @@ is answered 401 even as a `Delete`; the hook sees it.
 A forwarded activity that could be established neither by proof nor from its
 origin is answered 202 and dropped, whatever its type, and the hook does not
 see it. The forwarder's own signature verified, so a retry would change
-nothing, and a 401 had forwarders resending the same activity dozens of
-times. This is Mastodon's answer too: it accepts a delivery once the
-request's signature verifies, and drops a relayed activity it cannot verify
-afterwards (`ActivityPub::ProcessActivityService` in 4.7.1). The reason it
-was dropped is the response body, for the application to log.
+nothing, and a 401 would only make the forwarder resend it. Mastodon
+answers the same way. The reason it was dropped is the response body, for
+the application to log.
 
-### Nothing embedded is trusted that the sender cannot vouch for
+
+Nothing embedded is trusted that the sender cannot vouch for
+------------------------------------------------------------
 
 An activity may embed its `object`, and the object may claim an `id` and an
 author, in `attributedTo` or `actor`. Ojak keeps an embedded object only when
@@ -113,7 +106,9 @@ names the sender's own `Follow`, that a `Delete` names something the sender
 owns. The listener receives the sender to compare against, and Ojak never
 hands it an activity whose sender is in doubt.
 
-### Listeners are typed
+
+Listeners are typed
+-------------------
 
 ~~~~ rust
 .inbox("person", "/ap/users/{user_id}/inbox")
@@ -149,7 +144,9 @@ and answered 202 as well: retrying it would not change it.
 An application that already dispatches on the type itself can take every
 activity through one `on_any`, reading `vouched`, and keep its own queue.
 
-### Queued, or not
+
+Queued, or not
+--------------
 
 ~~~~ rust
 .inbox_queue(|state: &AppState| Some(state.inbox_queue.clone()))
@@ -175,7 +172,9 @@ listener is found for it. The mark is taken back when the listener fails
 without a queue or the activity could not be queued, so that the retry is
 processed.
 
-### Forwarding
+
+Forwarding
+----------
 
 A reply to a post of ours reaches the servers its author sent it to, and
 not the followers of the post's author, who would see half a conversation.
@@ -190,7 +189,7 @@ the application's hook:
 .forward(|ctx, Forward { activity, to }| async move {
     match to {
         ForwardTo::Collections(collections) => { /* send to their members */ }
-        ForwardTo::Gateways(inbox) => { /* portable.md */ }
+        ForwardTo::Gateways(inbox) => { /* see Portable objects */ }
     }
     Ok(())
 })
@@ -206,38 +205,35 @@ What is forwarded is the activity as it was authenticated here, whose proof,
 if it has one, still holds; a server receiving it without one fetches it
 from its origin, as above.
 
-### Relays
+
+Relays
+------
 
 A relay passes public activities between the servers subscribed to it,
 signed by the relay, so what it sends on is forwarded and is established as
 any forwarded activity is: receiving from one needs nothing more. Subscribing
 to one is a Follow the application sends and keeps, in whichever convention
 the relay speaks, Mastodon's follow of `as:Public` or LitePub's follow of the
-relay's actor. Running a relay is a package of its own, as `@fedify/relay` is
-for Fedify, and is not built.
+relay's actor. Running a relay is not supported yet.
 
-### Errors and responses
 
-| Outcome                                          | Status |
-| ------------------------------------------------ | ------ |
-| queued, run, blocked, duplicate, no listener     | 202    |
-| not readable as the listener's type              | 202    |
-| unauthenticated `Delete`                         | 202    |
-| body too large                                   | 413    |
-| not a JSON object, no `actor`, not JSON-LD       | 400    |
-| actor or id on another origin than sender        | 401    |
-| unauthenticated                                  | 401    |
-| portable, proof failed, `Delete` included        | 401    |
-| forwarded and not established, `Delete` included | 401    |
-| not a POST                                       | 405    |
-| `blocked` failed, listener failed with no queue  | 500    |
-| could not be queued                              | 500    |
+Errors and responses
+--------------------
+
+| Outcome                                         | Status |
+| ----------------------------------------------- | ------ |
+| queued, run, blocked, duplicate, no listener    | 202    |
+| not readable as the listener's type             | 202    |
+| unauthenticated `Delete`                        | 202    |
+| forwarded and not established                   | 202    |
+| body too large                                  | 413    |
+| not a JSON object, no `actor`, not JSON-LD      | 400    |
+| actor or id on another origin than sender       | 401    |
+| unauthenticated                                 | 401    |
+| portable, proof failed, `Delete` included       | 401    |
+| not a POST                                      | 405    |
+| `blocked` failed, listener failed with no queue | 500    |
+| could not be queued                             | 500    |
 
 A 400 or 401 says why in plain text. Every failure is reported to
 `.on_error`.
-
-
-Not built
----------
-
- -  *A configurable body limit.* It is 1 MiB.

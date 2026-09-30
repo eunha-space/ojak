@@ -1,13 +1,18 @@
 Portable objects
 ================
 
-Step 7 of *framework.md*: serving and accepting objects whose identity is a
-key rather than a host (FEP-ef61), and signing them with a key that need not
-be on the server. *framework.md* says why this belongs in the model; this is
-how each part of Ojak does it.
+An ordinary ActivityPub object is named by the server that hosts it, so
+moving servers means a new identity.  A portable object (FEP-ef61) is named
+by the key that controls it instead: `ap://did:key:z6Mk…/users/alice`.  It
+carries an integrity proof by that key, so it authenticates itself wherever
+it is fetched from, and a server that serves it is a *gateway*: a location,
+not an authority.  Moving hosts is changing gateways, and nothing addressed
+by the key breaks.
 
-*Status: done.* Everything below is implemented. What was designed and not
-built is listed at the end.
+Ojak serves and accepts portable objects, and signs them with a key that
+need not be on the server.  Because every same-origin rule in Ojak compares
+[origins](./concepts.md#an-origin-is-a-host-or-a-key), and an origin can be a
+DID as well as a host, portable objects follow the same rules as any other.
 
 
 Identifiers
@@ -140,7 +145,7 @@ registers a gateway:
     recipient. An inbox it does not host is answered 404, as the
     specification asks; without `gateway_inbox`, a POST is 405.
 
-Media by hashlink, `/.well-known/apgateway/hl:…`, is not served.
+Media by hashlink, `/.well-known/apgateway/hl:…`, is not served yet.
 
 
 Forwarding
@@ -151,8 +156,8 @@ them, so FEP-ef61 asks the one it reaches to forward it to the rest, and
 never to forward one activity twice. When an activity arrives at a portable
 inbox and is authenticated, Ojak removes this gateway from the ones
 `gateway_inbox` returned and calls the application's `forward` hook, the one
-*inbox.md* describes, with `ForwardTo::Gateways` and the inbox and its other
-gateways. The application sends it with `send_portable`.
+[the inbox](./inbox.md#forwarding) describes, with `ForwardTo::Gateways` and
+the inbox and its other gateways. The application sends it with `send_portable`.
 
 That it was forwarded is kept in the key-value store for a week, so a copy
 that comes back from another gateway is not sent on again; an activity with
@@ -164,10 +169,11 @@ What another gateway forwards is signed by that gateway, which vouches for
 nothing of the actor's. A portable activity carries its proof, and needs
 nothing more. An ordinary one, a Mastodon `Follow` of a portable actor, is
 accepted on a proof by a key in its actor's `assertionMethod`, and is
-otherwise taken from where its `id` says it lives, as *inbox.md* describes for
-any forwarded activity; one its server does not serve is refused. What is
-forwarded then is the copy its server served. That is the safe way to be
-wrong: a gateway may miss an activity, and cannot be handed a forged one.
+otherwise taken from where its `id` says it lives, as [the
+inbox](./inbox.md) does for any forwarded activity; one its server does not
+serve is refused. What is forwarded then is the copy its server served. That is
+the safe way to be wrong: a gateway may miss an activity, and cannot be handed
+a forged one.
 
 
 Delivery
@@ -211,15 +217,3 @@ calls a separate service, or waits on a user's device, implements the same
 trait: what is signed is a whole document, and what comes back is that
 document with its proof. The application calls `prove` itself; nothing in
 Ojak signs a portable object on its own.
-
-
-Not built
----------
-
- -  *Forwarding from an outbox*, which comes with FEP-ae97. Forwarding from
-    an inbox to collections, ActivityPub's, is built (*inbox.md*).
- -  *Client-to-server* (FEP-ae97): outboxes that accept activities signed by
-    the client.
- -  *Collections* served without proofs, which are authentic only from a
-    gateway the actor lists; Ojak does not read them yet.
- -  *Hashlink media.*

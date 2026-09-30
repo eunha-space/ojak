@@ -12,27 +12,30 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: "Introduction", link: "/intro" },
+      { text: "Getting started", link: "/getting-started" },
+      { text: "Guide", link: "/guide/" },
       { text: "Crates", link: "/crates" },
-      { text: "Design", link: "/design/" },
       { text: "Showcase", link: "/showcase" },
     ],
     sidebar: [
       {
-        text: "Getting started",
+        text: "Introduction",
         items: [
           { text: "What is Ojak?", link: "/intro" },
+          { text: "Getting started", link: "/getting-started" },
           { text: "Crates", link: "/crates" },
           { text: "Showcase", link: "/showcase" },
         ],
       },
       {
-        text: "Design records",
-        link: "/design/",
+        text: "Guide",
+        link: "/guide/",
         items: [
-          { text: "Ojak as a framework", link: "/design/framework" },
-          { text: "Serving", link: "/design/serving" },
-          { text: "The inbox", link: "/design/inbox" },
-          { text: "Portable objects", link: "/design/portable" },
+          { text: "Concepts", link: "/guide/concepts" },
+          { text: "Serving", link: "/guide/serving" },
+          { text: "The inbox", link: "/guide/inbox" },
+          { text: "Sending and fetching", link: "/guide/sending" },
+          { text: "Portable objects", link: "/guide/portable" },
         ],
       },
     ],

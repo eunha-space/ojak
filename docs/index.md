@@ -9,11 +9,14 @@ hero:
     (오작교, 烏鵲橋), the bridge of crows and magpies across the Milky Way.
   actions:
     - theme: brand
+      text: Get started
+      link: /getting-started
+    - theme: alt
       text: What is Ojak?
       link: /intro
     - theme: alt
-      text: Design records
-      link: /design/
+      text: Guide
+      link: /guide/
     - theme: alt
       text: Showcase
       link: /showcase
@@ -22,21 +25,30 @@ hero:
       link: https://github.com/eunha-space/ojak
 
 features:
-  - title: The application owns its data
+  - title: Your application owns its data
     details: >-
       Ojak never holds a follower, a post or an account of its own.  It asks
-      the application, and does the protocol around what it is told.
+      your application, and does the protocol around what it is told.
+    link: /guide/concepts
+    linkText: Concepts
   - title: Strict about who said what
     details: >-
-      Both HTTP Signature schemes and FEP-8b32 proofs, held to one policy, and
-      nothing embedded trusted that its sender cannot vouch for.
+      Every activity is authenticated by an HTTP signature or an FEP-8b32
+      proof before your code sees it, and nothing embedded is trusted that
+      its sender cannot vouch for.
+    link: /guide/inbox
+    linkText: The inbox
   - title: JSON-LD read by meaning
     details: >-
-      Documents are read by what their keys stand for, over contexts Ojak
-      ships instead of fetches, and written back in one spelling.
+      Documents are read by what their keys stand for, not how they are
+      spelled, over contexts Ojak ships instead of fetching.
+    link: /guide/concepts#documents-are-read-by-meaning
+    linkText: Reading documents
   - title: Portable objects
     details: >-
       Objects whose identity is a key rather than a hostname (FEP-ef61), signed
       with a key that need not live on the server.
+    link: /guide/portable
+    linkText: Portable objects
 ---
 

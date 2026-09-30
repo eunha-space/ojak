@@ -2,7 +2,7 @@
 //!
 //! A listener registered for the activity's type receives it typed, from a
 //! sender Ojak has authenticated, with nothing embedded in it that the
-//! sender could not vouch for; *docs/design/inbox.md* has the reasoning.
+//! sender could not vouch for; *docs/guide/inbox.md* explains it.
 //! Activities are queued, when the application gives Ojak a queue, and run
 //! by an [`InboxWorker`]; otherwise inside the request.
 

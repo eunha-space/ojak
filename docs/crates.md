@@ -11,7 +11,9 @@ The vocabulary
 --------------
 
 These do no I/O, and are `no_std`, so that they can run where a standard
-library cannot.
+library cannot.  `mise run check` builds them for `thumbv7em-none-eabihf`, a
+target with no standard library, so that a dependency that pulls `std` back
+in fails the check.
 
  -  *ojak-vocab*: The Activity Vocabulary: every ActivityStreams type and the
     extensions the fediverse uses, generated from Fedify's vocabulary schemas

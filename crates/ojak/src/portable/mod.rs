@@ -3,7 +3,7 @@
 //! A portable object is authentic when an FEP-8b32 integrity proof on it was
 //! made with a key under the DID of its `id`, and by nothing else: not where
 //! it was fetched from, and not the HTTP signature it arrived under.
-//! *docs/design/portable.md* has the reasoning.
+//! *docs/guide/portable.md* explains it.
 //!
 //! `did:key` is resolved here, since the DID is the key. Any other method
 //! needs a [`DidResolver`] from the application.
