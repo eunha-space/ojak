@@ -20,16 +20,34 @@ ojak = { git = "https://github.com/eunha-space/ojak.git" }
 ojak-axum = { git = "https://github.com/eunha-space/ojak.git" }
 ojak-vocab = { git = "https://github.com/eunha-space/ojak.git" }
 axum = "0.8"
+rand_core = { version = "0.6", features = ["getrandom"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 ~~~~
 
-Alice signs what she sends with an RSA key.  Make one:
+Alice signs what she sends with an RSA key.  The server makes one the first
+time it runs, with the system's randomness, and keeps it in two files, so
+her key stays the same across restarts:
 
-~~~~ sh
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out alice.pem
-openssl pkey -in alice.pem -pubout -out alice.pub.pem
+~~~~ rust
+/// Alice's key pair, as PEM: made on the first run, and read after that.
+fn alice_keys() -> Result<(String, String), Box<dyn std::error::Error>> {
+    if !std::path::Path::new("alice.pem").exists() {
+        let (private, public) =
+            ojak::sig::signature::generate_rsa_keypair(&mut rand_core::OsRng)?;
+        std::fs::write("alice.pem", private)?;
+        std::fs::write("alice.pub.pem", public)?;
+    }
+    Ok((
+        std::fs::read_to_string("alice.pem")?,
+        std::fs::read_to_string("alice.pub.pem")?,
+    ))
+}
 ~~~~
+
+Other servers remember an actor's key, so a lost *alice.pem* means Alice
+can't be verified until they fetch her again.  Keep it out of version
+control, and back it up like any other secret.
 
 
 Your application's data
@@ -141,9 +159,10 @@ The federation is built once, at start-up, from everything above:
 ~~~~ rust
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (private_pem, public_pem) = alice_keys()?;
     let key = SenderKey {
         key_id: format!("{ALICE}#main-key"),
-        private_key: Arc::new(PrivateKey::from_pem(&std::fs::read_to_string("alice.pem")?)?),
+        private_key: Arc::new(PrivateKey::from_pem(&private_pem)?),
     };
     let client = Client::new(ClientConfig::default())?;
     let fetcher = Arc::new(Fetcher::new(client.clone(), Scheme::DraftCavage));
@@ -154,7 +173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         DelivererConfig::default(),
     ));
     let app = App {
-        public_pem: std::fs::read_to_string("alice.pub.pem")?,
+        public_pem,
         key,
         fetcher: fetcher.clone(),
         deliverer: deliverer.clone(),
