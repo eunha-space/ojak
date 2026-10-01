@@ -249,8 +249,9 @@ pub struct PortableInbox {
     pub gateways: Vec<Url>,
 }
 
-/// What a batch of deliveries shares: a tag to find them by, and when to
-/// give up on the ones that have not gone through.
+/// What a batch of deliveries shares: a tag to find them by, when to give up
+/// on the ones that have not gone through, and what they are sent in order
+/// with.
 #[derive(Clone, Debug, Default)]
 pub struct Batch {
     /// Kept with each delivery, as `tag` in its payload, for the application
@@ -260,6 +261,12 @@ pub struct Batch {
     /// to the failure handler with [`DeliveryFailure::deadline`] set. One that
     /// would next be tried after it is given up on at once.
     pub deadline: Option<std::time::SystemTime>,
+    /// Deliveries sent with the same key reach each inbox in the order they
+    /// were queued: one waits until those before it to that inbox have gone
+    /// through or been given up on. The key is typically the object an
+    /// activity is about, so that its `Delete` cannot overtake its `Create`
+    /// while the `Create` is being retried. Inboxes do not wait on each other.
+    pub ordering_key: Option<String>,
 }
 
 /// One delivery, as it waits in the queue.
@@ -420,8 +427,8 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             .await
     }
 
-    /// [`Deliverer::send`], in `batch`: tagged, and given up on at its
-    /// deadline.
+    /// [`Deliverer::send`], in `batch`: tagged, given up on at its deadline,
+    /// and sent after the deliveries queued before it with its ordering key.
     ///
     /// # Errors
     ///
@@ -438,11 +445,30 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             return Ok(());
         }
         let queue = self.queue_for(inboxes.len());
-        let payloads = inboxes
-            .into_iter()
-            .map(|inbox| Delivery::new(activity, inbox, Vec::new(), sender, batch).payload())
-            .collect();
-        self.queue.enqueue(queue, payloads).await?;
+        match &batch.ordering_key {
+            Some(key) => {
+                let jobs = inboxes
+                    .into_iter()
+                    .map(|inbox| {
+                        // Each inbox is a sequence of its own.
+                        let ordering = format!("{key} {inbox}");
+                        let payload =
+                            Delivery::new(activity, inbox, Vec::new(), sender, batch).payload();
+                        (ordering, payload)
+                    })
+                    .collect();
+                self.queue.enqueue_ordered(queue, jobs).await?;
+            }
+            None => {
+                let payloads = inboxes
+                    .into_iter()
+                    .map(|inbox| {
+                        Delivery::new(activity, inbox, Vec::new(), sender, batch).payload()
+                    })
+                    .collect();
+                self.queue.enqueue(queue, payloads).await?;
+            }
+        }
         self.wake.notify_one();
         Ok(())
     }

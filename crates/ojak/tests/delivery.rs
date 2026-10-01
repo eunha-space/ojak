@@ -381,6 +381,52 @@ async fn which_statuses_are_permanent_is_the_applications_to_say() {
 }
 
 #[tokio::test]
+async fn a_delete_does_not_overtake_the_create_it_follows() {
+    use ojak::deliverer::Batch;
+
+    let (slow, fine) = (
+        Inbox::answering([Answer::Status(503), Answer::Status(503)]),
+        Inbox::default(),
+    );
+    let slow_url = serve(slow.clone()).await;
+    let fine_url = serve(fine.clone()).await;
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), fast());
+    let note = Batch {
+        ordering_key: Some("https://ojak.example/notes/1".into()),
+        ..Batch::default()
+    };
+    for kind in ["Create", "Delete"] {
+        deliverer
+            .send_batch(
+                "alice",
+                &json!({ "type": kind }),
+                [slow_url.clone(), fine_url.clone()],
+                &note,
+            )
+            .await
+            .unwrap();
+    }
+    drain(&deliverer, 6).await;
+
+    let kinds = |inbox: &Inbox| {
+        inbox
+            .received()
+            .iter()
+            .map(|received| {
+                serde_json::from_slice::<serde_json::Value>(&received.body).unwrap()["type"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>()
+    };
+    // The Create was retried twice before the Delete was sent at all, and the
+    // inbox that took the Create at once was not held up by the other.
+    assert_eq!(kinds(&slow), ["Create", "Create", "Create", "Delete"]);
+    assert_eq!(kinds(&fine), ["Create", "Delete"]);
+}
+
+#[tokio::test]
 async fn one_inbox_named_twice_is_sent_once() {
     let inbox = Inbox::default();
     let url = serve(inbox.clone()).await;
@@ -518,6 +564,7 @@ async fn a_batch_is_given_up_on_at_its_deadline() {
     let batch = Batch {
         tag: Some("move:1".into()),
         deadline: Some(SystemTime::now() + Duration::from_secs(30)),
+        ..Batch::default()
     };
     deliverer
         .send_batch("alice", &json!({}), [url.clone()], &batch)
@@ -541,6 +588,7 @@ async fn a_batch_is_given_up_on_at_its_deadline() {
     let late = Batch {
         tag: Some("move:2".into()),
         deadline: Some(SystemTime::now() - Duration::from_secs(1)),
+        ..Batch::default()
     };
     deliverer
         .send_batch("alice", &json!({}), [url], &late)
@@ -637,6 +685,15 @@ impl ojak::queue::Queue for OneConnection {
     ) -> Result<(), QueueError> {
         let _held = self.hold().await;
         self.inner.enqueue(queue, payloads).await
+    }
+
+    async fn enqueue_ordered(
+        &self,
+        queue: &str,
+        jobs: Vec<(String, serde_json::Value)>,
+    ) -> Result<(), QueueError> {
+        let _held = self.hold().await;
+        self.inner.enqueue_ordered(queue, jobs).await
     }
 
     async fn claim(

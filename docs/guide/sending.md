@@ -22,8 +22,15 @@ tokio::spawn(async move { deliverer.run_until(stop).await });
 Your application works out the inboxes, typically as a query over its own
 tables, preferring shared inboxes.  `send_batch` tags a batch so it can be
 followed, and gives it a deadline past which a delivery is given up on
-rather than retried.  `send_portable` delivers to a portable actor's
-gateways (see [Portable objects](./portable.md#delivery)).
+rather than retried.  A batch with an `ordering_key` reaches each inbox in
+the order it was queued among the batches with that key: give an
+activity's object as the key, and its `Delete` waits until its `Create` has
+gone through or been given up on, rather than overtaking it while it is
+retried.  The queue keeps the order, through `Queue::enqueue_ordered`, so it
+holds across processes; *ojak-postgres* keeps the key in an `ordering_key`
+column, which `PostgresQueue::schema` adds to a table made before it.
+`send_portable` delivers to a portable actor's gateways (see
+[Portable objects](./portable.md#delivery)).
 
 Delivery:
 

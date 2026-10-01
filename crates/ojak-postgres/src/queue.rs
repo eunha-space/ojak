@@ -12,6 +12,11 @@
 //! deleted; one given up on keeps its row, with `failed_at` and the last
 //! error, until [`PostgresQueue::prune_failed`] removes it.
 //!
+//! A job queued with an ordering key keeps it in `ordering_key`, and a claim
+//! passes over a job while a row with the same key and a smaller `id` is
+//! still there and not failed: the jobs before it are waiting, claimed or to
+//! be retried, and it goes once they are done.
+//!
 //! A payload is `jsonb`, which refuses a string with NUL in it, and a payload
 //! is often a document a peer sent: one Note with `\u0000` in its content
 //! would fail the enqueue, and the activity would be lost. A payload that
@@ -77,12 +82,14 @@ impl PostgresQueue {
         Ok(())
     }
 
-    /// The statements that create a queue table named `table` and its index,
-    /// each safe to run again. What [`PostgresQueue::initialize`] runs, for an
+    /// The statements that create a queue table named `table` and its
+    /// indexes, each safe to run again, and bring one made before ordering
+    /// keys up to date. What [`PostgresQueue::initialize`] runs, for an
     /// application to put in a migration of its own.
     #[must_use]
     pub fn schema(table: &str) -> Vec<String> {
         let index = format!("{}_due", table.replace('.', "_"));
+        let ordering = format!("{}_ordering", table.replace('.', "_"));
         vec![
             format!(
                 "CREATE TABLE IF NOT EXISTS {table} (
@@ -93,12 +100,18 @@ impl PostgresQueue {
                     run_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                     last_error TEXT,
                     failed_at TIMESTAMPTZ,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    ordering_key TEXT
                 )"
             ),
             format!(
                 "CREATE INDEX IF NOT EXISTS {index} ON {table} (queue, run_at) \
                  WHERE failed_at IS NULL"
+            ),
+            format!("ALTER TABLE {table} ADD COLUMN IF NOT EXISTS ordering_key TEXT"),
+            format!(
+                "CREATE INDEX IF NOT EXISTS {ordering} ON {table} (ordering_key, id) \
+                 WHERE ordering_key IS NOT NULL AND failed_at IS NULL"
             ),
         ]
     }
@@ -204,6 +217,36 @@ impl Queue for PostgresQueue {
         Ok(())
     }
 
+    async fn enqueue_ordered(
+        &self,
+        queue: &str,
+        jobs: Vec<(String, Value)>,
+    ) -> Result<(), QueueError> {
+        if jobs.is_empty() {
+            return Ok(());
+        }
+        let (keys, payloads): (Vec<String>, Vec<Value>) = jobs
+            .into_iter()
+            .map(|(key, payload)| (storable(&key), wrap(&payload)))
+            .unzip();
+        // `WITH ORDINALITY` keeps the ids in the order the jobs were given,
+        // which is the order they are claimed in.
+        sqlx::query(&format!(
+            "INSERT INTO {} (queue, ordering_key, payload)
+             SELECT $1, job.key, job.payload
+             FROM unnest($2::text[], $3::jsonb[]) WITH ORDINALITY AS job(key, payload, n)
+             ORDER BY job.n",
+            self.table
+        ))
+        .bind(queue)
+        .bind(keys)
+        .bind(payloads)
+        .execute(&self.pool)
+        .await
+        .map_err(error)?;
+        Ok(())
+    }
+
     async fn claim(
         &self,
         queue: &str,
@@ -214,8 +257,13 @@ impl Queue for PostgresQueue {
         let rows = sqlx::query(&format!(
             "UPDATE {table} SET run_at = now() + make_interval(secs => $3)
              WHERE id IN (
-                 SELECT id FROM {table}
+                 SELECT id FROM {table} AS job
                  WHERE queue = $1 AND failed_at IS NULL AND run_at <= now()
+                   AND (ordering_key IS NULL OR NOT EXISTS (
+                       SELECT 1 FROM {table} AS ahead
+                       WHERE ahead.ordering_key = job.ordering_key
+                         AND ahead.id < job.id AND ahead.failed_at IS NULL
+                   ))
                  ORDER BY run_at, id
                  LIMIT $2
                  FOR UPDATE SKIP LOCKED

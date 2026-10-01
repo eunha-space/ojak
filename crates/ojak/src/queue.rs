@@ -58,6 +58,17 @@ pub trait Queue: Send + Sync + 'static {
         payloads: Vec<Value>,
     ) -> impl Future<Output = Result<(), QueueError>> + Send;
 
+    /// Queue `jobs` in `queue`, due now, each with its ordering key. A job is
+    /// not claimed while another with the same key, queued before it in any
+    /// queue, is still waiting, claimed or due to be retried; once that one
+    /// is complete or failed, the next is. Jobs with different keys, and
+    /// jobs with none, are claimed as they come due.
+    fn enqueue_ordered(
+        &self,
+        queue: &str,
+        jobs: Vec<(String, Value)>,
+    ) -> impl Future<Output = Result<(), QueueError>> + Send;
+
     /// Claim up to `limit` due jobs from `queue` for `lease`. None of them is
     /// claimed again until the lease lapses.
     fn claim(
@@ -144,6 +155,7 @@ struct MemoryState {
 #[derive(Clone, Debug)]
 struct MemoryEntry {
     job: Job,
+    ordering: Option<String>,
     due: Instant,
     status: MemoryStatus,
     last_error: Option<String>,
@@ -206,11 +218,11 @@ impl MemoryQueue {
     }
 }
 
-impl Queue for MemoryQueue {
-    async fn enqueue(&self, queue: &str, payloads: Vec<Value>) -> Result<(), QueueError> {
+impl MemoryQueue {
+    fn push(&self, queue: &str, jobs: impl IntoIterator<Item = (Option<String>, Value)>) {
         let mut state = self.lock();
         let now = Instant::now();
-        for payload in payloads {
+        for (ordering, payload) in jobs {
             state.next_id += 1;
             let id = state.next_id.to_string();
             state.entries.push(MemoryEntry {
@@ -220,11 +232,30 @@ impl Queue for MemoryQueue {
                     payload,
                     attempts: 0,
                 },
+                ordering,
                 due: now,
                 status: MemoryStatus::Waiting,
                 last_error: None,
             });
         }
+    }
+}
+
+impl Queue for MemoryQueue {
+    async fn enqueue(&self, queue: &str, payloads: Vec<Value>) -> Result<(), QueueError> {
+        self.push(queue, payloads.into_iter().map(|payload| (None, payload)));
+        Ok(())
+    }
+
+    async fn enqueue_ordered(
+        &self,
+        queue: &str,
+        jobs: Vec<(String, Value)>,
+    ) -> Result<(), QueueError> {
+        self.push(
+            queue,
+            jobs.into_iter().map(|(key, payload)| (Some(key), payload)),
+        );
         Ok(())
     }
 
@@ -237,12 +268,21 @@ impl Queue for MemoryQueue {
         let mut state = self.lock();
         let now = Instant::now();
         let mut claimed = Vec::new();
+        // The keys of the jobs not yet done, in the order they were queued:
+        // a job behind one of them waits.
+        let mut ahead = std::collections::HashSet::new();
         for entry in &mut state.entries {
             if claimed.len() == limit {
                 break;
             }
-            if entry.job.queue == queue && entry.status == MemoryStatus::Waiting && entry.due <= now
-            {
+            if entry.status != MemoryStatus::Waiting {
+                continue;
+            }
+            let waiting = match &entry.ordering {
+                Some(key) => !ahead.insert(key.clone()),
+                None => false,
+            };
+            if entry.job.queue == queue && !waiting && entry.due <= now {
                 entry.due = now + lease;
                 claimed.push(entry.job.clone());
             }
@@ -294,6 +334,12 @@ pub trait DynQueue: Send + Sync {
         queue: &'a str,
         payloads: Vec<Value>,
     ) -> BoxFuture<'a, Result<(), QueueError>>;
+    /// [`Queue::enqueue_ordered`].
+    fn enqueue_ordered<'a>(
+        &'a self,
+        queue: &'a str,
+        jobs: Vec<(String, Value)>,
+    ) -> BoxFuture<'a, Result<(), QueueError>>;
     /// [`Queue::claim`].
     fn claim<'a>(
         &'a self,
@@ -326,6 +372,14 @@ impl<Q: Queue> DynQueue for Q {
         payloads: Vec<Value>,
     ) -> BoxFuture<'a, Result<(), QueueError>> {
         Box::pin(Queue::enqueue(self, queue, payloads))
+    }
+
+    fn enqueue_ordered<'a>(
+        &'a self,
+        queue: &'a str,
+        jobs: Vec<(String, Value)>,
+    ) -> BoxFuture<'a, Result<(), QueueError>> {
+        Box::pin(Queue::enqueue_ordered(self, queue, jobs))
     }
 
     fn claim<'a>(

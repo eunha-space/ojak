@@ -382,6 +382,76 @@ pub async fn check_queue(queue: &impl Queue) {
     assert_eq!(claimed.len(), 1);
     assert_eq!(claimed[0].payload, peer, "a payload comes back as it was");
     queue.complete(&claimed[0].id).await.expect("complete c");
+
+    // Jobs with one ordering key go one at a time, in the order queued, and
+    // across queues; other keys, and jobs with none, do not wait on them.
+    queue
+        .enqueue_ordered(
+            "o",
+            vec![
+                ("k".to_owned(), json!("k1")),
+                ("k".to_owned(), json!("k2")),
+                ("other".to_owned(), json!("other")),
+            ],
+        )
+        .await
+        .expect("enqueue ordered");
+    queue
+        .enqueue_ordered("p", vec![("k".to_owned(), json!("k3"))])
+        .await
+        .expect("enqueue ordered in another queue");
+    queue
+        .enqueue("o", vec![json!("free")])
+        .await
+        .expect("enqueue unordered");
+    let payloads = |jobs: &[Job]| {
+        jobs.iter()
+            .map(|job| job.payload.clone())
+            .collect::<Vec<_>>()
+    };
+    let head = queue.claim("o", 10, lease).await.expect("claim o");
+    assert_eq!(
+        payloads(&head),
+        [json!("k1"), json!("other"), json!("free")],
+        "a job waits for the one before it with its key"
+    );
+    let k1 = &head[0];
+    queue
+        .retry(&k1.id, Duration::from_millis(10), "try again")
+        .await
+        .expect("retry k1");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(
+        queue
+            .claim("p", 10, lease)
+            .await
+            .expect("claim p")
+            .is_empty(),
+        "a job to be retried still holds back the next, in any queue"
+    );
+    let retried = queue.claim("o", 10, lease).await.expect("claim o again");
+    assert_eq!(
+        payloads(&retried),
+        [json!("k1")],
+        "the head comes back first"
+    );
+    queue.complete(&retried[0].id).await.expect("complete k1");
+    let next = queue.claim("o", 10, lease).await.expect("claim k2");
+    assert_eq!(
+        payloads(&next),
+        [json!("k2")],
+        "the next goes once it is done"
+    );
+    queue.fail(&next[0].id, "given up").await.expect("fail k2");
+    let last = queue.claim("p", 10, lease).await.expect("claim k3");
+    assert_eq!(
+        payloads(&last),
+        [json!("k3")],
+        "one given up on lets the next go"
+    );
+    for job in head.iter().skip(1).chain(&last) {
+        queue.complete(&job.id).await.expect("complete the rest");
+    }
 }
 
 /// Run every check against `store`, which must be empty.
