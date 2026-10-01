@@ -341,7 +341,9 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
     }
 
     /// Queue `activity`, signed by `sender`, for each portable inbox, once
-    /// each: sent to the inbox at its first gateway that accepts it.
+    /// each: sent to the inbox at its first gateway that accepts it, of the
+    /// first [`MAX_GATEWAYS`](crate::portable::MAX_GATEWAYS) it lists that
+    /// are origins.
     ///
     /// # Errors
     ///
@@ -358,10 +360,18 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             if !seen.insert(inbox.canonical()) {
                 continue;
             }
-            let via: Vec<Url> = gateways
+            let mut via: Vec<Url> = Vec::new();
+            for gateway in gateways
                 .iter()
-                .filter_map(|gateway| Url::parse(&inbox.at_gateway(gateway.as_str())).ok())
-                .collect();
+                .filter(|gateway| crate::portable::is_gateway(gateway.as_str()))
+            {
+                if let Ok(target) = Url::parse(&inbox.at_gateway(gateway.as_str()))
+                    && !via.contains(&target)
+                {
+                    via.push(target);
+                }
+            }
+            via.truncate(crate::portable::MAX_GATEWAYS);
             let Ok(encoded) = Url::parse(&inbox.encoded()) else {
                 continue;
             };

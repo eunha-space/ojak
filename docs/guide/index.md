@@ -38,5 +38,4 @@ Not yet supported
  -  Followers collection synchronisation (FEP-8fcf).
  -  Client-to-server (FEP-ae97), and forwarding from an outbox, which comes
     with it.
- -  Reading portable collections served without proofs, and hashlink media.
  -  DID methods other than `did:key` without a resolver of your own.

@@ -24,8 +24,8 @@
 
 use crate::client::{Client, RequestError, Response};
 use crate::origin::Origin;
-use crate::portable::ApUri;
 use crate::portable::{self, DidResolver};
+use crate::portable::{ApUri, Hashlink, Media};
 use crate::sig::{Scheme, SenderKey};
 use crate::sig::{rfc9421, signature};
 use ojak_vocab::json::{FromJson, ToJson};
@@ -434,7 +434,8 @@ impl Fetcher {
 
 impl Fetcher {
     /// Fetch the portable object `uri` names from its gateways: the hints it
-    /// carries, then `gateways`, in order. The first document served as
+    /// carries, then `gateways`, in order, and no more than
+    /// [`portable::MAX_GATEWAYS`] of them. The first document served as
     /// ActivityPub whose `id` is `uri` and whose proof by `uri`'s DID holds
     /// is returned; a gateway that fails any of that is passed over.
     ///
@@ -458,6 +459,14 @@ impl Fetcher {
             if asked.contains(&gateway) {
                 continue;
             }
+            if !portable::is_gateway(gateway) {
+                tried.push((gateway.to_owned(), "not a gateway".into()));
+                continue;
+            }
+            if asked.len() == portable::MAX_GATEWAYS {
+                tried.push((gateway.to_owned(), "not asked: too many gateways".into()));
+                break;
+            }
             asked.push(gateway);
             match self.ask_gateway(uri, gateway, key).await {
                 Ok(document) => return Ok(document),
@@ -468,6 +477,21 @@ impl Fetcher {
     }
 
     async fn ask_gateway(
+        &self,
+        uri: &ApUri,
+        gateway: &str,
+        key: Option<&SenderKey>,
+    ) -> Result<Document, String> {
+        let document = self.served_by_gateway(uri, gateway, key).await?;
+        portable::verify(&document.json, self.resolver())
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok(document)
+    }
+
+    /// What `gateway` serves as `uri`, when it is ActivityPub and its `id` is
+    /// `uri`; not yet verified.
+    async fn served_by_gateway(
         &self,
         uri: &ApUri,
         gateway: &str,
@@ -491,20 +515,176 @@ impl Fetcher {
         }
         let json: Value =
             serde_json::from_slice(&response.body).map_err(|error| error.to_string())?;
-        let id = portable::verify(&json, self.resolver())
-            .await
-            .map_err(|error| error.to_string())?;
-        if id != *uri {
-            return Err(format!("served {id} for {uri}"));
+        let id = json.get("id").and_then(Value::as_str).unwrap_or_default();
+        match ApUri::parse(id) {
+            Some(served) if served == *uri => {}
+            Some(served) => return Err(format!("served {served} for {uri}")),
+            None => return Err(format!("served {id:?} for {uri}")),
         }
         Ok(Document {
-            id: json
-                .get("id")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
+            id: id.to_owned(),
             url: response.url,
             json,
+        })
+    }
+
+    /// Fetch a portable actor's collection, its `inbox`, `outbox`,
+    /// `followers`, `following` or `liked`, or a page of one, which FEP-ef61
+    /// lets a gateway serve without a proof. `owner` is the actor's document,
+    /// verified again here, which for `did:key` fetches nothing.
+    ///
+    /// The collection is asked of the owner's own gateways in turn, and no
+    /// more than [`portable::MAX_GATEWAYS`] of them: one with no proof is
+    /// taken because a gateway the owner lists served it, and from nowhere
+    /// else, as FEP-ef61 asks. One with a proof is held to it, as any
+    /// portable object is. A page with no proof has to name one of the
+    /// owner's collections as its `partOf`.
+    ///
+    /// # Errors
+    ///
+    /// [`FetchError::Invalid`] when `owner` is not an authentic portable
+    /// actor or `iri` is not under its DID, and [`FetchError::Portable`],
+    /// with why each gateway was passed over, when none served it.
+    pub async fn portable_collection(
+        &self,
+        owner: &Value,
+        iri: &str,
+        key: Option<&SenderKey>,
+    ) -> Result<Document, FetchError> {
+        let actor = portable::verify(owner, self.resolver())
+            .await
+            .map_err(|error| FetchError::Invalid(format!("owner: {error}")))?;
+        let uri = ApUri::parse(iri)
+            .filter(|uri| uri.did() == actor.did())
+            .ok_or_else(|| FetchError::Invalid(format!("{iri} is not {actor}'s")))?;
+        let listed: Vec<ApUri> = ["inbox", "outbox", "followers", "following", "liked"]
+            .iter()
+            .filter_map(|property| owner.get(*property))
+            .filter_map(|value| match value {
+                Value::String(id) => Some(id.as_str()),
+                Value::Object(object) => object.get("id").and_then(Value::as_str),
+                _ => None,
+            })
+            .filter_map(ApUri::parse)
+            .collect();
+        let mut tried = Vec::new();
+        for gateway in portable::gateways(owner)
+            .iter()
+            .take(portable::MAX_GATEWAYS)
+        {
+            let document = match self.served_by_gateway(&uri, gateway, key).await {
+                Ok(document) => document,
+                Err(why) => {
+                    tried.push((gateway.clone(), why));
+                    continue;
+                }
+            };
+            let taken = if document.json.get("proof").is_some() {
+                portable::verify(&document.json, self.resolver())
+                    .await
+                    .map(drop)
+                    .map_err(|error| error.to_string())
+            } else {
+                unsecured_collection(&document, gateway, &uri, &listed)
+            };
+            match taken {
+                Ok(()) => return Ok(document),
+                Err(why) => tried.push((gateway.clone(), why)),
+            }
+        }
+        Err(FetchError::Portable(tried))
+    }
+
+    /// Fetch the media a portable object refers to, and check it against
+    /// `digest`, the `digestMultibase` the object gives it: FEP-ef61 asks
+    /// for this whoever serves it. `url` is the object's `url` for it: a
+    /// hashlink is asked of `gateways` in turn, the gateways of the object's
+    /// owner, and no more than [`portable::MAX_GATEWAYS`] of them; any other
+    /// URL is fetched as it is. What a response may hold is bounded by the
+    /// client's `max_response_bytes`.
+    ///
+    /// # Errors
+    ///
+    /// [`FetchError::Invalid`] when `digest` is not a SHA-256 multihash or
+    /// `url` is a hashlink of another digest, and [`FetchError::Portable`],
+    /// with why each place asked was passed over, when none served it.
+    pub async fn portable_media(
+        &self,
+        url: &str,
+        digest: &str,
+        gateways: &[&str],
+        key: Option<&SenderKey>,
+    ) -> Result<Media, FetchError> {
+        let expected = Hashlink::from_multibase(digest)
+            .ok_or_else(|| FetchError::Invalid(format!("digest {digest:?} is not SHA-256")))?;
+        let mut tried = Vec::new();
+        let mut asked: Vec<&str> = Vec::new();
+        let places: Vec<String> = if url.starts_with("hl:") {
+            if Hashlink::parse(url).as_ref() != Some(&expected) {
+                return Err(FetchError::Invalid(format!("{url} is not {digest}")));
+            }
+            let mut places = Vec::new();
+            for gateway in gateways {
+                if asked.contains(gateway) {
+                    continue;
+                }
+                if !portable::is_gateway(gateway) {
+                    tried.push(((*gateway).to_owned(), "not a gateway".into()));
+                    continue;
+                }
+                if asked.len() == portable::MAX_GATEWAYS {
+                    tried.push(((*gateway).to_owned(), "not asked: too many gateways".into()));
+                    break;
+                }
+                asked.push(gateway);
+                places.push(format!(
+                    "{}{}{expected}",
+                    gateway.trim_end_matches('/'),
+                    portable::GATEWAY_PATH
+                ));
+            }
+            places
+        } else {
+            vec![url.to_owned()]
+        };
+        for place in places {
+            match self.media_at(&place, &expected, key).await {
+                Ok(media) => return Ok(media),
+                Err(why) => tried.push((place, why)),
+            }
+        }
+        Err(FetchError::Portable(tried))
+    }
+
+    async fn media_at(
+        &self,
+        place: &str,
+        expected: &Hashlink,
+        key: Option<&SenderKey>,
+    ) -> Result<Media, String> {
+        let url = Url::parse(place).map_err(|error| error.to_string())?;
+        if !matches!(url.scheme(), "http" | "https") {
+            return Err(format!("not fetched: {}", url.scheme()));
+        }
+        let response = self
+            .get(&url, "*/*", key)
+            .await
+            .map_err(|error| error.to_string())?;
+        if !(200..300).contains(&response.status) {
+            return Err(FetchError::Status(response.status).to_string());
+        }
+        if !expected.matches(&response.body) {
+            return Err(format!("not what {expected} names"));
+        }
+        let content_type = response
+            .headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .to_owned();
+        Ok(Media {
+            content_type,
+            bytes: response.body,
         })
     }
 
@@ -524,6 +704,52 @@ impl Fetcher {
         let document = self.lookup(url, key).await?;
         let read = read_reporting(&REGISTRY, &document.json).map_err(FetchError::Read)?;
         Ok(Typed { document, read })
+    }
+}
+
+/// Whether `document`, served by `gateway` without a proof, may be taken
+/// as `uri`: it was served from the gateway, not redirected elsewhere, and
+/// is one of the collections in `listed` or a page of one.
+fn unsecured_collection(
+    document: &Document,
+    gateway: &str,
+    uri: &ApUri,
+    listed: &[ApUri],
+) -> Result<(), String> {
+    if !same_origin(document.url.as_str(), gateway) {
+        return Err(format!("served from {}, not the gateway", document.url));
+    }
+    let kinds = ["Collection", "OrderedCollection"];
+    let pages = ["CollectionPage", "OrderedCollectionPage"];
+    if listed.contains(uri) && portable::has_type(&document.json, &kinds) {
+        return Ok(());
+    }
+    if portable::has_type(&document.json, &pages) {
+        let part_of = match document.json.get("partOf") {
+            Some(Value::String(id)) => Some(id.as_str()),
+            Some(Value::Object(object)) => object.get("id").and_then(Value::as_str),
+            _ => None,
+        };
+        if part_of
+            .and_then(ApUri::parse)
+            .is_some_and(|collection| listed.contains(&collection))
+        {
+            return Ok(());
+        }
+        return Err(format!(
+            "page of {part_of:?}, not of its owner's collection"
+        ));
+    }
+    Err(format!(
+        "no proof, and not a collection of its owner: {}",
+        document.json.get("type").unwrap_or(&Value::Null)
+    ))
+}
+
+fn same_origin(a: &str, b: &str) -> bool {
+    match (Url::parse(a), Url::parse(b)) {
+        (Ok(a), Ok(b)) => a.origin() == b.origin(),
+        _ => false,
     }
 }
 

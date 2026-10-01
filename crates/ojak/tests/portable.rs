@@ -17,7 +17,7 @@ use ojak::federation::{
 use ojak::fetch::{FetchError, Fetcher};
 use ojak::kv::MemoryKvStore;
 use ojak::portable::ApUri;
-use ojak::portable::{Ed25519Signer, ProofSigner};
+use ojak::portable::{Ed25519Signer, Hashlink, Media, ProofSigner};
 use ojak::queue::{MemoryQueue, QueueError, RetryPolicy};
 use ojak::sig::signature::{PrivateKey, sign_request_with_key};
 use ojak::sig::{Scheme, SenderKey};
@@ -171,6 +171,7 @@ async fn a_portable_object_is_taken_from_the_first_gateway_whose_copy_is_proven(
 struct Store {
     seen: Mutex<Vec<(String, Option<ActorRef>)>>,
     objects: Mutex<HashMap<String, Value>>,
+    media: Mutex<HashMap<Hashlink, Media>>,
     forwarded: Mutex<Vec<Forward>>,
     /// The activities as the listeners read them.
     activities: Mutex<Vec<Value>>,
@@ -215,6 +216,9 @@ fn federation(alice: &Ed25519Signer) -> Federation<App> {
                     None => Found::NotFound,
                 },
             )
+        })
+        .gateway_media(|ctx: Context<App>, hashlink: Hashlink| async move {
+            Ok::<_, String>(ctx.data().media.lock().unwrap().get(&hashlink).cloned())
         })
         .gateway_inbox(move |_, uri: ApUri| {
             let hosted = uri == inbox;
@@ -371,6 +375,334 @@ async fn a_gateway_serves_what_the_application_stored() {
         panic!("answered");
     };
     assert_eq!(response.status(), 404);
+}
+
+async fn fetch_from(
+    federation: &Federation<App>,
+    store: &App,
+    path: &str,
+) -> http::Response<Vec<u8>> {
+    match federation
+        .handle(&request("GET", path), store.clone())
+        .await
+    {
+        Handled::Response(response) => response,
+        Handled::NotFound => {
+            let mut response = http::Response::new(Vec::new());
+            *response.status_mut() = StatusCode::NOT_FOUND;
+            response
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_gateway_serves_only_the_object_asked_for_with_its_proof() {
+    let alice = Ed25519Signer::generate();
+    let federation = federation(&alice);
+    let store = App::default();
+    let did = alice.did();
+    let note = |n: u32| {
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("ap://{did}/notes/{n}"),
+            "type": "Note",
+            "attributedTo": format!("ap://{did}/actor"),
+            "content": "Hello",
+        })
+    };
+    let at = |path: &str| format!("/.well-known/apgateway/{did}{path}");
+    let mut objects = HashMap::new();
+    // Found under another object's identifier.
+    objects.insert(
+        format!("ap://{did}/notes/1"),
+        alice.prove(&note(2)).await.unwrap(),
+    );
+    // Unsigned, and signed and changed since.
+    objects.insert(format!("ap://{did}/notes/3"), note(3));
+    let mut changed = alice.prove(&note(4)).await.unwrap();
+    changed["content"] = json!("Goodbye");
+    objects.insert(format!("ap://{did}/notes/4"), changed);
+    // An actor listing what is not a gateway.
+    let mut actor = actor(&alice, &["https://oeee.test/gateway"]);
+    actor = alice.prove(&actor).await.unwrap();
+    objects.insert(format!("ap://{did}/actor"), actor);
+    // A collection, which may go unsigned.
+    objects.insert(
+        format!("ap://{did}/actor/outbox"),
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("ap://{did}/actor/outbox"),
+            "type": "OrderedCollection",
+            "totalItems": 0,
+        }),
+    );
+    // A signed tombstone, which says it is gone in its owner's words.
+    let tombstone = alice
+        .prove(&json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("ap://{did}/notes/5"),
+            "type": "Tombstone",
+            "formerType": "Note",
+        }))
+        .await
+        .unwrap();
+    objects.insert(format!("ap://{did}/notes/5"), tombstone.clone());
+    *store.objects.lock().unwrap() = objects;
+
+    assert_eq!(
+        fetch_from(&federation, &store, &at("/notes/1"))
+            .await
+            .status(),
+        404
+    );
+    assert_eq!(
+        fetch_from(&federation, &store, &at("/notes/3"))
+            .await
+            .status(),
+        500
+    );
+    assert_eq!(
+        fetch_from(&federation, &store, &at("/notes/4"))
+            .await
+            .status(),
+        500
+    );
+    assert_eq!(
+        fetch_from(&federation, &store, &at("/actor"))
+            .await
+            .status(),
+        500
+    );
+    assert_eq!(
+        fetch_from(&federation, &store, &at("/actor/outbox"))
+            .await
+            .status(),
+        200
+    );
+    let gone = fetch_from(&federation, &store, &at("/notes/5")).await;
+    assert_eq!(gone.status(), 410);
+    assert_eq!(
+        serde_json::from_slice::<Value>(gone.body()).unwrap(),
+        tombstone
+    );
+    // Dot segments would make it another object at any URL parser.
+    assert_eq!(
+        fetch_from(&federation, &store, &at("/actor/../notes/5"))
+            .await
+            .status(),
+        404
+    );
+}
+
+#[tokio::test]
+async fn a_gateway_serves_media_by_what_it_is() {
+    let alice = Ed25519Signer::generate();
+    let federation = federation(&alice);
+    let store = App::default();
+    let image = Media {
+        content_type: "image/png".into(),
+        bytes: b"\x89PNG...".to_vec(),
+    };
+    let hashlink = Hashlink::of(&image.bytes);
+    let other = Hashlink::of(b"something else");
+    store
+        .media
+        .lock()
+        .unwrap()
+        .insert(hashlink.clone(), image.clone());
+    // What the application found under a digest that is not its own.
+    store
+        .media
+        .lock()
+        .unwrap()
+        .insert(other.clone(), image.clone());
+
+    let response = fetch_from(
+        &federation,
+        &store,
+        &format!("/.well-known/apgateway/{hashlink}"),
+    )
+    .await;
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.headers()["content-type"], "image/png");
+    assert_eq!(response.body(), &image.bytes);
+    let response = fetch_from(
+        &federation,
+        &store,
+        &format!("/.well-known/apgateway/{other}"),
+    )
+    .await;
+    assert_eq!(response.status(), 500);
+    let missing = Hashlink::of(b"missing");
+    let response = fetch_from(
+        &federation,
+        &store,
+        &format!("/.well-known/apgateway/{missing}"),
+    )
+    .await;
+    assert_eq!(response.status(), 404);
+    let response = fetch_from(
+        &federation,
+        &store,
+        "/.well-known/apgateway/hl:zNotAHashlink",
+    )
+    .await;
+    assert_eq!(response.status(), 404);
+}
+
+#[tokio::test]
+async fn media_is_taken_from_the_first_gateway_that_serves_what_its_digest_names() {
+    let (tampering, honest) = (Gateway::default(), Gateway::default());
+    let first = serve(tampering.clone()).await;
+    let second = serve(honest.clone()).await;
+    let media = json!({"an": "image"});
+    let hashlink = Hashlink::of(media.to_string().as_bytes());
+    honest
+        .documents
+        .lock()
+        .unwrap()
+        .insert(hashlink.to_string(), media.clone());
+    tampering
+        .documents
+        .lock()
+        .unwrap()
+        .insert(hashlink.to_string(), json!({"another": "image"}));
+
+    let fetcher = Fetcher::new(client(), Scheme::DraftCavage);
+    let digest = hashlink.multibase();
+    let found = fetcher
+        .portable_media(&hashlink.to_string(), &digest, &[&first, &second], None)
+        .await
+        .unwrap();
+    assert_eq!(found.bytes, media.to_string().as_bytes());
+
+    // By its URL, wherever that is, and checked all the same.
+    let at = format!("{second}/.well-known/apgateway/{hashlink}");
+    fetcher
+        .portable_media(&at, &digest, &[], None)
+        .await
+        .unwrap();
+    let tampered = format!("{first}/.well-known/apgateway/{hashlink}");
+    assert!(matches!(
+        fetcher.portable_media(&tampered, &digest, &[], None).await,
+        Err(FetchError::Portable(_))
+    ));
+    // A hashlink of one digest does not stand for another.
+    let other = Hashlink::of(b"other").multibase();
+    assert!(matches!(
+        fetcher
+            .portable_media(&hashlink.to_string(), &other, &[&second], None)
+            .await,
+        Err(FetchError::Invalid(_))
+    ));
+}
+
+#[tokio::test]
+async fn a_portable_collection_is_taken_unsigned_only_from_its_owners_gateways() {
+    let alice = Ed25519Signer::generate();
+    let (listed, unlisted) = (Gateway::default(), Gateway::default());
+    let gateway = serve(listed.clone()).await;
+    let elsewhere = serve(unlisted.clone()).await;
+    let did = alice.did();
+    let mut owner = actor(&alice, &[&gateway]);
+    owner["outbox"] = json!(format!("ap://{did}/actor/outbox"));
+    let owner = alice.prove(&owner).await.unwrap();
+    let outbox = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("ap://{did}/actor/outbox"),
+        "type": "OrderedCollection",
+        "first": format!("ap://{did}/actor/outbox/page/1"),
+    });
+    let page = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("ap://{did}/actor/outbox/page/1"),
+        "type": "OrderedCollectionPage",
+        "partOf": format!("ap://{did}/actor/outbox"),
+        "orderedItems": [],
+    });
+    let stray = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("ap://{did}/actor/drafts"),
+        "type": "OrderedCollection",
+    });
+    for gateway in [&listed, &unlisted] {
+        let mut documents = gateway.documents.lock().unwrap();
+        documents.insert(format!("{did}/actor/outbox"), outbox.clone());
+        documents.insert(format!("{did}/actor/outbox/page/1"), page.clone());
+        documents.insert(format!("{did}/actor/drafts"), stray.clone());
+        documents.insert(
+            format!("{did}/notes/1"),
+            json!({
+                "@context": "https://www.w3.org/ns/activitystreams",
+                "id": format!("ap://{did}/notes/1"),
+                "type": "Note",
+            }),
+        );
+    }
+
+    let fetcher = Fetcher::new(client(), Scheme::DraftCavage);
+    let collection = |iri: String| {
+        let fetcher = &fetcher;
+        let owner = &owner;
+        async move { fetcher.portable_collection(owner, &iri, None).await }
+    };
+    assert_eq!(
+        collection(format!("ap://{did}/actor/outbox"))
+            .await
+            .unwrap()
+            .json,
+        outbox
+    );
+    assert_eq!(
+        collection(format!("ap://{did}/actor/outbox/page/1"))
+            .await
+            .unwrap()
+            .json,
+        page
+    );
+    // Not a collection its owner lists, and not a collection.
+    assert!(
+        collection(format!("ap://{did}/actor/drafts"))
+            .await
+            .is_err()
+    );
+    assert!(collection(format!("ap://{did}/notes/1")).await.is_err());
+    // Its hints are no gateway of the owner's: not asked.
+    let hinted = ApUri::parse(&format!("ap://{did}/actor/outbox"))
+        .unwrap()
+        .with_hints(&[&elsewhere]);
+    let moved = alice.prove(&actor(&alice, &[&elsewhere])).await.unwrap();
+    assert!(
+        fetcher
+            .portable_collection(&moved, &hinted, None)
+            .await
+            .is_err()
+    );
+    // A collection of someone else's.
+    let bob = Ed25519Signer::generate();
+    let bobs = format!("ap://{}/actor/outbox", bob.did());
+    assert!(matches!(
+        fetcher.portable_collection(&owner, &bobs, None).await,
+        Err(FetchError::Invalid(_))
+    ));
+}
+
+#[tokio::test]
+async fn no_more_than_a_few_gateways_are_asked() {
+    let alice = Ed25519Signer::generate();
+    let uri = ApUri::parse(&format!("ap://{}/actor", alice.did())).unwrap();
+    // Nothing listens on these.
+    let gateways: Vec<String> = (1..=8)
+        .map(|port| format!("http://127.0.0.1:{port}"))
+        .collect();
+    let gateways: Vec<&str> = gateways.iter().map(String::as_str).collect();
+    let fetcher = Fetcher::new(client(), Scheme::DraftCavage);
+    let Err(FetchError::Portable(tried)) = fetcher.portable(&uri, &gateways, None).await else {
+        panic!("nothing is there");
+    };
+    assert_eq!(tried.len(), ojak::portable::MAX_GATEWAYS + 1);
+    assert!(tried.last().unwrap().1.contains("too many"));
 }
 
 struct Keys;

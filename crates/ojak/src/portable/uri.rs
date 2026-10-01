@@ -83,7 +83,7 @@ impl ApUri {
         // The path is required, and opaque, but it is a path: something
         // after its `/`, and not an authority of its own, which would make
         // `ap://did:key:…//host/x` a second identifier for a host.
-        if !path.starts_with('/') || path.len() == 1 || path.starts_with("//") {
+        if !path.starts_with('/') || path.len() == 1 || path.starts_with("//") || lossy(path) {
             return None;
         }
         for parameter in query.into_iter().flat_map(|query| query.split('&')) {
@@ -255,15 +255,31 @@ fn is_did(did: &str) -> bool {
         })
 }
 
-/// An `http` or `https` URI with no path, query or fragment: what the
-/// specification allows as a gateway.
-fn is_gateway(gateway: &str) -> bool {
+/// Whether `path` would name another object once it is a URL's: the path of
+/// an `ap` URI is opaque, but at a gateway it is an `https` URL's, and a URL
+/// parser removes tabs and line breaks, reads `\` as `/`, and resolves `.`
+/// and `..` segments, `%2e` spelled or not. `ap://did:key:…/a/../b` would be
+/// fetched, served and delivered to as `/b`.
+fn lossy(path: &str) -> bool {
+    path.contains(['\\', '\t', '\n', '\r'])
+        || path.split('/').any(|segment| {
+            let segment = segment.to_ascii_lowercase().replace("%2e", ".");
+            segment == "." || segment == ".."
+        })
+}
+
+/// Whether `gateway` is what FEP-ef61 allows as one: an `http` or `https`
+/// URI with a host and no path, query or fragment, `https://server.example`,
+/// or with the one `/` of an empty path.
+#[must_use]
+pub fn is_gateway(gateway: &str) -> bool {
     let Some((scheme, rest)) = gateway.split_once("://") else {
         return false;
     };
+    let authority = rest.strip_suffix('/').unwrap_or(rest);
     matches!(scheme, "http" | "https")
-        && !rest.is_empty()
-        && !rest.trim_end_matches('/').contains(['/', '?', '#'])
+        && !authority.is_empty()
+        && !authority.contains(['/', '\\', '?', '#', '@'])
 }
 
 fn percent_decode(text: &str) -> String {
@@ -405,10 +421,48 @@ mod tests {
             "ap://did:key:z6Mk%20x/actor",
             "ap://did:key:z6Mk:/actor",
             "ap://did:key:z6Mk%zz/actor",
+            "ap://did:key:z6Mk/a/../b",
+            "ap://did:key:z6Mk/a/./b",
+            "ap://did:key:z6Mk/a/%2E%2e/b",
+            "ap://did:key:z6Mk/a/.%2e",
+            "ap://did:key:z6Mk/..",
+            "ap://did:key:z6Mk/a\\..\\b",
+            "ap://did:key:z6Mk/a/.\t./b",
+            "https://g.example/.well-known/apgateway/did:key:z6Mk/a/../b",
             "did:key:z6Mk",
             "",
         ] {
             assert!(ApUri::parse(iri).is_none(), "{iri}");
+        }
+    }
+
+    #[test]
+    fn a_dot_that_is_not_a_segment_is_part_of_the_path() {
+        let uri = ApUri::parse(&alloc::format!("ap://{DID}/a/..b/c./.d")).unwrap();
+        assert_eq!(uri.path(), "/a/..b/c./.d");
+    }
+
+    #[test]
+    fn a_gateway_is_an_origin() {
+        for gateway in [
+            "https://server.example",
+            "https://server.example/",
+            "http://127.0.0.1:8080",
+        ] {
+            assert!(is_gateway(gateway), "{gateway}");
+        }
+        for gateway in [
+            "https://server.example/path",
+            "https://server.example//",
+            "https://server.example?",
+            "https://server.example/#",
+            "https://user@server.example",
+            "https://",
+            "https:///",
+            "ftp://server.example",
+            "server.example",
+        ] {
+            assert!(!is_gateway(gateway), "{gateway}");
         }
     }
 

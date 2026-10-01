@@ -8,8 +8,10 @@
 //! `did:key` is resolved here, since the DID is the key. Any other method
 //! needs a [`DidResolver`] from the application.
 
+mod hashlink;
 mod uri;
 
+pub use hashlink::{Hashlink, Media};
 pub use uri::*;
 
 use crate::sig::did::{did_key, did_key_method, resolve_did_key};
@@ -19,6 +21,12 @@ use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+
+/// The most gateways asked for one object, or tried for one delivery. The
+/// hints in an `ap` URI are its writer's to choose, and so are an actor's
+/// gateways: unbounded, one reference could send a server to any number of
+/// hosts of someone else's choosing.
+pub const MAX_GATEWAYS: usize = 5;
 
 /// An error from the application's resolver or signer.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -47,6 +55,9 @@ pub enum PortableError {
     Invalid(String),
     /// It is an actor and lists no gateway.
     NoGateways,
+    /// It is an actor and lists something that is not a gateway: every
+    /// gateway has to be an `http` or `https` origin.
+    InvalidGateway(String),
 }
 
 impl fmt::Display for PortableError {
@@ -60,6 +71,9 @@ impl fmt::Display for PortableError {
             Self::Unresolved { method, why } => write!(f, "{method} did not resolve: {why}"),
             Self::Invalid(why) => write!(f, "proof does not verify: {why}"),
             Self::NoGateways => f.write_str("portable actor lists no gateways"),
+            Self::InvalidGateway(gateway) => {
+                write!(f, "portable actor lists {gateway}, which is not an origin")
+            }
         }
     }
 }
@@ -127,8 +141,8 @@ pub async fn verify_by(
 }
 
 /// Verify a portable document: its `id` is an `ap` URI, a proof by the
-/// `id`'s DID verifies, and an actor lists at least one gateway. Returns the
-/// `id`.
+/// `id`'s DID verifies, and an actor lists at least one gateway and nothing
+/// else. Returns the `id`.
 ///
 /// # Errors
 ///
@@ -142,17 +156,49 @@ pub async fn verify(
         .and_then(Value::as_str)
         .and_then(ApUri::parse)
         .ok_or(PortableError::NotPortable)?;
-    verify_by(document, id.did(), resolver).await?;
-    if is_actor(document) && gateways(document).is_empty() {
-        return Err(PortableError::NoGateways);
+    if is_actor(document) {
+        // Checked before the proof, which costs more: an actor with a list
+        // that is not all gateways is refused whole, since leaving out what
+        // is not one would change which gateway is its first.
+        let listed = listed_gateways(document);
+        if let Some(invalid) = listed
+            .iter()
+            .find(|gateway| gateway.as_str().is_none_or(|gateway| !is_gateway(gateway)))
+        {
+            return Err(PortableError::InvalidGateway(match invalid {
+                Value::String(gateway) => gateway.clone(),
+                other => other.to_string(),
+            }));
+        }
+        if listed.is_empty() {
+            return Err(PortableError::NoGateways);
+        }
     }
+    verify_by(document, id.did(), resolver).await?;
     Ok(id)
 }
 
-/// The gateways an actor document lists, in order.
+/// The gateways an actor document lists, in order, as origins: without the
+/// `/` of an empty path, which some gateways refuse. What is not a gateway
+/// is left out; [`verify`] refuses an actor that lists one.
+///
+/// `gateways` is read as it is written, whether or not the document's
+/// contexts map it: tootik's actors use it without the FEP-ef61 context, and
+/// the proof covers the document as written.
 #[must_use]
 pub fn gateways(actor: &Value) -> Vec<String> {
-    let items = match actor.get("gateways") {
+    let mut gateways: Vec<String> = Vec::new();
+    for gateway in listed_gateways(actor).into_iter().filter_map(Value::as_str) {
+        let gateway = gateway.strip_suffix('/').unwrap_or(gateway);
+        if is_gateway(gateway) && !gateways.iter().any(|seen| seen == gateway) {
+            gateways.push(gateway.to_owned());
+        }
+    }
+    gateways
+}
+
+fn listed_gateways(actor: &Value) -> Vec<&Value> {
+    match actor.get("gateways") {
         Some(Value::Array(items)) => items.iter().collect(),
         Some(Value::Object(list)) => match list.get("@list") {
             Some(Value::Array(items)) => items.iter().collect(),
@@ -160,23 +206,22 @@ pub fn gateways(actor: &Value) -> Vec<String> {
         },
         Some(item) => vec![item],
         None => Vec::new(),
-    };
-    items
-        .into_iter()
-        .filter_map(Value::as_str)
-        .filter(|gateway| gateway.starts_with("https://") || gateway.starts_with("http://"))
-        .map(str::to_owned)
-        .collect()
+    }
 }
 
 fn is_actor(document: &Value) -> bool {
     const ACTORS: [&str; 5] = ["Application", "Group", "Organization", "Person", "Service"];
+    has_type(document, &ACTORS)
+}
+
+/// Whether `document`'s `type` is, or includes, one of `types`.
+pub(crate) fn has_type(document: &Value, types: &[&str]) -> bool {
     match document.get("type") {
-        Some(Value::String(kind)) => ACTORS.contains(&kind.as_str()),
+        Some(Value::String(kind)) => types.contains(&kind.as_str()),
         Some(Value::Array(kinds)) => kinds
             .iter()
             .filter_map(Value::as_str)
-            .any(|kind| ACTORS.contains(&kind)),
+            .any(|kind| types.contains(&kind)),
         _ => false,
     }
 }
@@ -331,6 +376,38 @@ mod tests {
         assert!(matches!(
             verify(&signed, None).await,
             Err(PortableError::ForeignMethod { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn an_actor_lists_only_gateways() {
+        let signer = Ed25519Signer::generate();
+        let mut unsigned = actor(&signer);
+        unsigned["gateways"] = json!(["https://server1.example/", "https://server2.example"]);
+        let signed = signer.prove(&unsigned).await.unwrap();
+        verify(&signed, None).await.unwrap();
+        assert_eq!(
+            gateways(&signed),
+            ["https://server1.example", "https://server2.example"]
+        );
+
+        for listed in [
+            json!(["https://server1.example", "https://server2.example/path"]),
+            json!(["https://server1.example", 1]),
+            json!("ap://did:key:z6Mk/actor"),
+        ] {
+            unsigned["gateways"] = listed;
+            let signed = signer.prove(&unsigned).await.unwrap();
+            assert!(matches!(
+                verify(&signed, None).await,
+                Err(PortableError::InvalidGateway(_))
+            ));
+        }
+        unsigned["gateways"] = json!([]);
+        let signed = signer.prove(&unsigned).await.unwrap();
+        assert!(matches!(
+            verify(&signed, None).await,
+            Err(PortableError::NoGateways)
         ));
     }
 

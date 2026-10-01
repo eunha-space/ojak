@@ -28,7 +28,7 @@ pub use signer::KnownKey;
 
 use crate::fetch::Fetcher;
 use crate::kv::{KvError, KvStore};
-use crate::portable::ApUri;
+use crate::portable::{ApUri, Hashlink, Media};
 use crate::template::{Template, TemplateError};
 use chrono::{DateTime, SecondsFormat, Utc};
 use http::{HeaderValue, Method, StatusCode, header};
@@ -210,6 +210,9 @@ type OriginFn<D> = Arc<dyn Fn(&str, &D) -> Option<Url> + Send + Sync>;
 type ErrorFn = Arc<dyn Fn(&Error) + Send + Sync>;
 type GatewayFn<D> =
     Arc<dyn Fn(Context<D>, ApUri) -> BoxFuture<'static, Result<Found<Value>, Error>> + Send + Sync>;
+type GatewayMediaFn<D> = Arc<
+    dyn Fn(Context<D>, Hashlink) -> BoxFuture<'static, Result<Option<Media>, Error>> + Send + Sync,
+>;
 type GatewayInboxFn<D> = Arc<
     dyn Fn(Context<D>, ApUri) -> BoxFuture<'static, Result<Option<GatewayInbox>, Error>>
         + Send
@@ -265,6 +268,7 @@ struct Inner<D> {
     on_unverified: Option<inbox::UnverifiedFn<D>>,
     inbox_queue: Option<inbox::QueueFn<D>>,
     gateway: Option<GatewayFn<D>>,
+    gateway_media: Option<GatewayMediaFn<D>>,
     gateway_inbox: Option<GatewayInboxFn<D>>,
     forward: Option<inbox::ForwardFn<D>>,
     read_as_written: bool,
@@ -335,6 +339,7 @@ pub struct Builder<D> {
     on_unverified: Option<inbox::UnverifiedFn<D>>,
     inbox_queue: Option<inbox::QueueFn<D>>,
     gateway: Option<GatewayFn<D>>,
+    gateway_media: Option<GatewayMediaFn<D>>,
     gateway_inbox: Option<GatewayInboxFn<D>>,
     forward: Option<inbox::ForwardFn<D>>,
     read_as_written: bool,
@@ -364,6 +369,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             on_unverified: None,
             inbox_queue: None,
             gateway: None,
+            gateway_media: None,
             gateway_inbox: None,
             forward: None,
             read_as_written: false,
@@ -435,6 +441,20 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
         let Some(origin) = self.origin_for(&host, &data) else {
             return Handled::NotFound;
         };
+        if let Some(hashlink) = request
+            .uri
+            .path()
+            .strip_prefix(crate::portable::GATEWAY_PATH)
+            .filter(|rest| rest.starts_with("hl:"))
+        {
+            let context = Context::new(
+                self.inner.clone(),
+                data,
+                origin,
+                Some(RequestInfo::of(request, host)),
+            );
+            return Handled::Response(self.media(context, request, hashlink).await);
+        }
         let compatible = format!(
             "{}{}",
             origin.as_str().trim_end_matches('/'),
@@ -455,6 +475,13 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
                 return Handled::NotFound;
             };
             match load(context.clone(), uri.clone()).await {
+                Ok(Found::Found(document)) => match servable(&context, &document, &uri).await {
+                    Ok(()) => without_body_if(head, portable_found(Found::Found(document), &uri)),
+                    Err(refused) => {
+                        context.report(&refused.to_string().into());
+                        empty(refused.status())
+                    }
+                },
                 Ok(found) => without_body_if(head, portable_found(found, &uri)),
                 Err(error) => {
                     context.report(&error);
@@ -482,6 +509,48 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             response
         };
         Handled::Response(response)
+    }
+
+    /// Answer a request for media by its hashlink,
+    /// `/.well-known/apgateway/hl:zQm…`.
+    async fn media(
+        &self,
+        context: Context<D>,
+        request: &http::request::Parts,
+        hashlink: &str,
+    ) -> http::Response<Vec<u8>> {
+        let head = request.method == Method::HEAD;
+        if request.method != Method::GET && !head {
+            return method_not_allowed();
+        }
+        let (Some(load), Some(hashlink)) = (&self.inner.gateway_media, Hashlink::parse(hashlink))
+        else {
+            return empty(StatusCode::NOT_FOUND);
+        };
+        match load(context.clone(), hashlink.clone()).await {
+            // What the hashlink names, and nothing else: whoever fetches it
+            // checks it against the digest, and would refuse anything else.
+            Ok(Some(media)) if hashlink.matches(&media.bytes) => {
+                let mut response = response(StatusCode::OK, &media.content_type, media.bytes);
+                // Whatever is served at a digest is always the same.
+                response.headers_mut().insert(
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static("public, max-age=31536000, immutable"),
+                );
+                without_body_if(head, response)
+            }
+            Ok(Some(_)) => {
+                context.report(
+                    &format!("gateway: media found for {hashlink} is not what it names").into(),
+                );
+                empty(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+            Ok(None) => empty(StatusCode::NOT_FOUND),
+            Err(error) => {
+                context.report(&error);
+                empty(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
     }
 
     /// Answer `request` with its `body`: an activity POSTed to an inbox is
@@ -644,7 +713,9 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
     }
 
     fn serves_gateway(&self) -> bool {
-        self.inner.gateway.is_some() || self.inner.gateway_inbox.is_some()
+        self.inner.gateway.is_some()
+            || self.inner.gateway_media.is_some()
+            || self.inner.gateway_inbox.is_some()
     }
 
     fn special(&self, path: &str) -> Option<Special> {
@@ -1082,6 +1153,13 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     /// an `ap` URI names, as the signed document the application stored: its
     /// proof covers it, and Ojak serves it as it is. An object that is not
     /// public is the application's to refuse, as for any dispatcher.
+    ///
+    /// What is served is checked first, as whoever fetches it will check it:
+    /// a document whose `id` is another object is answered 404, and one
+    /// whose proof does not verify, 500, both reported to `on_error`. A
+    /// collection may have no proof. A signed Tombstone is served with 410;
+    /// `Found::Gone` serves an unsigned one, which says the object is gone
+    /// but that nobody can take for its owner's word.
     #[must_use]
     pub fn gateway<F, Fut, E>(mut self, load: F) -> Self
     where
@@ -1091,6 +1169,24 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     {
         let load = boxed(move |(context, uri)| load(context, uri));
         self.gateway = Some(Arc::new(move |context, uri| load((context, uri))));
+        self
+    }
+
+    /// Serve the media portable objects refer to by hashlink (FEP-ef61), at
+    /// `/.well-known/apgateway/hl:zQm…`. `load` returns what the hashlink
+    /// names; it is served only if it is that, since it is checked against
+    /// the digest wherever it is fetched, and a mismatch is reported to
+    /// `on_error` and answered 500. Anyone who knows a digest can fetch what
+    /// it names: media with an audience is the application's to refuse.
+    #[must_use]
+    pub fn gateway_media<F, Fut, E>(mut self, load: F) -> Self
+    where
+        F: Fn(Context<D>, Hashlink) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<Media>, E>> + Send + 'static,
+        E: Into<Error>,
+    {
+        let load = boxed(move |(context, hashlink)| load(context, hashlink));
+        self.gateway_media = Some(Arc::new(move |context, hashlink| load((context, hashlink))));
         self
     }
 
@@ -1352,6 +1448,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     on_unverified: self.on_unverified,
                     inbox_queue: self.inbox_queue,
                     gateway: self.gateway,
+                    gateway_media: self.gateway_media,
                     gateway_inbox: self.gateway_inbox,
                     forward: self.forward,
                     read_as_written: self.read_as_written,
@@ -1891,13 +1988,103 @@ fn is_gateway_path(path: &str) -> bool {
 pub const PORTABLE_JSON: &str =
     "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"";
 
+/// Why a gateway does not serve what the application found.
+#[derive(Debug)]
+enum Unservable {
+    /// It is another object than the one asked for: answered as one the
+    /// gateway does not have.
+    Another { id: Option<String>, uri: String },
+    /// It is not authentic, and anyone it was served to would refuse it.
+    Unproven {
+        uri: String,
+        why: crate::portable::PortableError,
+    },
+}
+
+impl Unservable {
+    fn status(&self) -> StatusCode {
+        match self {
+            Self::Another { .. } => StatusCode::NOT_FOUND,
+            Self::Unproven { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl std::fmt::Display for Unservable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Another { id: Some(id), uri } => {
+                write!(f, "gateway: found {id} for {uri}, not serving it")
+            }
+            Self::Another { id: None, uri } => {
+                write!(
+                    f,
+                    "gateway: found a document with no id for {uri}, not serving it"
+                )
+            }
+            Self::Unproven { uri, why } => write!(f, "gateway: not serving {uri}: {why}"),
+        }
+    }
+}
+
+/// Whether `document` may be served as `uri`: it is that object, and it is
+/// authentic, as whoever it is served to will check. A collection needs no
+/// proof, as FEP-ef61 has it, since its consumers take it only from its
+/// owner's gateways; one with a proof is held to it.
+async fn servable<D: Clone + Send + Sync + 'static>(
+    context: &Context<D>,
+    document: &Value,
+    uri: &ApUri,
+) -> Result<(), Unservable> {
+    let id = document.get("id").and_then(Value::as_str);
+    if id.and_then(ApUri::parse).as_ref() != Some(uri) {
+        return Err(Unservable::Another {
+            id: id.map(str::to_owned),
+            uri: uri.canonical(),
+        });
+    }
+    if document.get("proof").is_none() && is_collection(document) {
+        return Ok(());
+    }
+    let fetcher = context
+        .inner
+        .federation
+        .signed_fetch
+        .as_ref()
+        .map(|settings| settings.fetcher(context.data()));
+    let resolver = fetcher.as_deref().and_then(crate::fetch::Fetcher::resolver);
+    crate::portable::verify(document, resolver)
+        .await
+        .map(drop)
+        .map_err(|why| Unservable::Unproven {
+            uri: uri.canonical(),
+            why,
+        })
+}
+
+fn is_collection(document: &Value) -> bool {
+    const COLLECTIONS: [&str; 4] = [
+        "Collection",
+        "OrderedCollection",
+        "CollectionPage",
+        "OrderedCollectionPage",
+    ];
+    crate::portable::has_type(document, &COLLECTIONS)
+}
+
 /// A portable object as a gateway serves it: the document as the
-/// application stored it, since its proof covers it.
+/// application stored it, since its proof covers it. A signed Tombstone is
+/// served as what is gone.
 fn portable_found(found: Found<Value>, uri: &ApUri) -> http::Response<Vec<u8>> {
     match found {
         Found::Found(document) => {
+            let status = if crate::portable::has_type(&document, &["Tombstone"]) {
+                StatusCode::GONE
+            } else {
+                StatusCode::OK
+            };
             let body = serde_json::to_vec(&document).unwrap_or_default();
-            response(StatusCode::OK, PORTABLE_JSON, body)
+            response(status, PORTABLE_JSON, body)
         }
         Found::Gone(deleted) => {
             let mut tombstone = json!({

@@ -1225,6 +1225,7 @@ dependencies = [
  "anyhow",
  "axum",
  "base64",
+ "bs58",
  "chrono",
  "futures-util",
  "http",
@@ -1236,6 +1237,7 @@ dependencies = [
  "rand_core 0.6.4",
  "reqwest",
  "serde_json",
+ "sha2",
  "tokio",
  "url",
 ]
