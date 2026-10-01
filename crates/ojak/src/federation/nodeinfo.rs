@@ -90,6 +90,60 @@ impl NodeInfo {
         }
     }
 
+    /// Read another server's NodeInfo document, in any 2.x schema, or 1.x
+    /// as far as it says the same: leniently, as servers write it, keeping
+    /// what is there and leaving out what is not. `None` when it names no
+    /// software.
+    #[must_use]
+    pub fn from_document(document: &Value) -> Option<Self> {
+        let text = |value: Option<&Value>| value.and_then(Value::as_str).map(str::to_owned);
+        let strings = |value: Option<&Value>| -> Vec<String> {
+            match value {
+                Some(Value::Array(items)) => items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect(),
+                _ => Vec::new(),
+            }
+        };
+        let count = |value: Option<&Value>| value.and_then(Value::as_u64);
+        let software = document.get("software")?;
+        let name = text(software.get("name"))?.trim().to_ascii_lowercase();
+        if name.is_empty() {
+            return None;
+        }
+        let usage = document.get("usage");
+        let users = usage.and_then(|usage| usage.get("users"));
+        let services = document.get("services");
+        Some(Self {
+            software: Software {
+                name,
+                version: text(software.get("version")).unwrap_or_default(),
+                repository: text(software.get("repository")),
+                homepage: text(software.get("homepage")),
+            },
+            protocols: strings(document.get("protocols")),
+            inbound_services: strings(services.and_then(|services| services.get("inbound"))),
+            outbound_services: strings(services.and_then(|services| services.get("outbound"))),
+            open_registrations: document
+                .get("openRegistrations")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            usage: Usage {
+                users_total: count(users.and_then(|users| users.get("total"))),
+                users_active_month: count(users.and_then(|users| users.get("activeMonth"))),
+                users_active_halfyear: count(users.and_then(|users| users.get("activeHalfyear"))),
+                local_posts: count(usage.and_then(|usage| usage.get("localPosts"))),
+                local_comments: count(usage.and_then(|usage| usage.get("localComments"))),
+            },
+            metadata: document
+                .get("metadata")
+                .cloned()
+                .unwrap_or_else(|| json!({})),
+        })
+    }
+
     fn document(&self, version: Version) -> Value {
         let mut software = json!({
             "name": self.software.name,

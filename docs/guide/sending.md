@@ -114,6 +114,33 @@ vocabulary type, establish what they fetch the same way the inbox does:
 
 A fetched document comes back with the URL it was finally served from.
 
+`Fetcher::walk` goes through a collection's items, an outbox or a
+followers collection, fetching its pages as their items are wanted:
+
+~~~~ rust
+let mut walk = fetcher.walk(&outbox, key, WalkLimits::default());
+while let Some(item) = walk.next().await? { … }
+~~~~
+
+It follows `first` and then each page's `next`, reading pages embedded in
+the one before without a request.  Each page is fetched as `lookup` fetches
+a document, and has to be on the collection's origin: a page elsewhere is
+another server's say about what the collection holds.  A page seen before
+ends the walk, and so do `WalkLimits`, a hundred pages and ten thousand items
+unless given.  An item is as the page gives it, an IRI or an embedded object,
+and an embedded object on another origin than the collection is that
+server's claim, to be fetched from its own `id` before it is trusted.
+
+
+Finding out what a server runs
+------------------------------
+
+`Fetcher::nodeinfo(&origin)` reads the links at `/.well-known/nodeinfo`, and
+the NodeInfo document of the newest schema they link, into the `NodeInfo`
+a server serves its own as.  It is read leniently, as servers write it:
+the software's name lower-cased, what is missing left out.  A link to
+another host is not followed, since a server answers only for itself.
+
 
 Finding an actor by its handle
 ------------------------------

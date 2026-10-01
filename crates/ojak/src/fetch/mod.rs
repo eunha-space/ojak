@@ -21,8 +21,15 @@
 //! fetch alone: its origin is a key, and only its proof vouches for it.
 //! [`Fetcher::portable`] asks its gateways for it and keeps the first copy
 //! whose proof holds; [`Fetcher::lookup`] sends a portable URL there.
+//!
+//! [`Fetcher::walk`] goes through a collection's items, a page at a time.
+
+mod walk;
+
+pub use walk::{Walk, WalkLimits};
 
 use crate::client::{Client, RequestError, Response};
+use crate::federation::NodeInfo;
 use crate::origin::Origin;
 use crate::portable::{self, DidResolver};
 use crate::portable::{ApUri, Hashlink, Media};
@@ -688,6 +695,70 @@ impl Fetcher {
         })
     }
 
+    /// Find what software the server at `origin` runs, and how it is used,
+    /// from its NodeInfo: the links at `/.well-known/nodeinfo`, and the
+    /// document of the newest schema they name. A link to another host is
+    /// not followed, since a server answers only for itself.
+    ///
+    /// # Errors
+    ///
+    /// As [`Fetcher::get`], [`FetchError::Status`] when either is not
+    /// served, and [`FetchError::Invalid`] when either is not what NodeInfo
+    /// says it is.
+    pub async fn nodeinfo(&self, origin: &Url) -> Result<NodeInfo, FetchError> {
+        let links = origin
+            .join("/.well-known/nodeinfo")
+            .map_err(|error| FetchError::Invalid(error.to_string()))?;
+        let links = self.json(&links).await?;
+        let mut best: Option<(&str, &str)> = None;
+        for link in links
+            .get("links")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let (Some(rel), Some(href)) = (
+                link.get("rel").and_then(Value::as_str),
+                link.get("href").and_then(Value::as_str),
+            ) else {
+                continue;
+            };
+            let Some(version) = rel.strip_prefix("http://nodeinfo.diaspora.software/ns/schema/")
+            else {
+                continue;
+            };
+            if best.is_none_or(|(newest, _)| newer(version, newest)) {
+                best = Some((version, href));
+            }
+        }
+        let (_, href) =
+            best.ok_or_else(|| FetchError::Invalid("no NodeInfo schema linked".into()))?;
+        let document = origin
+            .join(href)
+            .map_err(|error| FetchError::Invalid(format!("{href}: {error}")))?;
+        if document.host_str() != origin.host_str() {
+            return Err(FetchError::Invalid(format!(
+                "NodeInfo at {document}, not on {origin}"
+            )));
+        }
+        let document = self.json(&document).await?;
+        NodeInfo::from_document(&document)
+            .ok_or_else(|| FetchError::Invalid("NodeInfo names no software".into()))
+    }
+
+    /// The JSON object at `url`, unsigned: what servers serve to anyone.
+    async fn json(&self, url: &Url) -> Result<Value, FetchError> {
+        let response = self.get(url, "application/json", None).await?;
+        if !(200..300).contains(&response.status) {
+            return Err(FetchError::Status(response.status));
+        }
+        match serde_json::from_slice(&response.body) {
+            Ok(document @ Value::Object(_)) => Ok(document),
+            Ok(_) => Err(FetchError::Invalid(format!("{url} is not a JSON object"))),
+            Err(error) => Err(FetchError::Invalid(format!("{url}: {error}"))),
+        }
+    }
+
     /// [`Fetcher::lookup`], and read what it found into `T`: an actor, a
     /// note, `AnyObject` for whatever it turns out to be. What reading lost
     /// is in [`Read::lost`].
@@ -705,6 +776,17 @@ impl Fetcher {
         let read = read_reporting(&REGISTRY, &document.json).map_err(FetchError::Read)?;
         Ok(Typed { document, read })
     }
+}
+
+/// Whether NodeInfo schema `version`, such as `2.1`, is newer than `than`.
+fn newer(version: &str, than: &str) -> bool {
+    let parse = |version: &str| -> Vec<u32> {
+        version
+            .split('.')
+            .map(|part| part.parse().unwrap_or(0))
+            .collect()
+    };
+    parse(version) > parse(than)
 }
 
 /// Whether `document`, served by `gateway` without a proof, may be taken
