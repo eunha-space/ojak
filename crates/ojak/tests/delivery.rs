@@ -427,6 +427,35 @@ async fn a_delete_does_not_overtake_the_create_it_follows() {
 }
 
 #[tokio::test]
+async fn a_delivery_the_application_skips_is_dropped_unsent() {
+    let inbox = Inbox::default();
+    let url = serve(inbox.clone()).await;
+    let attempts: Arc<Mutex<Vec<DeliveryAttempt>>> = Arc::default();
+    let seen = attempts.clone();
+    let gone = url.clone();
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), fast())
+        .skip_if(move |inbox, activity| *inbox == gone && activity["type"] != "Follow")
+        .on_attempt(move |attempt| seen.lock().unwrap().push(attempt.clone()));
+
+    deliverer
+        .send("alice", &json!({"type": "Create"}), [url.clone()])
+        .await
+        .unwrap();
+    drain(&deliverer, 1).await;
+
+    assert!(inbox.received().is_empty());
+    assert!(attempts.lock().unwrap().is_empty(), "not an attempt");
+    assert!(deliverer.queue().records()[0].complete);
+
+    deliverer
+        .send("alice", &json!({"type": "Follow"}), [url])
+        .await
+        .unwrap();
+    drain(&deliverer, 1).await;
+    assert_eq!(inbox.received().len(), 1, "what it lets through is sent");
+}
+
+#[tokio::test]
 async fn one_inbox_named_twice_is_sent_once() {
     let inbox = Inbox::default();
     let url = serve(inbox.clone()).await;

@@ -55,6 +55,9 @@ Delivery:
  -  reports every attempt, delivered, failed or held, to `on_attempt`, for an
     application that keeps its own account of which servers answer, as
     Mastodon's delivery failure tracker does;
+ -  drops unsent what `skip_if`, given the inbox and the activity, says no
+    longer to send when it comes due, such as a delivery to a server marked
+    unavailable since it was queued;
  -  runs at most a configured number of deliveries per remote host at once,
     and optionally shares a limit across deliverers, such as every tenant's
     in one process;

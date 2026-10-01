@@ -351,6 +351,7 @@ impl Delivery {
 
 type FailureHandler = Arc<dyn Fn(&DeliveryFailure) + Send + Sync>;
 type AttemptHandler = Arc<dyn Fn(&DeliveryAttempt) + Send + Sync>;
+type SkipPredicate = Arc<dyn Fn(&Url, &Value) -> bool + Send + Sync>;
 
 /// Queues activities and sends them.
 pub struct Deliverer<Q, K> {
@@ -366,6 +367,7 @@ pub struct Deliverer<Q, K> {
     breakers: Mutex<HashMap<String, Breaker>>,
     on_failure: Option<FailureHandler>,
     on_attempt: Option<AttemptHandler>,
+    skip_if: Option<SkipPredicate>,
 }
 
 impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
@@ -381,7 +383,21 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             breakers: Mutex::new(HashMap::new()),
             on_failure: None,
             on_attempt: None,
+            skip_if: None,
         }
+    }
+
+    /// Drop, unsent, each delivery that `skip`, given its inbox and its
+    /// activity, says no longer to send, when it comes due: where an
+    /// application stops delivering to a server it has marked unavailable
+    /// since the delivery was queued, as Mastodon does for all but a
+    /// `Follow`. A skipped delivery is complete, and neither attempted
+    /// nor failed; `skip` is asked as often as a delivery comes due, so it
+    /// is to answer from memory.
+    #[must_use]
+    pub fn skip_if(mut self, skip: impl Fn(&Url, &Value) -> bool + Send + Sync + 'static) -> Self {
+        self.skip_if = Some(Arc::new(skip));
+        self
     }
 
     /// Call `handler` after every attempt at a delivery, whatever came of it:
@@ -694,6 +710,14 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                     true,
                 )
                 .await;
+            return;
+        }
+        if self
+            .skip_if
+            .as_ref()
+            .is_some_and(|skip| skip(&delivery.inbox, &delivery.activity))
+        {
+            let _ = self.queue.complete(&job.id).await;
             return;
         }
         let outcome = self.attempt(&delivery).await;
