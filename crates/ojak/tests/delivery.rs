@@ -452,6 +452,43 @@ async fn a_delivery_the_application_skips_is_dropped_unsent() {
 }
 
 #[tokio::test]
+async fn a_held_delivery_waits_out_the_cool_off_unless_told_not_to() {
+    async fn held_is_due_again(wait_as_asked: bool) -> bool {
+        let inbox = Inbox::answering([Answer::Status(503)]);
+        let url = serve(inbox).await;
+        let deliverer = Deliverer::new(
+            MemoryQueue::new(),
+            Keys,
+            client(),
+            DelivererConfig {
+                concurrency: 1,
+                breaker: Some(CircuitBreaker {
+                    threshold: 1,
+                    cool_off: Duration::from_secs(60),
+                    scope: BreakerScope::Inbox,
+                }),
+                wait_as_asked,
+                ..fast()
+            },
+        );
+        for n in 0..2 {
+            deliverer
+                .send("alice", &json!({ "n": n }), [url.clone()])
+                .await
+                .unwrap();
+        }
+        // One fails and opens the breaker; the other is held.
+        deliverer.run_once().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        // The failed one is due again either way, by the retry policy; the
+        // held one too only if the cool-off is not waited out.
+        deliverer.run_once().await.unwrap() == 2
+    }
+    assert!(!held_is_due_again(true).await);
+    assert!(held_is_due_again(false).await);
+}
+
+#[tokio::test]
 async fn one_inbox_named_twice_is_sent_once() {
     let inbox = Inbox::default();
     let url = serve(inbox.clone()).await;

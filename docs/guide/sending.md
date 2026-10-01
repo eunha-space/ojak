@@ -44,7 +44,9 @@ Delivery:
     long to wait after each failure: thirty seconds doubling to an hour, twelve
     attempts, unless given.  `RetryPolicy::exponential` sets other numbers, and
     `RetryPolicy::custom` takes a function of how many attempts have failed,
-    for a schedule of your own, such as Mastodon's;
+    for a schedule of your own, such as Mastodon's.  A retry waits at least
+    what `Retry-After` asked, and a delivery the circuit breaker held at least
+    until its cool-off ends, unless `DelivererConfig::wait_as_asked` is off;
  -  treats every other 4xx as permanent and reports it to `on_failure` with
     its status, which is where your application marks a domain unavailable.
     Which statuses are permanent is `DelivererConfig::permanent`'s to say:

@@ -211,6 +211,11 @@ pub struct DelivererConfig {
     /// help, so that the delivery is given up on at once:
     /// [`permanent_status`] unless given.
     pub permanent: fn(u16) -> bool,
+    /// Whether a retry waits at least as long as the inbox asked with
+    /// `Retry-After`, and a delivery the circuit breaker held at least until
+    /// its cool-off ends, rather than only what the retry policy says. On
+    /// unless turned off; Mastodon, for one, retries on its schedule alone.
+    pub wait_as_asked: bool,
 }
 
 /// Where sends to few inboxes go, and how few is few.
@@ -237,6 +242,7 @@ impl Default for DelivererConfig {
             priority: None,
             breaker: Some(CircuitBreaker::default()),
             permanent: permanent_status,
+            wait_as_asked: true,
         }
     }
 }
@@ -880,7 +886,10 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         let message = error.to_string();
         match delay {
             Some(delay) => {
-                let delay = error.retry_after().map_or(delay, |asked| asked.max(delay));
+                let delay = match error.retry_after() {
+                    Some(asked) if self.config.wait_as_asked => asked.max(delay),
+                    _ => delay,
+                };
                 // A retry that would come after the batch's deadline is not
                 // made: the batch finishes on time, not when the server
                 // comes back.
