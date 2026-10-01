@@ -25,7 +25,8 @@ pub fn additions_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../ojak-vocab/extensions/additions.yaml")
 }
 
-/// Where Ojak's own types are, in the vendored schemas' format.
+/// Where Ojak's own types are, in the vendored schemas' format, when it has
+/// types the vendored schemas do not.
 #[must_use]
 pub fn extension_types_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../ojak-vocab/extensions/types")
@@ -44,7 +45,10 @@ pub fn output_path() -> PathBuf {
 /// When a schema cannot be read or represented, or `rustfmt` fails.
 pub fn render() -> Result<String> {
     let mut schemas = schema::load_dir(&schemas_dir())?;
-    schemas.extend(schema::load_dir(&extension_types_dir())?);
+    let types = extension_types_dir();
+    if types.exists() {
+        schemas.extend(schema::load_dir(&types)?);
+    }
     schema::apply(&mut schemas, &schema::load_additions(&additions_path())?)?;
     let vocabulary = model::Vocabulary::from_schemas(&schemas, &ojak_jsonld::Registry::bundled())?;
     emit::render(&vocabulary)

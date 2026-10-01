@@ -30,7 +30,8 @@ pub enum Literal {
     DateTime,
     /// `xsd:duration`, kept as written.
     Duration,
-    /// `xsd:anyURI` and `fedify:url`.
+    /// `xsd:anyURI`, `fedify:url`, and `fedify:gatewayUrl`, an FEP-ef61
+    /// gateway origin, which `ojak::portable::is_gateway` checks.
     Iri,
     /// `fedify:langTag`: a BCP 47 language tag.
     LanguageTag,
@@ -67,7 +68,7 @@ impl Literal {
             _ if iri == format!("{XSD}anyURI") => Self::Iri,
             _ if iri == format!("{SEC}multibase") => Self::Multibase,
             _ if iri == format!("{SEC}cryptosuiteString") => Self::Cryptosuite,
-            "fedify:url" => Self::Iri,
+            "fedify:url" | "fedify:gatewayUrl" => Self::Iri,
             "fedify:langTag" => Self::LanguageTag,
             "fedify:publicKey" => Self::PublicKeyPem,
             "fedify:multibaseKey" => Self::MultibaseKey,

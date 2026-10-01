@@ -101,6 +101,8 @@ pub struct Accept {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -169,6 +171,7 @@ impl FromJson for Accept {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -239,6 +242,7 @@ impl ToJson for Accept {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -334,6 +338,8 @@ pub struct Activity {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// Describes one or more entities that either performed or are expected to
     /// perform the activity.  Any single activity can have multiple actors.
     /// The actor MAY be specified using an indirect {@link Link}.
@@ -417,6 +423,7 @@ impl FromJson for Activity {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -487,6 +494,7 @@ impl ToJson for Activity {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -581,6 +589,8 @@ pub struct Add {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -649,6 +659,7 @@ impl FromJson for Add {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -719,6 +730,7 @@ impl ToJson for Add {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -810,6 +822,8 @@ pub struct Agreement {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// The primary {@link Commitment} associated with the agreement.  This
     /// commitment satisfies the primary {@link Intent} of the corresponding
     /// {@link Proposal}.
@@ -874,6 +888,7 @@ impl FromJson for Agreement {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             stipulates: json::one(object, &["stipulates"]),
             stipulates_reciprocal: json::one(object, &["stipulatesReciprocal"]),
         })
@@ -940,6 +955,7 @@ impl ToJson for Agreement {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["stipulates"], self.stipulates.as_ref());
         json::put_one(
             &mut object,
@@ -1031,6 +1047,8 @@ pub struct Announce {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -1099,6 +1117,7 @@ impl FromJson for Announce {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -1169,6 +1188,7 @@ impl ToJson for Announce {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -1261,6 +1281,8 @@ pub struct AnnounceAuthorization {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// The URI of the interaction (e.g., an {@link Announce} activity) that
     /// has been authorized.
     pub interacting_object: Option<AnyObject>,
@@ -1322,6 +1344,7 @@ impl FromJson for AnnounceAuthorization {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             interacting_object: json::one(object, &["interactingObject"]),
             interaction_target: json::one(object, &["interactionTarget"]),
         })
@@ -1388,6 +1411,7 @@ impl ToJson for AnnounceAuthorization {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(
             &mut object,
             &["interactingObject"],
@@ -1484,6 +1508,8 @@ pub struct AnnounceRequest {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -1552,6 +1578,7 @@ impl FromJson for AnnounceRequest {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -1622,6 +1649,7 @@ impl ToJson for AnnounceRequest {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -1713,6 +1741,8 @@ pub struct Application {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// A short username which may be used to refer to the actor,
     /// with no uniqueness guarantees.
     pub preferred_username: Text,
@@ -1721,6 +1751,9 @@ pub struct Application {
     /// Represents this actor's public keys.  It serves as equivalent to
     /// the `publicKeys` property, but is used for [FEP-521a](https://w3id.org/fep/521a) compliance.
     pub assertion_methods: Vec<Reference<Multikey>>,
+    /// Gateways where the latest version of this portable actor object can be
+    /// retrieved.
+    pub gateways: Vec<Iri>,
     /// When `true`, conveys that for this actor, follow requests are not usually
     /// automatically approved, but instead are examined by a person who may accept
     /// or reject the request, at some time in the future.  Setting of `false`
@@ -1778,6 +1811,8 @@ pub struct Application {
     /// on the actor object that points to a {@link Collection} of {@link Hashtag}
     /// objects specifically.
     pub featured_tags: Option<AnyCollection>,
+    /// A collection of {@link FeaturedCollection}s created by this actor.
+    pub featured_collections: Option<AnyCollection>,
     /// A list of supplementary Collections which may be of interest.
     pub streams: Vec<AnyCollection>,
     /// A JSON object which maps additional (typically server/domain-wide) endpoints
@@ -1818,9 +1853,6 @@ pub struct Application {
     pub cat: Option<bool>,
     /// The actor's WebFinger handle, `user@host` (FEP-2c59).
     pub webfinger: Option<String>,
-    /// The gateways that serve the actor, as origins with no path, the first
-    /// preferred (FEP-ef61).
-    pub gateways: Vec<Iri>,
     /// The shared inbox, where Misskey writes it: on the actor rather than in
     /// its `endpoints`. Prefer `endpoints.sharedInbox` when both are there.
     pub shared_inbox: Option<Iri>,
@@ -1880,11 +1912,13 @@ impl FromJson for Application {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             preferred_username: json::text(object, "preferredUsername"),
             public_keys: json::many_with(object, &["publicKey"], |value| {
                 json::reference_with(value, CryptographicKey::from_json_untyped)
             }),
             assertion_methods: json::many(object, &["assertionMethod"]),
+            gateways: json::many(object, &["gateways"]),
             manually_approves_followers: json::one(object, &["manuallyApprovesFollowers"]),
             inbox: json::one(object, &["inbox"]),
             outbox: json::one(object, &["outbox"]),
@@ -1893,6 +1927,10 @@ impl FromJson for Application {
             liked: json::one(object, &["liked"]),
             featured: json::one(object, &["featured"]),
             featured_tags: json::one(object, &["featuredTags"]),
+            featured_collections: json::one(
+                object,
+                &["https://w3id.org/fep/7aa9#featuredCollections"],
+            ),
             streams: json::many(object, &["streams"]),
             endpoints: json::one(object, &["endpoints"]),
             discoverable: json::one(object, &["discoverable"]),
@@ -1905,7 +1943,6 @@ impl FromJson for Application {
             followed_message: json::one(object, &["_misskey_followedMessage"]),
             cat: json::one(object, &["isCat"]),
             webfinger: json::one(object, &["webfinger"]),
-            gateways: json::many(object, &["gateways"]),
             shared_inbox: json::one(object, &["sharedInbox"]),
         })
     }
@@ -1971,6 +2008,7 @@ impl ToJson for Application {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_text(&mut object, "preferredUsername", &self.preferred_username);
         json::put_many_with(
             &mut object,
@@ -1979,6 +2017,7 @@ impl ToJson for Application {
             |reference| json::write_reference(reference, CryptographicKey::to_json_untyped),
         );
         json::put_many(&mut object, &["assertionMethod"], &self.assertion_methods);
+        json::put_many(&mut object, &["gateways"], &self.gateways);
         json::put_one(
             &mut object,
             &["manuallyApprovesFollowers"],
@@ -1991,6 +2030,11 @@ impl ToJson for Application {
         json::put_one(&mut object, &["liked"], self.liked.as_ref());
         json::put_one(&mut object, &["featured"], self.featured.as_ref());
         json::put_one(&mut object, &["featuredTags"], self.featured_tags.as_ref());
+        json::put_one(
+            &mut object,
+            &["https://w3id.org/fep/7aa9#featuredCollections"],
+            self.featured_collections.as_ref(),
+        );
         json::put_many(&mut object, &["streams"], &self.streams);
         json::put_one(&mut object, &["endpoints"], self.endpoints.as_ref());
         json::put_one(&mut object, &["discoverable"], self.discoverable.as_ref());
@@ -2007,7 +2051,6 @@ impl ToJson for Application {
         );
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
         json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
-        json::put_many(&mut object, &["gateways"], &self.gateways);
         json::put_one(&mut object, &["sharedInbox"], self.shared_inbox.as_ref());
         Value::Object(object)
     }
@@ -2096,6 +2139,8 @@ pub struct Arrive {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -2164,6 +2209,7 @@ impl FromJson for Arrive {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -2234,6 +2280,7 @@ impl ToJson for Arrive {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -2325,6 +2372,8 @@ pub struct Article {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// The quoted ActivityStreams object.
     pub quote: Option<AnyObject>,
     /// The URI of the ActivityStreams object that this object quotes.
@@ -2391,6 +2440,7 @@ impl FromJson for Article {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             quote: json::one(object, &["quote"]),
             quote_url: json::one(object, &["quoteUrl", "_misskey_quote", "quoteUri"]),
             quote_authorization: json::one(object, &["quoteAuthorization"]),
@@ -2459,6 +2509,7 @@ impl ToJson for Article {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["quote"], self.quote.as_ref());
         json::put_one(
             &mut object,
@@ -2560,10 +2611,14 @@ pub struct Audio {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Document::width`].
     pub width: Option<u64>,
     /// See [`Document::height`].
     pub height: Option<u64>,
+    /// See [`Document::digest_multibase`].
+    pub digest_multibase: Option<String>,
     /// See [`Document::blurhash`].
     pub blurhash: Option<String>,
     /// See [`Document::focal_point`].
@@ -2624,8 +2679,10 @@ impl FromJson for Audio {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             width: json::one(object, &["width"]),
             height: json::one(object, &["height"]),
+            digest_multibase: json::one(object, &["digestMultibase"]),
             blurhash: json::one(object, &["blurhash"]),
             focal_point: json::many(object, &["focalPoint"]),
         })
@@ -2692,8 +2749,14 @@ impl ToJson for Audio {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["width"], self.width.as_ref());
         json::put_one(&mut object, &["height"], self.height.as_ref());
+        json::put_one(
+            &mut object,
+            &["digestMultibase"],
+            self.digest_multibase.as_ref(),
+        );
         json::put_one(&mut object, &["blurhash"], self.blurhash.as_ref());
         json::put_many(&mut object, &["focalPoint"], &self.focal_point);
         Value::Object(object)
@@ -2784,6 +2847,8 @@ pub struct Block {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -2854,6 +2919,7 @@ impl FromJson for Block {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -2925,6 +2991,7 @@ impl ToJson for Block {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -3021,6 +3088,8 @@ pub struct ChatMessage {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// The quoted ActivityStreams object.
     pub quote: Option<AnyObject>,
     /// The URI of the ActivityStreams object that this object quotes.
@@ -3084,6 +3153,7 @@ impl FromJson for ChatMessage {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             quote: json::one(object, &["quote"]),
             quote_url: json::one(object, &["quoteUrl", "_misskey_quote", "quoteUri"]),
             quote_authorization: json::one(object, &["quoteAuthorization"]),
@@ -3151,6 +3221,7 @@ impl ToJson for ChatMessage {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["quote"], self.quote.as_ref());
         json::put_one(
             &mut object,
@@ -3248,6 +3319,8 @@ pub struct Collection {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// A non-negative integer specifying the total number of objects contained by
     /// the logical view of the collection. This number might not reflect the actual
     /// number of items serialized within the {@link Collection} object instance.
@@ -3336,6 +3409,7 @@ impl FromJson for Collection {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             total_items: json::one(object, &["totalItems"]),
             current: json::one(object, &["current"]),
             first: json::one(object, &["first"]),
@@ -3413,6 +3487,7 @@ impl ToJson for Collection {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["totalItems"], self.total_items.as_ref());
         json::put_one(&mut object, &["current"], self.current.as_ref());
         json::put_one(&mut object, &["first"], self.first.as_ref());
@@ -3545,6 +3620,8 @@ pub struct CollectionPage {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Collection::total_items`].
     pub total_items: Option<u64>,
     /// See [`Collection::current`].
@@ -3634,6 +3711,7 @@ impl FromJson for CollectionPage {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             total_items: json::one(object, &["totalItems"]),
             current: json::one(object, &["current"]),
             first: json::one(object, &["first"]),
@@ -3714,6 +3792,7 @@ impl ToJson for CollectionPage {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["totalItems"], self.total_items.as_ref());
         json::put_one(&mut object, &["current"], self.current.as_ref());
         json::put_one(&mut object, &["first"], self.first.as_ref());
@@ -3902,6 +3981,8 @@ pub struct Create {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -3970,6 +4051,7 @@ impl FromJson for Create {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -4040,6 +4122,7 @@ impl ToJson for Create {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -4260,6 +4343,8 @@ pub struct Delete {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -4330,6 +4415,7 @@ impl FromJson for Delete {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -4401,6 +4487,7 @@ impl ToJson for Delete {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -4542,6 +4629,8 @@ pub struct Dislike {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -4610,6 +4699,7 @@ impl FromJson for Dislike {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -4680,6 +4770,7 @@ impl ToJson for Dislike {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -4771,12 +4862,17 @@ pub struct Document {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// Specifies a hint as to the rendering width in
     /// device-independent pixels of the linked resource.
     pub width: Option<u64>,
     /// Specifies a hint as to the rendering height in
     /// device-independent pixels of the linked resource.
     pub height: Option<u64>,
+    /// The multibase-encoded integrity digest of an external resource represented
+    /// by this document.
+    pub digest_multibase: Option<String>,
     /// A BlurHash of the media, drawn while it loads.
     pub blurhash: Option<String>,
     /// The point a crop of the media keeps in view, as x and y from -1 to 1.
@@ -4837,8 +4933,10 @@ impl FromJson for Document {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             width: json::one(object, &["width"]),
             height: json::one(object, &["height"]),
+            digest_multibase: json::one(object, &["digestMultibase"]),
             blurhash: json::one(object, &["blurhash"]),
             focal_point: json::many(object, &["focalPoint"]),
         })
@@ -4905,8 +5003,14 @@ impl ToJson for Document {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["width"], self.width.as_ref());
         json::put_one(&mut object, &["height"], self.height.as_ref());
+        json::put_one(
+            &mut object,
+            &["digestMultibase"],
+            self.digest_multibase.as_ref(),
+        );
         json::put_one(&mut object, &["blurhash"], self.blurhash.as_ref());
         json::put_many(&mut object, &["focalPoint"], &self.focal_point);
         Value::Object(object)
@@ -4994,6 +5098,8 @@ pub struct Emoji {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
 }
 
 impl Emoji {
@@ -5050,6 +5156,7 @@ impl FromJson for Emoji {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
         })
     }
 }
@@ -5114,6 +5221,7 @@ impl ToJson for Emoji {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         Value::Object(object)
     }
 }
@@ -5199,6 +5307,8 @@ pub struct EmojiReact {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -5267,6 +5377,7 @@ impl FromJson for EmojiReact {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -5337,6 +5448,7 @@ impl ToJson for EmojiReact {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -5387,8 +5499,12 @@ pub struct Endpoints {
     /// collection.  Reading from the `sharedInbox` endpoint MUST NOT present
     /// objects which are not addressed to the `Public`` endpoint.
     pub shared_inbox: Option<Iri>,
-    /// Where a client uploads media, as ActivityPub's client-to-server protocol
-    /// describes.
+    /// Upload endpoint URI for this user for binary data, such as an image or
+    /// video, as described in the [ActivityPub Media
+    /// Upload](https://www.w3.org/wiki/SocialCG/ActivityPub/MediaUpload) extension.
+    /// Clients `POST` a `multipart/form-data` request containing a `file` part
+    /// (the binary payload) and an `object` part (an ActivityStreams object shell)
+    /// to this endpoint.
     pub upload_media: Option<Iri>,
 }
 
@@ -5523,6 +5639,8 @@ pub struct Event {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
 }
 
 impl Event {
@@ -5579,6 +5697,7 @@ impl FromJson for Event {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
         })
     }
 }
@@ -5643,6 +5762,7 @@ impl ToJson for Event {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         Value::Object(object)
     }
 }
@@ -5692,9 +5812,8 @@ impl ToJson for Export {
     }
 }
 
-/// Proves that an account consented to being featured in a collection
-/// (FEP-7aa9). Dereferenceable, so that anyone can check a featured item was
-/// consented to.
+/// Proves that an actor consented to being included in a
+/// {@link FeaturedCollection}.
 ///
 /// The type `https://w3id.org/fep/7aa9#FeatureAuthorization`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -5775,9 +5894,11 @@ pub struct FeatureAuthorization {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
-    /// The collection the account is featured in.
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
+    /// The featured collection for which the authorization was granted.
     pub interacting_object: Option<AnyObject>,
-    /// The account that consented to being featured.
+    /// The actor that was authorized to be featured.
     pub interaction_target: Option<AnyObject>,
 }
 
@@ -5835,6 +5956,7 @@ impl FromJson for FeatureAuthorization {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             interacting_object: json::one(object, &["interactingObject"]),
             interaction_target: json::one(object, &["interactionTarget"]),
         })
@@ -5901,6 +6023,7 @@ impl ToJson for FeatureAuthorization {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(
             &mut object,
             &["interactingObject"],
@@ -5915,8 +6038,8 @@ impl ToJson for FeatureAuthorization {
     }
 }
 
-/// A request to feature an account in a collection, which needs the account's
-/// consent (FEP-7aa9, as Mastodon's featured collections use it).
+/// A request for consent before featuring an actor in a
+/// {@link FeaturedCollection}.
 ///
 /// The type `https://w3id.org/fep/7aa9#FeatureRequest`.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -5997,6 +6120,8 @@ pub struct FeatureRequest {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -6065,6 +6190,7 @@ impl FromJson for FeatureRequest {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -6135,12 +6261,543 @@ impl ToJson for FeatureRequest {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
         json::put_many(&mut object, &["result"], &self.results);
         json::put_many(&mut object, &["origin"], &self.origins);
         json::put_many(&mut object, &["instrument"], &self.instruments);
+        Value::Object(object)
+    }
+}
+
+/// A curated collection of recommended actors or other objects.
+///
+/// The type `https://w3id.org/fep/7aa9#FeaturedCollection`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FeaturedCollection {
+    /// The IRI that identifies this object.
+    pub id: Option<Iri>,
+    /// See [`Object::attachments`].
+    pub attachments: Vec<LinkOrObjectOrPropertyValue>,
+    /// See [`Object::attributions`].
+    pub attributions: Vec<AnyActor>,
+    /// See [`Object::audiences`].
+    pub audiences: Vec<AnyObject>,
+    /// See [`Object::content`].
+    pub content: Text,
+    /// See [`Object::contexts`].
+    pub contexts: Vec<LinkOrObject>,
+    /// See [`Object::name`].
+    pub name: Text,
+    /// See [`Object::end_time`].
+    pub end_time: Option<String>,
+    /// See [`Object::generators`].
+    pub generators: Vec<LinkOrObject>,
+    /// See [`Object::icons`].
+    pub icons: Vec<Reference<Image>>,
+    /// See [`Object::images`].
+    pub images: Vec<Reference<Image>>,
+    /// See [`Object::reply_targets`].
+    pub reply_targets: Vec<LinkOrObject>,
+    /// See [`Object::locations`].
+    pub locations: Vec<LinkOrObject>,
+    /// See [`Object::previews`].
+    pub previews: Vec<LinkOrObject>,
+    /// See [`Object::published`].
+    pub published: Option<String>,
+    /// See [`Object::replies`].
+    pub replies: Option<AnyCollection>,
+    /// See [`Object::shares`].
+    pub shares: Option<AnyCollection>,
+    /// See [`Object::likes`].
+    pub likes: Option<AnyCollection>,
+    /// See [`Object::emoji_reactions`].
+    pub emoji_reactions: Option<AnyCollection>,
+    /// See [`Object::start_time`].
+    pub start_time: Option<String>,
+    /// See [`Object::summary`].
+    pub summary: Text,
+    /// See [`Object::tags`].
+    pub tags: Vec<LinkOrObject>,
+    /// See [`Object::updated`].
+    pub updated: Option<String>,
+    /// See [`Object::urls`].
+    pub urls: Vec<LinkOrIri>,
+    /// See [`Object::tos`].
+    pub tos: Vec<AnyObject>,
+    /// See [`Object::btos`].
+    pub btos: Vec<AnyObject>,
+    /// See [`Object::ccs`].
+    pub ccs: Vec<AnyObject>,
+    /// See [`Object::bccs`].
+    pub bccs: Vec<AnyObject>,
+    /// See [`Object::media_type`].
+    pub media_type: Option<String>,
+    /// See [`Object::duration`].
+    pub duration: Option<String>,
+    /// See [`Object::sensitive`].
+    pub sensitive: Option<bool>,
+    /// See [`Object::source`].
+    pub source: Option<Box<Source>>,
+    /// See [`Object::proofs`].
+    pub proofs: Vec<Reference<DataIntegrityProof>>,
+    /// See [`Object::interaction_policy`].
+    pub interaction_policy: Option<Box<InteractionPolicy>>,
+    /// See [`Object::approved_by`].
+    pub approved_by: Option<Iri>,
+    /// See [`Object::like_authorization`].
+    pub like_authorization: Option<Reference<LikeAuthorization>>,
+    /// See [`Object::reply_authorization`].
+    pub reply_authorization: Option<Reference<ReplyAuthorization>>,
+    /// See [`Object::announce_authorization`].
+    pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
+    /// See [`Collection::total_items`].
+    pub total_items: Option<u64>,
+    /// See [`Collection::current`].
+    pub current: Option<AnyCollectionPage>,
+    /// See [`Collection::first`].
+    pub first: Option<AnyCollectionPage>,
+    /// See [`Collection::last`].
+    pub last: Option<AnyCollectionPage>,
+    /// See [`OrderedCollection::items`].
+    pub items: Vec<LinkOrObject>,
+    /// See [`Collection::likes_of`].
+    pub likes_of: Option<AnyObject>,
+    /// See [`Collection::shares_of`].
+    pub shares_of: Option<AnyObject>,
+    /// See [`Collection::replies_of`].
+    pub replies_of: Option<AnyObject>,
+    /// See [`Collection::inbox_of`].
+    pub inbox_of: Option<AnyObject>,
+    /// See [`Collection::outbox_of`].
+    pub outbox_of: Option<AnyObject>,
+    /// See [`Collection::followers_of`].
+    pub followers_of: Option<AnyObject>,
+    /// See [`Collection::following_of`].
+    pub following_of: Option<AnyObject>,
+    /// See [`Collection::liked_of`].
+    pub liked_of: Option<AnyObject>,
+    /// A single {@link Hashtag} object that represents the main topic or category
+    /// of this featured collection.
+    pub topic: Option<Box<Hashtag>>,
+    /// When present and set to `false`, signals that this featured collection is
+    /// not meant to be discovered by search, onboarding, or similar discovery
+    /// features.
+    pub discoverable: Option<bool>,
+}
+
+impl FeaturedCollection {
+    /// The type's IRI.
+    pub const TYPE_IRI: &'static str = "https://w3id.org/fep/7aa9#FeaturedCollection";
+    /// The type's `type` in a normalised document.
+    pub const TYPE: &'static str = "FeaturedCollection";
+}
+
+impl json::Typed for FeaturedCollection {
+    const TYPE: &'static str = "FeaturedCollection";
+}
+
+impl FromJson for FeaturedCollection {
+    fn from_json(value: &Value) -> Result<Self, JsonError> {
+        let object = json::object(value)?;
+        json::expect_type(object, Self::TYPE)?;
+        Ok(Self {
+            id: json::id(object),
+            attachments: json::many(object, &["attachment"]),
+            attributions: json::many(object, &["attributedTo"]),
+            audiences: json::many(object, &["audience"]),
+            content: json::text(object, "content"),
+            contexts: json::many(object, &["context"]),
+            name: json::text(object, "name"),
+            end_time: json::one(object, &["endTime"]),
+            generators: json::many(object, &["generator"]),
+            icons: json::many_mapped(object, &["icon"], json::link_to_image),
+            images: json::many_mapped(object, &["image"], json::link_to_image),
+            reply_targets: json::many(object, &["inReplyTo"]),
+            locations: json::many(object, &["location"]),
+            previews: json::many(object, &["preview"]),
+            published: json::one(object, &["published"]),
+            replies: json::one(object, &["replies"]),
+            shares: json::one(object, &["shares"]),
+            likes: json::one(object, &["likes"]),
+            emoji_reactions: json::one(object, &["emojiReactions"]),
+            start_time: json::one(object, &["startTime"]),
+            summary: json::text(object, "summary"),
+            tags: json::many(object, &["tag"]),
+            updated: json::one(object, &["updated"]),
+            urls: json::many(object, &["url"]),
+            tos: json::many(object, &["to"]),
+            btos: json::many(object, &["bto"]),
+            ccs: json::many(object, &["cc"]),
+            bccs: json::many(object, &["bcc"]),
+            media_type: json::one(object, &["mediaType"]),
+            duration: json::one(object, &["duration"]),
+            sensitive: json::one(object, &["sensitive"]),
+            source: json::one(object, &["source"]),
+            proofs: json::many(object, &["proof"]),
+            interaction_policy: json::one(object, &["interactionPolicy"]),
+            approved_by: json::one(object, &["approvedBy"]),
+            like_authorization: json::one(object, &["likeAuthorization"]),
+            reply_authorization: json::one(object, &["replyAuthorization"]),
+            announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
+            total_items: json::one(object, &["totalItems"]),
+            current: json::one(object, &["current"]),
+            first: json::one(object, &["first"]),
+            last: json::one(object, &["last"]),
+            items: json::many(object, &["orderedItems", "items"]),
+            likes_of: json::one(object, &["https://w3id.org/fep/5711#likesOf"]),
+            shares_of: json::one(object, &["https://w3id.org/fep/5711#sharesOf"]),
+            replies_of: json::one(object, &["https://w3id.org/fep/5711#repliesOf"]),
+            inbox_of: json::one(object, &["https://w3id.org/fep/5711#inboxOf"]),
+            outbox_of: json::one(object, &["https://w3id.org/fep/5711#outboxOf"]),
+            followers_of: json::one(object, &["https://w3id.org/fep/5711#followersOf"]),
+            following_of: json::one(object, &["https://w3id.org/fep/5711#followingOf"]),
+            liked_of: json::one(object, &["https://w3id.org/fep/5711#likedOf"]),
+            topic: json::one(object, &["topic"]),
+            discoverable: json::one(object, &["discoverable"]),
+        })
+    }
+}
+
+impl ToJson for FeaturedCollection {
+    fn to_json(&self) -> Value {
+        let mut object = json::new_object(Some(Self::TYPE), self.id.as_ref());
+        json::put_many(&mut object, &["attachment"], &self.attachments);
+        json::put_many(&mut object, &["attributedTo"], &self.attributions);
+        json::put_many(&mut object, &["audience"], &self.audiences);
+        json::put_text(&mut object, "content", &self.content);
+        json::put_many(&mut object, &["context"], &self.contexts);
+        json::put_text(&mut object, "name", &self.name);
+        json::put_one(&mut object, &["endTime"], self.end_time.as_ref());
+        json::put_many(&mut object, &["generator"], &self.generators);
+        json::put_many(&mut object, &["icon"], &self.icons);
+        json::put_many(&mut object, &["image"], &self.images);
+        json::put_many(&mut object, &["inReplyTo"], &self.reply_targets);
+        json::put_many(&mut object, &["location"], &self.locations);
+        json::put_many(&mut object, &["preview"], &self.previews);
+        json::put_one(&mut object, &["published"], self.published.as_ref());
+        json::put_one(&mut object, &["replies"], self.replies.as_ref());
+        json::put_one(&mut object, &["shares"], self.shares.as_ref());
+        json::put_one(&mut object, &["likes"], self.likes.as_ref());
+        json::put_one(
+            &mut object,
+            &["emojiReactions"],
+            self.emoji_reactions.as_ref(),
+        );
+        json::put_one(&mut object, &["startTime"], self.start_time.as_ref());
+        json::put_text(&mut object, "summary", &self.summary);
+        json::put_many(&mut object, &["tag"], &self.tags);
+        json::put_one(&mut object, &["updated"], self.updated.as_ref());
+        json::put_many(&mut object, &["url"], &self.urls);
+        json::put_many(&mut object, &["to"], &self.tos);
+        json::put_many(&mut object, &["bto"], &self.btos);
+        json::put_many(&mut object, &["cc"], &self.ccs);
+        json::put_many(&mut object, &["bcc"], &self.bccs);
+        json::put_one(&mut object, &["mediaType"], self.media_type.as_ref());
+        json::put_one(&mut object, &["duration"], self.duration.as_ref());
+        json::put_one(&mut object, &["sensitive"], self.sensitive.as_ref());
+        json::put_one(&mut object, &["source"], self.source.as_ref());
+        json::put_many(&mut object, &["proof"], &self.proofs);
+        json::put_one(
+            &mut object,
+            &["interactionPolicy"],
+            self.interaction_policy.as_ref(),
+        );
+        json::put_one(&mut object, &["approvedBy"], self.approved_by.as_ref());
+        json::put_one(
+            &mut object,
+            &["likeAuthorization"],
+            self.like_authorization.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["replyAuthorization"],
+            self.reply_authorization.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["announceAuthorization"],
+            self.announce_authorization.as_ref(),
+        );
+        json::put_many(&mut object, &["translations"], &self.translations);
+        json::put_one(&mut object, &["totalItems"], self.total_items.as_ref());
+        json::put_one(&mut object, &["current"], self.current.as_ref());
+        json::put_one(&mut object, &["first"], self.first.as_ref());
+        json::put_one(&mut object, &["last"], self.last.as_ref());
+        json::put_many(&mut object, &["orderedItems"], &self.items);
+        json::put_one(
+            &mut object,
+            &["https://w3id.org/fep/5711#likesOf"],
+            self.likes_of.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["https://w3id.org/fep/5711#sharesOf"],
+            self.shares_of.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["https://w3id.org/fep/5711#repliesOf"],
+            self.replies_of.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["https://w3id.org/fep/5711#inboxOf"],
+            self.inbox_of.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["https://w3id.org/fep/5711#outboxOf"],
+            self.outbox_of.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["https://w3id.org/fep/5711#followersOf"],
+            self.followers_of.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["https://w3id.org/fep/5711#followingOf"],
+            self.following_of.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["https://w3id.org/fep/5711#likedOf"],
+            self.liked_of.as_ref(),
+        );
+        json::put_one(&mut object, &["topic"], self.topic.as_ref());
+        json::put_one(&mut object, &["discoverable"], self.discoverable.as_ref());
+        Value::Object(object)
+    }
+}
+
+/// A single entry in a {@link FeaturedCollection}.
+///
+/// The type `https://w3id.org/fep/7aa9#FeaturedItem`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FeaturedItem {
+    /// The IRI that identifies this object.
+    pub id: Option<Iri>,
+    /// See [`Object::attachments`].
+    pub attachments: Vec<LinkOrObjectOrPropertyValue>,
+    /// See [`Object::attributions`].
+    pub attributions: Vec<AnyActor>,
+    /// See [`Object::audiences`].
+    pub audiences: Vec<AnyObject>,
+    /// See [`Object::content`].
+    pub content: Text,
+    /// See [`Object::contexts`].
+    pub contexts: Vec<LinkOrObject>,
+    /// See [`Object::name`].
+    pub name: Text,
+    /// See [`Object::end_time`].
+    pub end_time: Option<String>,
+    /// See [`Object::generators`].
+    pub generators: Vec<LinkOrObject>,
+    /// See [`Object::icons`].
+    pub icons: Vec<Reference<Image>>,
+    /// See [`Object::images`].
+    pub images: Vec<Reference<Image>>,
+    /// See [`Object::reply_targets`].
+    pub reply_targets: Vec<LinkOrObject>,
+    /// See [`Object::locations`].
+    pub locations: Vec<LinkOrObject>,
+    /// See [`Object::previews`].
+    pub previews: Vec<LinkOrObject>,
+    /// See [`Object::published`].
+    pub published: Option<String>,
+    /// See [`Object::replies`].
+    pub replies: Option<AnyCollection>,
+    /// See [`Object::shares`].
+    pub shares: Option<AnyCollection>,
+    /// See [`Object::likes`].
+    pub likes: Option<AnyCollection>,
+    /// See [`Object::emoji_reactions`].
+    pub emoji_reactions: Option<AnyCollection>,
+    /// See [`Object::start_time`].
+    pub start_time: Option<String>,
+    /// See [`Object::summary`].
+    pub summary: Text,
+    /// See [`Object::tags`].
+    pub tags: Vec<LinkOrObject>,
+    /// See [`Object::updated`].
+    pub updated: Option<String>,
+    /// See [`Object::urls`].
+    pub urls: Vec<LinkOrIri>,
+    /// See [`Object::tos`].
+    pub tos: Vec<AnyObject>,
+    /// See [`Object::btos`].
+    pub btos: Vec<AnyObject>,
+    /// See [`Object::ccs`].
+    pub ccs: Vec<AnyObject>,
+    /// See [`Object::bccs`].
+    pub bccs: Vec<AnyObject>,
+    /// See [`Object::media_type`].
+    pub media_type: Option<String>,
+    /// See [`Object::duration`].
+    pub duration: Option<String>,
+    /// See [`Object::sensitive`].
+    pub sensitive: Option<bool>,
+    /// See [`Object::source`].
+    pub source: Option<Box<Source>>,
+    /// See [`Object::proofs`].
+    pub proofs: Vec<Reference<DataIntegrityProof>>,
+    /// See [`Object::interaction_policy`].
+    pub interaction_policy: Option<Box<InteractionPolicy>>,
+    /// See [`Object::approved_by`].
+    pub approved_by: Option<Iri>,
+    /// See [`Object::like_authorization`].
+    pub like_authorization: Option<Reference<LikeAuthorization>>,
+    /// See [`Object::reply_authorization`].
+    pub reply_authorization: Option<Reference<ReplyAuthorization>>,
+    /// See [`Object::announce_authorization`].
+    pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
+    /// The object being featured.
+    pub featured_object: Option<AnyObject>,
+    /// The {@link FeatureAuthorization} proving that the featured actor consented
+    /// to inclusion in the featured collection.
+    pub feature_authorization: Option<Reference<FeatureAuthorization>>,
+}
+
+impl FeaturedItem {
+    /// The type's IRI.
+    pub const TYPE_IRI: &'static str = "https://w3id.org/fep/7aa9#FeaturedItem";
+    /// The type's `type` in a normalised document.
+    pub const TYPE: &'static str = "FeaturedItem";
+}
+
+impl json::Typed for FeaturedItem {
+    const TYPE: &'static str = "FeaturedItem";
+}
+
+impl FromJson for FeaturedItem {
+    fn from_json(value: &Value) -> Result<Self, JsonError> {
+        let object = json::object(value)?;
+        json::expect_type(object, Self::TYPE)?;
+        Ok(Self {
+            id: json::id(object),
+            attachments: json::many(object, &["attachment"]),
+            attributions: json::many(object, &["attributedTo"]),
+            audiences: json::many(object, &["audience"]),
+            content: json::text(object, "content"),
+            contexts: json::many(object, &["context"]),
+            name: json::text(object, "name"),
+            end_time: json::one(object, &["endTime"]),
+            generators: json::many(object, &["generator"]),
+            icons: json::many_mapped(object, &["icon"], json::link_to_image),
+            images: json::many_mapped(object, &["image"], json::link_to_image),
+            reply_targets: json::many(object, &["inReplyTo"]),
+            locations: json::many(object, &["location"]),
+            previews: json::many(object, &["preview"]),
+            published: json::one(object, &["published"]),
+            replies: json::one(object, &["replies"]),
+            shares: json::one(object, &["shares"]),
+            likes: json::one(object, &["likes"]),
+            emoji_reactions: json::one(object, &["emojiReactions"]),
+            start_time: json::one(object, &["startTime"]),
+            summary: json::text(object, "summary"),
+            tags: json::many(object, &["tag"]),
+            updated: json::one(object, &["updated"]),
+            urls: json::many(object, &["url"]),
+            tos: json::many(object, &["to"]),
+            btos: json::many(object, &["bto"]),
+            ccs: json::many(object, &["cc"]),
+            bccs: json::many(object, &["bcc"]),
+            media_type: json::one(object, &["mediaType"]),
+            duration: json::one(object, &["duration"]),
+            sensitive: json::one(object, &["sensitive"]),
+            source: json::one(object, &["source"]),
+            proofs: json::many(object, &["proof"]),
+            interaction_policy: json::one(object, &["interactionPolicy"]),
+            approved_by: json::one(object, &["approvedBy"]),
+            like_authorization: json::one(object, &["likeAuthorization"]),
+            reply_authorization: json::one(object, &["replyAuthorization"]),
+            announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
+            featured_object: json::one(object, &["featuredObject"]),
+            feature_authorization: json::one(object, &["featureAuthorization"]),
+        })
+    }
+}
+
+impl ToJson for FeaturedItem {
+    fn to_json(&self) -> Value {
+        let mut object = json::new_object(Some(Self::TYPE), self.id.as_ref());
+        json::put_many(&mut object, &["attachment"], &self.attachments);
+        json::put_many(&mut object, &["attributedTo"], &self.attributions);
+        json::put_many(&mut object, &["audience"], &self.audiences);
+        json::put_text(&mut object, "content", &self.content);
+        json::put_many(&mut object, &["context"], &self.contexts);
+        json::put_text(&mut object, "name", &self.name);
+        json::put_one(&mut object, &["endTime"], self.end_time.as_ref());
+        json::put_many(&mut object, &["generator"], &self.generators);
+        json::put_many(&mut object, &["icon"], &self.icons);
+        json::put_many(&mut object, &["image"], &self.images);
+        json::put_many(&mut object, &["inReplyTo"], &self.reply_targets);
+        json::put_many(&mut object, &["location"], &self.locations);
+        json::put_many(&mut object, &["preview"], &self.previews);
+        json::put_one(&mut object, &["published"], self.published.as_ref());
+        json::put_one(&mut object, &["replies"], self.replies.as_ref());
+        json::put_one(&mut object, &["shares"], self.shares.as_ref());
+        json::put_one(&mut object, &["likes"], self.likes.as_ref());
+        json::put_one(
+            &mut object,
+            &["emojiReactions"],
+            self.emoji_reactions.as_ref(),
+        );
+        json::put_one(&mut object, &["startTime"], self.start_time.as_ref());
+        json::put_text(&mut object, "summary", &self.summary);
+        json::put_many(&mut object, &["tag"], &self.tags);
+        json::put_one(&mut object, &["updated"], self.updated.as_ref());
+        json::put_many(&mut object, &["url"], &self.urls);
+        json::put_many(&mut object, &["to"], &self.tos);
+        json::put_many(&mut object, &["bto"], &self.btos);
+        json::put_many(&mut object, &["cc"], &self.ccs);
+        json::put_many(&mut object, &["bcc"], &self.bccs);
+        json::put_one(&mut object, &["mediaType"], self.media_type.as_ref());
+        json::put_one(&mut object, &["duration"], self.duration.as_ref());
+        json::put_one(&mut object, &["sensitive"], self.sensitive.as_ref());
+        json::put_one(&mut object, &["source"], self.source.as_ref());
+        json::put_many(&mut object, &["proof"], &self.proofs);
+        json::put_one(
+            &mut object,
+            &["interactionPolicy"],
+            self.interaction_policy.as_ref(),
+        );
+        json::put_one(&mut object, &["approvedBy"], self.approved_by.as_ref());
+        json::put_one(
+            &mut object,
+            &["likeAuthorization"],
+            self.like_authorization.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["replyAuthorization"],
+            self.reply_authorization.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["announceAuthorization"],
+            self.announce_authorization.as_ref(),
+        );
+        json::put_many(&mut object, &["translations"], &self.translations);
+        json::put_one(
+            &mut object,
+            &["featuredObject"],
+            self.featured_object.as_ref(),
+        );
+        json::put_one(
+            &mut object,
+            &["featureAuthorization"],
+            self.feature_authorization.as_ref(),
+        );
         Value::Object(object)
     }
 }
@@ -6228,6 +6885,8 @@ pub struct Flag {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -6296,6 +6955,7 @@ impl FromJson for Flag {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -6366,6 +7026,7 @@ impl ToJson for Flag {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -6460,6 +7121,8 @@ pub struct Follow {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -6528,6 +7191,7 @@ impl FromJson for Follow {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -6598,6 +7262,7 @@ impl ToJson for Follow {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -6689,6 +7354,8 @@ pub struct Group {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// A short username which may be used to refer to the actor,
     /// with no uniqueness guarantees.
     pub preferred_username: Text,
@@ -6697,6 +7364,9 @@ pub struct Group {
     /// Represents this actor's public keys.  It serves as equivalent to
     /// the `publicKeys` property, but is used for [FEP-521a](https://w3id.org/fep/521a) compliance.
     pub assertion_methods: Vec<Reference<Multikey>>,
+    /// Gateways where the latest version of this portable actor object can be
+    /// retrieved.
+    pub gateways: Vec<Iri>,
     /// When `true`, conveys that for this actor, follow requests are not usually
     /// automatically approved, but instead are examined by a person who may accept
     /// or reject the request, at some time in the future.  Setting of `false`
@@ -6754,6 +7424,8 @@ pub struct Group {
     /// on the actor object that points to a {@link Collection} of {@link Hashtag}
     /// objects specifically.
     pub featured_tags: Option<AnyCollection>,
+    /// A collection of {@link FeaturedCollection}s created by this actor.
+    pub featured_collections: Option<AnyCollection>,
     /// A list of supplementary Collections which may be of interest.
     pub streams: Vec<AnyCollection>,
     /// A JSON object which maps additional (typically server/domain-wide) endpoints
@@ -6797,10 +7469,7 @@ pub struct Group {
     /// Whether only the community's moderators may post in it.
     pub posting_restricted_to_mods: Option<bool>,
     /// The collection of the community's moderators.
-    pub moderators: Option<Reference<OrderedCollection>>,
-    /// The gateways that serve the actor, as origins with no path, the first
-    /// preferred (FEP-ef61).
-    pub gateways: Vec<Iri>,
+    pub moderators: Option<AnyOrderedCollection>,
     /// The shared inbox, where Misskey writes it: on the actor rather than in
     /// its `endpoints`. Prefer `endpoints.sharedInbox` when both are there.
     pub shared_inbox: Option<Iri>,
@@ -6860,11 +7529,13 @@ impl FromJson for Group {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             preferred_username: json::text(object, "preferredUsername"),
             public_keys: json::many_with(object, &["publicKey"], |value| {
                 json::reference_with(value, CryptographicKey::from_json_untyped)
             }),
             assertion_methods: json::many(object, &["assertionMethod"]),
+            gateways: json::many(object, &["gateways"]),
             manually_approves_followers: json::one(object, &["manuallyApprovesFollowers"]),
             inbox: json::one(object, &["inbox"]),
             outbox: json::one(object, &["outbox"]),
@@ -6873,6 +7544,10 @@ impl FromJson for Group {
             liked: json::one(object, &["liked"]),
             featured: json::one(object, &["featured"]),
             featured_tags: json::one(object, &["featuredTags"]),
+            featured_collections: json::one(
+                object,
+                &["https://w3id.org/fep/7aa9#featuredCollections"],
+            ),
             streams: json::many(object, &["streams"]),
             endpoints: json::one(object, &["endpoints"]),
             discoverable: json::one(object, &["discoverable"]),
@@ -6887,7 +7562,6 @@ impl FromJson for Group {
             webfinger: json::one(object, &["webfinger"]),
             posting_restricted_to_mods: json::one(object, &["postingRestrictedToMods"]),
             moderators: json::one(object, &["moderators"]),
-            gateways: json::many(object, &["gateways"]),
             shared_inbox: json::one(object, &["sharedInbox"]),
         })
     }
@@ -6953,6 +7627,7 @@ impl ToJson for Group {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_text(&mut object, "preferredUsername", &self.preferred_username);
         json::put_many_with(
             &mut object,
@@ -6961,6 +7636,7 @@ impl ToJson for Group {
             |reference| json::write_reference(reference, CryptographicKey::to_json_untyped),
         );
         json::put_many(&mut object, &["assertionMethod"], &self.assertion_methods);
+        json::put_many(&mut object, &["gateways"], &self.gateways);
         json::put_one(
             &mut object,
             &["manuallyApprovesFollowers"],
@@ -6973,6 +7649,11 @@ impl ToJson for Group {
         json::put_one(&mut object, &["liked"], self.liked.as_ref());
         json::put_one(&mut object, &["featured"], self.featured.as_ref());
         json::put_one(&mut object, &["featuredTags"], self.featured_tags.as_ref());
+        json::put_one(
+            &mut object,
+            &["https://w3id.org/fep/7aa9#featuredCollections"],
+            self.featured_collections.as_ref(),
+        );
         json::put_many(&mut object, &["streams"], &self.streams);
         json::put_one(&mut object, &["endpoints"], self.endpoints.as_ref());
         json::put_one(&mut object, &["discoverable"], self.discoverable.as_ref());
@@ -6995,7 +7676,6 @@ impl ToJson for Group {
             self.posting_restricted_to_mods.as_ref(),
         );
         json::put_one(&mut object, &["moderators"], self.moderators.as_ref());
-        json::put_many(&mut object, &["gateways"], &self.gateways);
         json::put_one(&mut object, &["sharedInbox"], self.shared_inbox.as_ref());
         Value::Object(object)
     }
@@ -7012,6 +7692,8 @@ pub struct Hashtag {
     pub rels: Vec<String>,
     /// See [`Link::media_type`].
     pub media_type: Option<String>,
+    /// See [`Link::digest_multibase`].
+    pub digest_multibase: Option<String>,
     /// See [`Link::name`].
     pub name: Text,
     /// See [`Link::language`].
@@ -7043,6 +7725,7 @@ impl FromJson for Hashtag {
             href: json::one(object, &["href"]),
             rels: json::many(object, &["rel"]),
             media_type: json::one(object, &["mediaType"]),
+            digest_multibase: json::one(object, &["digestMultibase"]),
             name: json::text(object, "name"),
             language: json::one(object, &["hreflang"]),
             height: json::one(object, &["height"]),
@@ -7058,6 +7741,11 @@ impl ToJson for Hashtag {
         json::put_one(&mut object, &["href"], self.href.as_ref());
         json::put_many(&mut object, &["rel"], &self.rels);
         json::put_one(&mut object, &["mediaType"], self.media_type.as_ref());
+        json::put_one(
+            &mut object,
+            &["digestMultibase"],
+            self.digest_multibase.as_ref(),
+        );
         json::put_text(&mut object, "name", &self.name);
         json::put_one(&mut object, &["hreflang"], self.language.as_ref());
         json::put_one(&mut object, &["height"], self.height.as_ref());
@@ -7149,6 +7837,8 @@ pub struct Ignore {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -7217,6 +7907,7 @@ impl FromJson for Ignore {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -7287,6 +7978,7 @@ impl ToJson for Ignore {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -7378,10 +8070,14 @@ pub struct Image {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Document::width`].
     pub width: Option<u64>,
     /// See [`Document::height`].
     pub height: Option<u64>,
+    /// See [`Document::digest_multibase`].
+    pub digest_multibase: Option<String>,
     /// See [`Document::blurhash`].
     pub blurhash: Option<String>,
     /// See [`Document::focal_point`].
@@ -7442,8 +8138,10 @@ impl FromJson for Image {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             width: json::one(object, &["width"]),
             height: json::one(object, &["height"]),
+            digest_multibase: json::one(object, &["digestMultibase"]),
             blurhash: json::one(object, &["blurhash"]),
             focal_point: json::many(object, &["focalPoint"]),
         })
@@ -7510,8 +8208,14 @@ impl ToJson for Image {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["width"], self.width.as_ref());
         json::put_one(&mut object, &["height"], self.height.as_ref());
+        json::put_one(
+            &mut object,
+            &["digestMultibase"],
+            self.digest_multibase.as_ref(),
+        );
         json::put_one(&mut object, &["blurhash"], self.blurhash.as_ref());
         json::put_many(&mut object, &["focalPoint"], &self.focal_point);
         Value::Object(object)
@@ -7607,6 +8311,9 @@ impl ToJson for Intent {
 /// The type `https://gotosocial.org/ns#InteractionPolicy`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct InteractionPolicy {
+    /// The sub-policy specifying who can feature the actor in a
+    /// {@link FeaturedCollection}.
+    pub can_feature: Option<Box<InteractionRule>>,
     /// The sub-policy specifying who can like the post.
     pub can_like: Option<Box<InteractionRule>>,
     /// The sub-policy specifying who can reply to the post.
@@ -7626,6 +8333,7 @@ impl FromJson for InteractionPolicy {
     fn from_json(value: &Value) -> Result<Self, JsonError> {
         let object = json::object(value)?;
         Ok(Self {
+            can_feature: json::one(object, &["canFeature"]),
             can_like: json::one(object, &["canLike"]),
             can_reply: json::one(object, &["canReply"]),
             can_announce: json::one(object, &["canAnnounce"]),
@@ -7637,6 +8345,7 @@ impl FromJson for InteractionPolicy {
 impl ToJson for InteractionPolicy {
     fn to_json(&self) -> Value {
         let mut object = json::new_object(None, None);
+        json::put_one(&mut object, &["canFeature"], self.can_feature.as_ref());
         json::put_one(&mut object, &["canLike"], self.can_like.as_ref());
         json::put_one(&mut object, &["canReply"], self.can_reply.as_ref());
         json::put_one(&mut object, &["canAnnounce"], self.can_announce.as_ref());
@@ -7772,6 +8481,8 @@ pub struct IntransitiveActivity {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -7840,6 +8551,7 @@ impl FromJson for IntransitiveActivity {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -7910,6 +8622,7 @@ impl ToJson for IntransitiveActivity {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -8002,6 +8715,8 @@ pub struct Invite {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -8070,6 +8785,7 @@ impl FromJson for Invite {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -8140,6 +8856,7 @@ impl ToJson for Invite {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -8232,6 +8949,8 @@ pub struct Join {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -8300,6 +9019,7 @@ impl FromJson for Join {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -8370,6 +9090,7 @@ impl ToJson for Join {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -8462,6 +9183,8 @@ pub struct Leave {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -8530,6 +9253,7 @@ impl FromJson for Leave {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -8600,6 +9324,7 @@ impl ToJson for Leave {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -8692,6 +9417,8 @@ pub struct Like {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -8760,6 +9487,7 @@ impl FromJson for Like {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -8830,6 +9558,7 @@ impl ToJson for Like {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -8921,6 +9650,8 @@ pub struct LikeAuthorization {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// The URI of the interaction (e.g., a {@link Like} activity) that
     /// has been authorized.
     pub interacting_object: Option<AnyObject>,
@@ -8982,6 +9713,7 @@ impl FromJson for LikeAuthorization {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             interacting_object: json::one(object, &["interactingObject"]),
             interaction_target: json::one(object, &["interactionTarget"]),
         })
@@ -9048,6 +9780,7 @@ impl ToJson for LikeAuthorization {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(
             &mut object,
             &["interactingObject"],
@@ -9143,6 +9876,8 @@ pub struct LikeRequest {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -9211,6 +9946,7 @@ impl FromJson for LikeRequest {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -9281,6 +10017,7 @@ impl ToJson for LikeRequest {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -9311,6 +10048,8 @@ pub struct Link {
     /// When used on a {@link Link}, identifies the MIME media type of the
     /// referenced resource.
     pub media_type: Option<String>,
+    /// The multibase-encoded integrity digest of the linked resource.
+    pub digest_multibase: Option<String>,
     /// A simple, human-readable, plain-text name for the object. HTML markup MUST
     /// NOT be included. The name MAY be expressed using multiple language-tagged
     /// values.
@@ -9347,6 +10086,7 @@ impl FromJson for Link {
             href: json::one(object, &["href"]),
             rels: json::many(object, &["rel"]),
             media_type: json::one(object, &["mediaType"]),
+            digest_multibase: json::one(object, &["digestMultibase"]),
             name: json::text(object, "name"),
             language: json::one(object, &["hreflang"]),
             height: json::one(object, &["height"]),
@@ -9362,6 +10102,11 @@ impl ToJson for Link {
         json::put_one(&mut object, &["href"], self.href.as_ref());
         json::put_many(&mut object, &["rel"], &self.rels);
         json::put_one(&mut object, &["mediaType"], self.media_type.as_ref());
+        json::put_one(
+            &mut object,
+            &["digestMultibase"],
+            self.digest_multibase.as_ref(),
+        );
         json::put_text(&mut object, "name", &self.name);
         json::put_one(&mut object, &["hreflang"], self.language.as_ref());
         json::put_one(&mut object, &["height"], self.height.as_ref());
@@ -9452,6 +10197,8 @@ pub struct Listen {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -9520,6 +10267,7 @@ impl FromJson for Listen {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -9590,6 +10338,7 @@ impl ToJson for Listen {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -9679,6 +10428,8 @@ pub struct Mention {
     pub rels: Vec<String>,
     /// See [`Link::media_type`].
     pub media_type: Option<String>,
+    /// See [`Link::digest_multibase`].
+    pub digest_multibase: Option<String>,
     /// See [`Link::name`].
     pub name: Text,
     /// See [`Link::language`].
@@ -9710,6 +10461,7 @@ impl FromJson for Mention {
             href: json::one(object, &["href"]),
             rels: json::many(object, &["rel"]),
             media_type: json::one(object, &["mediaType"]),
+            digest_multibase: json::one(object, &["digestMultibase"]),
             name: json::text(object, "name"),
             language: json::one(object, &["hreflang"]),
             height: json::one(object, &["height"]),
@@ -9725,6 +10477,11 @@ impl ToJson for Mention {
         json::put_one(&mut object, &["href"], self.href.as_ref());
         json::put_many(&mut object, &["rel"], &self.rels);
         json::put_one(&mut object, &["mediaType"], self.media_type.as_ref());
+        json::put_one(
+            &mut object,
+            &["digestMultibase"],
+            self.digest_multibase.as_ref(),
+        );
         json::put_text(&mut object, "name", &self.name);
         json::put_one(&mut object, &["hreflang"], self.language.as_ref());
         json::put_one(&mut object, &["height"], self.height.as_ref());
@@ -9817,6 +10574,8 @@ pub struct Move {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -9885,6 +10644,7 @@ impl FromJson for Move {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -9955,6 +10715,7 @@ impl ToJson for Move {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -10097,6 +10858,8 @@ pub struct Note {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// The quoted ActivityStreams object.
     pub quote: Option<AnyObject>,
     /// The URI of the ActivityStreams object that this object quotes.
@@ -10165,6 +10928,7 @@ impl FromJson for Note {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             quote: json::one(object, &["quote"]),
             quote_url: json::one(object, &["quoteUrl", "_misskey_quote", "quoteUri"]),
             quote_authorization: json::one(object, &["quoteAuthorization"]),
@@ -10234,6 +10998,7 @@ impl ToJson for Note {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["quote"], self.quote.as_ref());
         json::put_one(
             &mut object,
@@ -10398,6 +11163,13 @@ pub struct Object {
     /// An {@link AnnounceAuthorization} object that proves this announce
     /// (boost) was approved by the target post's author.
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// Translation metadata for the language versions in this object's content,
+    /// name, or summary maps, as defined by the draft
+    /// [FEP-22cd](https://w3id.org/fep/22cd).  Each entry describes one translated
+    /// language; directly authored languages have no entry.  The entries share
+    /// this object's identity, replies, and reactions.  Translator credit grants
+    /// no authority to update the object.
+    pub translations: Vec<Translation>,
 }
 
 impl Object {
@@ -10454,6 +11226,7 @@ impl FromJson for Object {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
         })
     }
 }
@@ -10518,6 +11291,7 @@ impl ToJson for Object {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         Value::Object(object)
     }
 }
@@ -10605,6 +11379,8 @@ pub struct Offer {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -10673,6 +11449,7 @@ impl FromJson for Offer {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -10743,6 +11520,7 @@ impl ToJson for Offer {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -10835,6 +11613,8 @@ pub struct OrderedCollection {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Collection::total_items`].
     pub total_items: Option<u64>,
     /// See [`Collection::current`].
@@ -10918,6 +11698,7 @@ impl FromJson for OrderedCollection {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             total_items: json::one(object, &["totalItems"]),
             current: json::one(object, &["current"]),
             first: json::one(object, &["first"]),
@@ -10995,6 +11776,7 @@ impl ToJson for OrderedCollection {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["totalItems"], self.total_items.as_ref());
         json::put_one(&mut object, &["current"], self.current.as_ref());
         json::put_one(&mut object, &["first"], self.first.as_ref());
@@ -11127,6 +11909,8 @@ pub struct OrderedCollectionPage {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Collection::total_items`].
     pub total_items: Option<u64>,
     /// See [`Collection::current`].
@@ -11220,6 +12004,7 @@ impl FromJson for OrderedCollectionPage {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             total_items: json::one(object, &["totalItems"]),
             current: json::one(object, &["current"]),
             first: json::one(object, &["first"]),
@@ -11301,6 +12086,7 @@ impl ToJson for OrderedCollectionPage {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["totalItems"], self.total_items.as_ref());
         json::put_one(&mut object, &["current"], self.current.as_ref());
         json::put_one(&mut object, &["first"], self.first.as_ref());
@@ -11435,6 +12221,8 @@ pub struct Organization {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// A short username which may be used to refer to the actor,
     /// with no uniqueness guarantees.
     pub preferred_username: Text,
@@ -11443,6 +12231,9 @@ pub struct Organization {
     /// Represents this actor's public keys.  It serves as equivalent to
     /// the `publicKeys` property, but is used for [FEP-521a](https://w3id.org/fep/521a) compliance.
     pub assertion_methods: Vec<Reference<Multikey>>,
+    /// Gateways where the latest version of this portable actor object can be
+    /// retrieved.
+    pub gateways: Vec<Iri>,
     /// When `true`, conveys that for this actor, follow requests are not usually
     /// automatically approved, but instead are examined by a person who may accept
     /// or reject the request, at some time in the future.  Setting of `false`
@@ -11500,6 +12291,8 @@ pub struct Organization {
     /// on the actor object that points to a {@link Collection} of {@link Hashtag}
     /// objects specifically.
     pub featured_tags: Option<AnyCollection>,
+    /// A collection of {@link FeaturedCollection}s created by this actor.
+    pub featured_collections: Option<AnyCollection>,
     /// A list of supplementary Collections which may be of interest.
     pub streams: Vec<AnyCollection>,
     /// A JSON object which maps additional (typically server/domain-wide) endpoints
@@ -11540,9 +12333,6 @@ pub struct Organization {
     pub cat: Option<bool>,
     /// The actor's WebFinger handle, `user@host` (FEP-2c59).
     pub webfinger: Option<String>,
-    /// The gateways that serve the actor, as origins with no path, the first
-    /// preferred (FEP-ef61).
-    pub gateways: Vec<Iri>,
     /// The shared inbox, where Misskey writes it: on the actor rather than in
     /// its `endpoints`. Prefer `endpoints.sharedInbox` when both are there.
     pub shared_inbox: Option<Iri>,
@@ -11602,11 +12392,13 @@ impl FromJson for Organization {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             preferred_username: json::text(object, "preferredUsername"),
             public_keys: json::many_with(object, &["publicKey"], |value| {
                 json::reference_with(value, CryptographicKey::from_json_untyped)
             }),
             assertion_methods: json::many(object, &["assertionMethod"]),
+            gateways: json::many(object, &["gateways"]),
             manually_approves_followers: json::one(object, &["manuallyApprovesFollowers"]),
             inbox: json::one(object, &["inbox"]),
             outbox: json::one(object, &["outbox"]),
@@ -11615,6 +12407,10 @@ impl FromJson for Organization {
             liked: json::one(object, &["liked"]),
             featured: json::one(object, &["featured"]),
             featured_tags: json::one(object, &["featuredTags"]),
+            featured_collections: json::one(
+                object,
+                &["https://w3id.org/fep/7aa9#featuredCollections"],
+            ),
             streams: json::many(object, &["streams"]),
             endpoints: json::one(object, &["endpoints"]),
             discoverable: json::one(object, &["discoverable"]),
@@ -11627,7 +12423,6 @@ impl FromJson for Organization {
             followed_message: json::one(object, &["_misskey_followedMessage"]),
             cat: json::one(object, &["isCat"]),
             webfinger: json::one(object, &["webfinger"]),
-            gateways: json::many(object, &["gateways"]),
             shared_inbox: json::one(object, &["sharedInbox"]),
         })
     }
@@ -11693,6 +12488,7 @@ impl ToJson for Organization {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_text(&mut object, "preferredUsername", &self.preferred_username);
         json::put_many_with(
             &mut object,
@@ -11701,6 +12497,7 @@ impl ToJson for Organization {
             |reference| json::write_reference(reference, CryptographicKey::to_json_untyped),
         );
         json::put_many(&mut object, &["assertionMethod"], &self.assertion_methods);
+        json::put_many(&mut object, &["gateways"], &self.gateways);
         json::put_one(
             &mut object,
             &["manuallyApprovesFollowers"],
@@ -11713,6 +12510,11 @@ impl ToJson for Organization {
         json::put_one(&mut object, &["liked"], self.liked.as_ref());
         json::put_one(&mut object, &["featured"], self.featured.as_ref());
         json::put_one(&mut object, &["featuredTags"], self.featured_tags.as_ref());
+        json::put_one(
+            &mut object,
+            &["https://w3id.org/fep/7aa9#featuredCollections"],
+            self.featured_collections.as_ref(),
+        );
         json::put_many(&mut object, &["streams"], &self.streams);
         json::put_one(&mut object, &["endpoints"], self.endpoints.as_ref());
         json::put_one(&mut object, &["discoverable"], self.discoverable.as_ref());
@@ -11729,7 +12531,6 @@ impl ToJson for Organization {
         );
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
         json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
-        json::put_many(&mut object, &["gateways"], &self.gateways);
         json::put_one(&mut object, &["sharedInbox"], self.shared_inbox.as_ref());
         Value::Object(object)
     }
@@ -11816,10 +12617,14 @@ pub struct Page {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Document::width`].
     pub width: Option<u64>,
     /// See [`Document::height`].
     pub height: Option<u64>,
+    /// See [`Document::digest_multibase`].
+    pub digest_multibase: Option<String>,
     /// See [`Document::blurhash`].
     pub blurhash: Option<String>,
     /// See [`Document::focal_point`].
@@ -11885,8 +12690,10 @@ impl FromJson for Page {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             width: json::one(object, &["width"]),
             height: json::one(object, &["height"]),
+            digest_multibase: json::one(object, &["digestMultibase"]),
             blurhash: json::one(object, &["blurhash"]),
             focal_point: json::many(object, &["focalPoint"]),
             comments_enabled: json::one(object, &["commentsEnabled"]),
@@ -11955,8 +12762,14 @@ impl ToJson for Page {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["width"], self.width.as_ref());
         json::put_one(&mut object, &["height"], self.height.as_ref());
+        json::put_one(
+            &mut object,
+            &["digestMultibase"],
+            self.digest_multibase.as_ref(),
+        );
         json::put_one(&mut object, &["blurhash"], self.blurhash.as_ref());
         json::put_many(&mut object, &["focalPoint"], &self.focal_point);
         json::put_one(
@@ -12050,6 +12863,8 @@ pub struct Person {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// A short username which may be used to refer to the actor,
     /// with no uniqueness guarantees.
     pub preferred_username: Text,
@@ -12058,6 +12873,9 @@ pub struct Person {
     /// Represents this actor's public keys.  It serves as equivalent to
     /// the `publicKeys` property, but is used for [FEP-521a](https://w3id.org/fep/521a) compliance.
     pub assertion_methods: Vec<Reference<Multikey>>,
+    /// Gateways where the latest version of this portable actor object can be
+    /// retrieved.
+    pub gateways: Vec<Iri>,
     /// When `true`, conveys that for this actor, follow requests are not usually
     /// automatically approved, but instead are examined by a person who may accept
     /// or reject the request, at some time in the future.  Setting of `false`
@@ -12115,6 +12933,8 @@ pub struct Person {
     /// on the actor object that points to a {@link Collection} of {@link Hashtag}
     /// objects specifically.
     pub featured_tags: Option<AnyCollection>,
+    /// A collection of {@link FeaturedCollection}s created by this actor.
+    pub featured_collections: Option<AnyCollection>,
     /// A list of supplementary Collections which may be of interest.
     pub streams: Vec<AnyCollection>,
     /// A JSON object which maps additional (typically server/domain-wide) endpoints
@@ -12157,9 +12977,6 @@ pub struct Person {
     pub webfinger: Option<String>,
     /// The person's Matrix user ID.
     pub matrix_user_id: Option<String>,
-    /// The gateways that serve the actor, as origins with no path, the first
-    /// preferred (FEP-ef61).
-    pub gateways: Vec<Iri>,
     /// The shared inbox, where Misskey writes it: on the actor rather than in
     /// its `endpoints`. Prefer `endpoints.sharedInbox` when both are there.
     pub shared_inbox: Option<Iri>,
@@ -12219,11 +13036,13 @@ impl FromJson for Person {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             preferred_username: json::text(object, "preferredUsername"),
             public_keys: json::many_with(object, &["publicKey"], |value| {
                 json::reference_with(value, CryptographicKey::from_json_untyped)
             }),
             assertion_methods: json::many(object, &["assertionMethod"]),
+            gateways: json::many(object, &["gateways"]),
             manually_approves_followers: json::one(object, &["manuallyApprovesFollowers"]),
             inbox: json::one(object, &["inbox"]),
             outbox: json::one(object, &["outbox"]),
@@ -12232,6 +13051,10 @@ impl FromJson for Person {
             liked: json::one(object, &["liked"]),
             featured: json::one(object, &["featured"]),
             featured_tags: json::one(object, &["featuredTags"]),
+            featured_collections: json::one(
+                object,
+                &["https://w3id.org/fep/7aa9#featuredCollections"],
+            ),
             streams: json::many(object, &["streams"]),
             endpoints: json::one(object, &["endpoints"]),
             discoverable: json::one(object, &["discoverable"]),
@@ -12245,7 +13068,6 @@ impl FromJson for Person {
             cat: json::one(object, &["isCat"]),
             webfinger: json::one(object, &["webfinger"]),
             matrix_user_id: json::one(object, &["matrixUserId"]),
-            gateways: json::many(object, &["gateways"]),
             shared_inbox: json::one(object, &["sharedInbox"]),
         })
     }
@@ -12311,6 +13133,7 @@ impl ToJson for Person {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_text(&mut object, "preferredUsername", &self.preferred_username);
         json::put_many_with(
             &mut object,
@@ -12319,6 +13142,7 @@ impl ToJson for Person {
             |reference| json::write_reference(reference, CryptographicKey::to_json_untyped),
         );
         json::put_many(&mut object, &["assertionMethod"], &self.assertion_methods);
+        json::put_many(&mut object, &["gateways"], &self.gateways);
         json::put_one(
             &mut object,
             &["manuallyApprovesFollowers"],
@@ -12331,6 +13155,11 @@ impl ToJson for Person {
         json::put_one(&mut object, &["liked"], self.liked.as_ref());
         json::put_one(&mut object, &["featured"], self.featured.as_ref());
         json::put_one(&mut object, &["featuredTags"], self.featured_tags.as_ref());
+        json::put_one(
+            &mut object,
+            &["https://w3id.org/fep/7aa9#featuredCollections"],
+            self.featured_collections.as_ref(),
+        );
         json::put_many(&mut object, &["streams"], &self.streams);
         json::put_one(&mut object, &["endpoints"], self.endpoints.as_ref());
         json::put_one(&mut object, &["discoverable"], self.discoverable.as_ref());
@@ -12348,7 +13177,6 @@ impl ToJson for Person {
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
         json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
         json::put_one(&mut object, &["matrixUserId"], self.matrix_user_id.as_ref());
-        json::put_many(&mut object, &["gateways"], &self.gateways);
         json::put_one(&mut object, &["sharedInbox"], self.shared_inbox.as_ref());
         Value::Object(object)
     }
@@ -12437,6 +13265,8 @@ pub struct Place {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// Indicates the accuracy of position coordinates on a {@link Place} objects.
     /// Expressed in properties of percentage. e.g. "94.0" means "94.0% accurate".
     pub accuracy: Option<f64>,
@@ -12513,6 +13343,7 @@ impl FromJson for Place {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             accuracy: json::one(object, &["accuracy"]),
             altitude: json::one(object, &["altitude"]),
             latitude: json::one(object, &["latitude"]),
@@ -12583,6 +13414,7 @@ impl ToJson for Place {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["accuracy"], self.accuracy.as_ref());
         json::put_one(&mut object, &["altitude"], self.altitude.as_ref());
         json::put_one(&mut object, &["latitude"], self.latitude.as_ref());
@@ -12678,6 +13510,8 @@ pub struct Profile {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// On a {@link Profile} object, the {@link Profile.describes} property
     /// identifies the object described by the {@link Profile}.
     pub describes: Option<AnyObject>,
@@ -12737,6 +13571,7 @@ impl FromJson for Profile {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             describes: json::one(object, &["describes"]),
         })
     }
@@ -12802,6 +13637,7 @@ impl ToJson for Profile {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["describes"], self.describes.as_ref());
         Value::Object(object)
     }
@@ -12930,6 +13766,8 @@ pub struct Proposal {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// The type of proposal.  Possible values are `"offer"` and `"request"`.
     pub purpose: Option<String>,
     /// The primary intent of this proposal, describing what is being offered
@@ -12997,6 +13835,7 @@ impl FromJson for Proposal {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             purpose: json::one(object, &["purpose"]),
             publishes: json::one(object, &["publishes"]),
             reciprocal: json::one(object, &["reciprocal"]),
@@ -13065,6 +13904,7 @@ impl ToJson for Proposal {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["purpose"], self.purpose.as_ref());
         json::put_one(&mut object, &["publishes"], self.publishes.as_ref());
         json::put_one(&mut object, &["reciprocal"], self.reciprocal.as_ref());
@@ -13157,6 +13997,8 @@ pub struct Question {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -13246,6 +14088,7 @@ impl FromJson for Question {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -13323,6 +14166,7 @@ impl ToJson for Question {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -13430,6 +14274,8 @@ pub struct QuoteAuthorization {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// The URI of the quote object that has been authorized.
     pub interacting_object: Option<AnyObject>,
     /// The URI of the object that is the target of the authorized quote.
@@ -13490,6 +14336,7 @@ impl FromJson for QuoteAuthorization {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             interacting_object: json::one(object, &["interactingObject"]),
             interaction_target: json::one(object, &["interactionTarget"]),
         })
@@ -13556,6 +14403,7 @@ impl ToJson for QuoteAuthorization {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(
             &mut object,
             &["interactingObject"],
@@ -13652,6 +14500,8 @@ pub struct QuoteRequest {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -13720,6 +14570,7 @@ impl FromJson for QuoteRequest {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -13790,6 +14641,7 @@ impl ToJson for QuoteRequest {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -13881,6 +14733,8 @@ pub struct Read {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -13949,6 +14803,7 @@ impl FromJson for Read {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -14019,6 +14874,7 @@ impl ToJson for Read {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -14111,6 +14967,8 @@ pub struct Reject {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -14179,6 +15037,7 @@ impl FromJson for Reject {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -14249,6 +15108,7 @@ impl ToJson for Reject {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -14342,6 +15202,8 @@ pub struct Relationship {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// On a {@link Relationship} object, the {@link Relationship.subject} property
     /// identifies one of the connected individuals.  For instance,
     /// for a {@link Relationship} object describing "John is related to Sally",
@@ -14409,6 +15271,7 @@ impl FromJson for Relationship {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             subject: json::one(object, &["subject"]),
             objects: json::many(object, &["object"]),
             relationships: json::many(object, &["relationship"]),
@@ -14476,6 +15339,7 @@ impl ToJson for Relationship {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["subject"], self.subject.as_ref());
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["relationship"], &self.relationships);
@@ -14565,6 +15429,8 @@ pub struct Remove {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -14633,6 +15499,7 @@ impl FromJson for Remove {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -14703,6 +15570,7 @@ impl ToJson for Remove {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -14794,6 +15662,8 @@ pub struct ReplyAuthorization {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// The URI of the reply object (e.g., a {@link Note}) that has been
     /// authorized.
     pub interacting_object: Option<AnyObject>,
@@ -14855,6 +15725,7 @@ impl FromJson for ReplyAuthorization {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             interacting_object: json::one(object, &["interactingObject"]),
             interaction_target: json::one(object, &["interactionTarget"]),
         })
@@ -14921,6 +15792,7 @@ impl ToJson for ReplyAuthorization {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(
             &mut object,
             &["interactingObject"],
@@ -15016,6 +15888,8 @@ pub struct ReplyRequest {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -15084,6 +15958,7 @@ impl FromJson for ReplyRequest {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -15154,6 +16029,7 @@ impl ToJson for ReplyRequest {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -15245,6 +16121,8 @@ pub struct Service {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// A short username which may be used to refer to the actor,
     /// with no uniqueness guarantees.
     pub preferred_username: Text,
@@ -15253,6 +16131,9 @@ pub struct Service {
     /// Represents this actor's public keys.  It serves as equivalent to
     /// the `publicKeys` property, but is used for [FEP-521a](https://w3id.org/fep/521a) compliance.
     pub assertion_methods: Vec<Reference<Multikey>>,
+    /// Gateways where the latest version of this portable actor object can be
+    /// retrieved.
+    pub gateways: Vec<Iri>,
     /// When `true`, conveys that for this actor, follow requests are not usually
     /// automatically approved, but instead are examined by a person who may accept
     /// or reject the request, at some time in the future.  Setting of `false`
@@ -15310,6 +16191,8 @@ pub struct Service {
     /// on the actor object that points to a {@link Collection} of {@link Hashtag}
     /// objects specifically.
     pub featured_tags: Option<AnyCollection>,
+    /// A collection of {@link FeaturedCollection}s created by this actor.
+    pub featured_collections: Option<AnyCollection>,
     /// A list of supplementary Collections which may be of interest.
     pub streams: Vec<AnyCollection>,
     /// A JSON object which maps additional (typically server/domain-wide) endpoints
@@ -15350,9 +16233,6 @@ pub struct Service {
     pub cat: Option<bool>,
     /// The actor's WebFinger handle, `user@host` (FEP-2c59).
     pub webfinger: Option<String>,
-    /// The gateways that serve the actor, as origins with no path, the first
-    /// preferred (FEP-ef61).
-    pub gateways: Vec<Iri>,
     /// The shared inbox, where Misskey writes it: on the actor rather than in
     /// its `endpoints`. Prefer `endpoints.sharedInbox` when both are there.
     pub shared_inbox: Option<Iri>,
@@ -15412,11 +16292,13 @@ impl FromJson for Service {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             preferred_username: json::text(object, "preferredUsername"),
             public_keys: json::many_with(object, &["publicKey"], |value| {
                 json::reference_with(value, CryptographicKey::from_json_untyped)
             }),
             assertion_methods: json::many(object, &["assertionMethod"]),
+            gateways: json::many(object, &["gateways"]),
             manually_approves_followers: json::one(object, &["manuallyApprovesFollowers"]),
             inbox: json::one(object, &["inbox"]),
             outbox: json::one(object, &["outbox"]),
@@ -15425,6 +16307,10 @@ impl FromJson for Service {
             liked: json::one(object, &["liked"]),
             featured: json::one(object, &["featured"]),
             featured_tags: json::one(object, &["featuredTags"]),
+            featured_collections: json::one(
+                object,
+                &["https://w3id.org/fep/7aa9#featuredCollections"],
+            ),
             streams: json::many(object, &["streams"]),
             endpoints: json::one(object, &["endpoints"]),
             discoverable: json::one(object, &["discoverable"]),
@@ -15437,7 +16323,6 @@ impl FromJson for Service {
             followed_message: json::one(object, &["_misskey_followedMessage"]),
             cat: json::one(object, &["isCat"]),
             webfinger: json::one(object, &["webfinger"]),
-            gateways: json::many(object, &["gateways"]),
             shared_inbox: json::one(object, &["sharedInbox"]),
         })
     }
@@ -15503,6 +16388,7 @@ impl ToJson for Service {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_text(&mut object, "preferredUsername", &self.preferred_username);
         json::put_many_with(
             &mut object,
@@ -15511,6 +16397,7 @@ impl ToJson for Service {
             |reference| json::write_reference(reference, CryptographicKey::to_json_untyped),
         );
         json::put_many(&mut object, &["assertionMethod"], &self.assertion_methods);
+        json::put_many(&mut object, &["gateways"], &self.gateways);
         json::put_one(
             &mut object,
             &["manuallyApprovesFollowers"],
@@ -15523,6 +16410,11 @@ impl ToJson for Service {
         json::put_one(&mut object, &["liked"], self.liked.as_ref());
         json::put_one(&mut object, &["featured"], self.featured.as_ref());
         json::put_one(&mut object, &["featuredTags"], self.featured_tags.as_ref());
+        json::put_one(
+            &mut object,
+            &["https://w3id.org/fep/7aa9#featuredCollections"],
+            self.featured_collections.as_ref(),
+        );
         json::put_many(&mut object, &["streams"], &self.streams);
         json::put_one(&mut object, &["endpoints"], self.endpoints.as_ref());
         json::put_one(&mut object, &["discoverable"], self.discoverable.as_ref());
@@ -15539,7 +16431,6 @@ impl ToJson for Service {
         );
         json::put_one(&mut object, &["isCat"], self.cat.as_ref());
         json::put_one(&mut object, &["webfinger"], self.webfinger.as_ref());
-        json::put_many(&mut object, &["gateways"], &self.gateways);
         json::put_one(&mut object, &["sharedInbox"], self.shared_inbox.as_ref());
         Value::Object(object)
     }
@@ -15662,6 +16553,8 @@ pub struct TentativeAccept {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -15730,6 +16623,7 @@ impl FromJson for TentativeAccept {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -15800,6 +16694,7 @@ impl ToJson for TentativeAccept {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -15892,6 +16787,8 @@ pub struct TentativeReject {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -15960,6 +16857,7 @@ impl FromJson for TentativeReject {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -16030,6 +16928,7 @@ impl ToJson for TentativeReject {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -16123,6 +17022,8 @@ pub struct Tombstone {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// On a `Tombstone` object, the `formerType` property identifies the type of
     /// the object that was deleted.
     pub former_types: Vec<Iri>,
@@ -16185,6 +17086,7 @@ impl FromJson for Tombstone {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             former_types: json::many(object, &["formerType"]),
             deleted: json::one(object, &["deleted"]),
         })
@@ -16251,8 +17153,88 @@ impl ToJson for Tombstone {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["formerType"], &self.former_types);
         json::put_one(&mut object, &["deleted"], self.deleted.as_ref());
+        Value::Object(object)
+    }
+}
+
+/// Translator credit and source freshness for one language version of an
+/// {@link Object}, as defined by the draft
+/// [FEP-22cd](https://w3id.org/fep/22cd).  This is embedded metadata, not an
+/// independent post or activity target.  Its optional identifier need not be
+/// dereferenceable and does not establish trust in embedded translator actors.
+///
+/// The type `https://w3id.org/fep/22cd#Translation`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Translation {
+    /// The translated language.  Publishers must match a language in the
+    /// containing object's content, name, or summary map.
+    pub language: Option<String>,
+    /// The actors credited for this language version.  Their order has no
+    /// meaning.  Human actors credit translation or review; Application and
+    /// Service actors credit machine output.  If any actor cannot be resolved,
+    /// the entry's human-or-machine status is unknown.  Credit is asserted by
+    /// the publisher and grants no publishing authority.  Embedded actors with
+    /// identifiers are fetched before being returned unless explicitly trusted.
+    pub translators: Vec<AnyActor>,
+    /// The identifier of the containing object.  FEP-22cd translations share
+    /// that object's identity rather than introducing separate posts.
+    pub original: Option<Iri>,
+    /// The source object's updated timestamp (or published timestamp if it has
+    /// no updated timestamp) at the last human review of this translation.
+    /// An absent value makes no freshness claim.  A value earlier than the
+    /// current source timestamp indicates a potentially stale translation;
+    /// an equal or later value reflects the current source.
+    pub source_updated: Option<String>,
+    /// An optional public revision resource identifying the source reviewed.
+    /// Supplements sourceUpdated without requiring private revision history
+    /// to be exposed.
+    pub basis: Option<Iri>,
+    /// Links to renderings of this specific language version.
+    pub urls: Vec<LinkOrIri>,
+}
+
+impl Translation {
+    /// The type's IRI.
+    pub const TYPE_IRI: &'static str = "https://w3id.org/fep/22cd#Translation";
+    /// The type's `type` in a normalised document.
+    pub const TYPE: &'static str = "Translation";
+}
+
+impl json::Typed for Translation {
+    const TYPE: &'static str = "Translation";
+}
+
+impl FromJson for Translation {
+    fn from_json(value: &Value) -> Result<Self, JsonError> {
+        let object = json::object(value)?;
+        json::expect_type(object, Self::TYPE)?;
+        Ok(Self {
+            language: json::one(object, &["inLanguage"]),
+            translators: json::many(object, &["translator"]),
+            original: json::one(object, &["translationOfWork"]),
+            source_updated: json::one(object, &["sourceUpdated"]),
+            basis: json::one(object, &["isBasedOn"]),
+            urls: json::many(object, &["url"]),
+        })
+    }
+}
+
+impl ToJson for Translation {
+    fn to_json(&self) -> Value {
+        let mut object = json::new_object(Some(Self::TYPE), None);
+        json::put_one(&mut object, &["inLanguage"], self.language.as_ref());
+        json::put_many(&mut object, &["translator"], &self.translators);
+        json::put_one(&mut object, &["translationOfWork"], self.original.as_ref());
+        json::put_one(
+            &mut object,
+            &["sourceUpdated"],
+            self.source_updated.as_ref(),
+        );
+        json::put_one(&mut object, &["isBasedOn"], self.basis.as_ref());
+        json::put_many(&mut object, &["url"], &self.urls);
         Value::Object(object)
     }
 }
@@ -16341,6 +17323,8 @@ pub struct Travel {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -16409,6 +17393,7 @@ impl FromJson for Travel {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -16479,6 +17464,7 @@ impl ToJson for Travel {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -16574,6 +17560,8 @@ pub struct Undo {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -16642,6 +17630,7 @@ impl FromJson for Undo {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -16712,6 +17701,7 @@ impl ToJson for Undo {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -16805,6 +17795,8 @@ pub struct Update {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -16873,6 +17865,7 @@ impl FromJson for Update {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -16943,6 +17936,7 @@ impl ToJson for Update {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -17034,10 +18028,14 @@ pub struct Video {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Document::width`].
     pub width: Option<u64>,
     /// See [`Document::height`].
     pub height: Option<u64>,
+    /// See [`Document::digest_multibase`].
+    pub digest_multibase: Option<String>,
     /// See [`Document::blurhash`].
     pub blurhash: Option<String>,
     /// See [`Document::focal_point`].
@@ -17101,8 +18099,10 @@ impl FromJson for Video {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             width: json::one(object, &["width"]),
             height: json::one(object, &["height"]),
+            digest_multibase: json::one(object, &["digestMultibase"]),
             blurhash: json::one(object, &["blurhash"]),
             focal_point: json::many(object, &["focalPoint"]),
             comments_enabled: json::one(object, &["commentsEnabled"]),
@@ -17170,8 +18170,14 @@ impl ToJson for Video {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_one(&mut object, &["width"], self.width.as_ref());
         json::put_one(&mut object, &["height"], self.height.as_ref());
+        json::put_one(
+            &mut object,
+            &["digestMultibase"],
+            self.digest_multibase.as_ref(),
+        );
         json::put_one(&mut object, &["blurhash"], self.blurhash.as_ref());
         json::put_many(&mut object, &["focalPoint"], &self.focal_point);
         json::put_one(
@@ -17264,6 +18270,8 @@ pub struct View {
     pub reply_authorization: Option<Reference<ReplyAuthorization>>,
     /// See [`Object::announce_authorization`].
     pub announce_authorization: Option<Reference<AnnounceAuthorization>>,
+    /// See [`Object::translations`].
+    pub translations: Vec<Translation>,
     /// See [`Activity::actors`].
     pub actors: Vec<AnyActor>,
     /// See [`Activity::objects`].
@@ -17332,6 +18340,7 @@ impl FromJson for View {
             like_authorization: json::one(object, &["likeAuthorization"]),
             reply_authorization: json::one(object, &["replyAuthorization"]),
             announce_authorization: json::one(object, &["announceAuthorization"]),
+            translations: json::many(object, &["translations"]),
             actors: json::many(object, &["actor"]),
             objects: json::many(object, &["object"]),
             targets: json::many(object, &["target"]),
@@ -17402,6 +18411,7 @@ impl ToJson for View {
             &["announceAuthorization"],
             self.announce_authorization.as_ref(),
         );
+        json::put_many(&mut object, &["translations"], &self.translations);
         json::put_many(&mut object, &["actor"], &self.actors);
         json::put_many(&mut object, &["object"], &self.objects);
         json::put_many(&mut object, &["target"], &self.targets);
@@ -17516,6 +18526,7 @@ pub enum AnyCollection {
     Iri(Iri),
     Collection(Box<Collection>),
     CollectionPage(Box<CollectionPage>),
+    FeaturedCollection(Box<FeaturedCollection>),
     OrderedCollection(Box<OrderedCollection>),
     OrderedCollectionPage(Box<OrderedCollectionPage>),
     /// Anything no schema describes, as it was.
@@ -17530,6 +18541,7 @@ impl AnyCollection {
             Self::Iri(iri) => Some(iri),
             Self::Collection(object) => object.id.as_ref(),
             Self::CollectionPage(object) => object.id.as_ref(),
+            Self::FeaturedCollection(object) => object.id.as_ref(),
             Self::OrderedCollection(object) => object.id.as_ref(),
             Self::OrderedCollectionPage(object) => object.id.as_ref(),
             _ => None,
@@ -17565,6 +18577,12 @@ impl FromJson for AnyCollection {
                         |v| Self::CollectionPage(Box::new(v)),
                     ));
                 }
+                if json::has_type(object, FeaturedCollection::TYPE) {
+                    return Ok(FeaturedCollection::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeaturedCollection(Box::new(v)),
+                    ));
+                }
                 if json::has_type(object, OrderedCollection::TYPE) {
                     return Ok(OrderedCollection::from_json(value).map_or_else(
                         |_| Self::Other(value.clone()),
@@ -17590,6 +18608,7 @@ impl ToJson for AnyCollection {
             Self::Iri(v) => v.to_json(),
             Self::Collection(v) => v.to_json(),
             Self::CollectionPage(v) => v.to_json(),
+            Self::FeaturedCollection(v) => v.to_json(),
             Self::OrderedCollection(v) => v.to_json(),
             Self::OrderedCollectionPage(v) => v.to_json(),
             Self::Other(v) => v.clone(),
@@ -17766,6 +18785,8 @@ pub enum AnyObject {
     Event(Box<Event>),
     FeatureAuthorization(Box<FeatureAuthorization>),
     FeatureRequest(Box<FeatureRequest>),
+    FeaturedCollection(Box<FeaturedCollection>),
+    FeaturedItem(Box<FeaturedItem>),
     Flag(Box<Flag>),
     Follow(Box<Follow>),
     Group(Box<Group>),
@@ -17843,6 +18864,8 @@ impl AnyObject {
             Self::Event(object) => object.id.as_ref(),
             Self::FeatureAuthorization(object) => object.id.as_ref(),
             Self::FeatureRequest(object) => object.id.as_ref(),
+            Self::FeaturedCollection(object) => object.id.as_ref(),
+            Self::FeaturedItem(object) => object.id.as_ref(),
             Self::Flag(object) => object.id.as_ref(),
             Self::Follow(object) => object.id.as_ref(),
             Self::Group(object) => object.id.as_ref(),
@@ -18047,6 +19070,18 @@ impl FromJson for AnyObject {
                     return Ok(FeatureRequest::from_json(value).map_or_else(
                         |_| Self::Other(value.clone()),
                         |v| Self::FeatureRequest(Box::new(v)),
+                    ));
+                }
+                if json::has_type(object, FeaturedCollection::TYPE) {
+                    return Ok(FeaturedCollection::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeaturedCollection(Box::new(v)),
+                    ));
+                }
+                if json::has_type(object, FeaturedItem::TYPE) {
+                    return Ok(FeaturedItem::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeaturedItem(Box::new(v)),
                     ));
                 }
                 if json::has_type(object, Flag::TYPE) {
@@ -18324,6 +19359,8 @@ impl ToJson for AnyObject {
             Self::Event(v) => v.to_json(),
             Self::FeatureAuthorization(v) => v.to_json(),
             Self::FeatureRequest(v) => v.to_json(),
+            Self::FeaturedCollection(v) => v.to_json(),
+            Self::FeaturedItem(v) => v.to_json(),
             Self::Flag(v) => v.to_json(),
             Self::Follow(v) => v.to_json(),
             Self::Group(v) => v.to_json(),
@@ -18367,6 +19404,76 @@ impl ToJson for AnyObject {
             Self::Update(v) => v.to_json(),
             Self::Video(v) => v.to_json(),
             Self::View(v) => v.to_json(),
+            Self::Other(v) => v.clone(),
+        }
+    }
+}
+
+/// A value of [`OrderedCollection`], or of a type extending one of them.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AnyOrderedCollection {
+    /// A reference, by IRI.
+    Iri(Iri),
+    FeaturedCollection(Box<FeaturedCollection>),
+    OrderedCollection(Box<OrderedCollection>),
+    /// Anything no schema describes, as it was.
+    Other(Value),
+}
+
+impl AnyOrderedCollection {
+    /// The IRI of the value: the reference itself, or the object's `id`.
+    #[must_use]
+    pub fn id(&self) -> Option<&Iri> {
+        match self {
+            Self::Iri(iri) => Some(iri),
+            Self::FeaturedCollection(object) => object.id.as_ref(),
+            Self::OrderedCollection(object) => object.id.as_ref(),
+            _ => None,
+        }
+    }
+}
+
+impl FromJson for AnyOrderedCollection {
+    fn from_json(value: &Value) -> Result<Self, JsonError> {
+        Ok(match value {
+            Value::String(_) => {
+                if let Ok(v) = Iri::from_json(value) {
+                    return Ok(Self::Iri(v));
+                }
+                Self::Other(value.clone())
+            }
+            Value::Object(object) => {
+                if object.len() == 1
+                    && object.contains_key("id")
+                    && let Ok(v) = Iri::from_json(value)
+                {
+                    return Ok(Self::Iri(v));
+                }
+                if json::has_type(object, FeaturedCollection::TYPE) {
+                    return Ok(FeaturedCollection::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeaturedCollection(Box::new(v)),
+                    ));
+                }
+                if json::has_type(object, OrderedCollection::TYPE) {
+                    return Ok(OrderedCollection::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::OrderedCollection(Box::new(v)),
+                    ));
+                }
+                Self::Other(value.clone())
+            }
+            _ => Self::Other(value.clone()),
+        })
+    }
+}
+
+impl ToJson for AnyOrderedCollection {
+    fn to_json(&self) -> Value {
+        match self {
+            Self::Iri(v) => v.to_json(),
+            Self::FeaturedCollection(v) => v.to_json(),
+            Self::OrderedCollection(v) => v.to_json(),
             Self::Other(v) => v.clone(),
         }
     }
@@ -18566,6 +19673,8 @@ pub enum LinkOrObject {
     Event(Box<Event>),
     FeatureAuthorization(Box<FeatureAuthorization>),
     FeatureRequest(Box<FeatureRequest>),
+    FeaturedCollection(Box<FeaturedCollection>),
+    FeaturedItem(Box<FeaturedItem>),
     Flag(Box<Flag>),
     Follow(Box<Follow>),
     Group(Box<Group>),
@@ -18646,6 +19755,8 @@ impl LinkOrObject {
             Self::Event(object) => object.id.as_ref(),
             Self::FeatureAuthorization(object) => object.id.as_ref(),
             Self::FeatureRequest(object) => object.id.as_ref(),
+            Self::FeaturedCollection(object) => object.id.as_ref(),
+            Self::FeaturedItem(object) => object.id.as_ref(),
             Self::Flag(object) => object.id.as_ref(),
             Self::Follow(object) => object.id.as_ref(),
             Self::Group(object) => object.id.as_ref(),
@@ -18850,6 +19961,18 @@ impl FromJson for LinkOrObject {
                     return Ok(FeatureRequest::from_json(value).map_or_else(
                         |_| Self::Other(value.clone()),
                         |v| Self::FeatureRequest(Box::new(v)),
+                    ));
+                }
+                if json::has_type(object, FeaturedCollection::TYPE) {
+                    return Ok(FeaturedCollection::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeaturedCollection(Box::new(v)),
+                    ));
+                }
+                if json::has_type(object, FeaturedItem::TYPE) {
+                    return Ok(FeaturedItem::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeaturedItem(Box::new(v)),
                     ));
                 }
                 if json::has_type(object, Flag::TYPE) {
@@ -19143,6 +20266,8 @@ impl ToJson for LinkOrObject {
             Self::Event(v) => v.to_json(),
             Self::FeatureAuthorization(v) => v.to_json(),
             Self::FeatureRequest(v) => v.to_json(),
+            Self::FeaturedCollection(v) => v.to_json(),
+            Self::FeaturedItem(v) => v.to_json(),
             Self::Flag(v) => v.to_json(),
             Self::Follow(v) => v.to_json(),
             Self::Group(v) => v.to_json(),
@@ -19223,6 +20348,8 @@ pub enum LinkOrObjectOrPropertyValue {
     Event(Box<Event>),
     FeatureAuthorization(Box<FeatureAuthorization>),
     FeatureRequest(Box<FeatureRequest>),
+    FeaturedCollection(Box<FeaturedCollection>),
+    FeaturedItem(Box<FeaturedItem>),
     Flag(Box<Flag>),
     Follow(Box<Follow>),
     Group(Box<Group>),
@@ -19304,6 +20431,8 @@ impl LinkOrObjectOrPropertyValue {
             Self::Event(object) => object.id.as_ref(),
             Self::FeatureAuthorization(object) => object.id.as_ref(),
             Self::FeatureRequest(object) => object.id.as_ref(),
+            Self::FeaturedCollection(object) => object.id.as_ref(),
+            Self::FeaturedItem(object) => object.id.as_ref(),
             Self::Flag(object) => object.id.as_ref(),
             Self::Follow(object) => object.id.as_ref(),
             Self::Group(object) => object.id.as_ref(),
@@ -19508,6 +20637,18 @@ impl FromJson for LinkOrObjectOrPropertyValue {
                     return Ok(FeatureRequest::from_json(value).map_or_else(
                         |_| Self::Other(value.clone()),
                         |v| Self::FeatureRequest(Box::new(v)),
+                    ));
+                }
+                if json::has_type(object, FeaturedCollection::TYPE) {
+                    return Ok(FeaturedCollection::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeaturedCollection(Box::new(v)),
+                    ));
+                }
+                if json::has_type(object, FeaturedItem::TYPE) {
+                    return Ok(FeaturedItem::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeaturedItem(Box::new(v)),
                     ));
                 }
                 if json::has_type(object, Flag::TYPE) {
@@ -19807,6 +20948,8 @@ impl ToJson for LinkOrObjectOrPropertyValue {
             Self::Event(v) => v.to_json(),
             Self::FeatureAuthorization(v) => v.to_json(),
             Self::FeatureRequest(v) => v.to_json(),
+            Self::FeaturedCollection(v) => v.to_json(),
+            Self::FeaturedItem(v) => v.to_json(),
             Self::Flag(v) => v.to_json(),
             Self::Follow(v) => v.to_json(),
             Self::Group(v) => v.to_json(),
@@ -19864,6 +21007,7 @@ impl ToJson for LinkOrObjectOrPropertyValue {
 pub enum OrderedCollectionOrOrderedCollectionPage {
     /// A reference, by IRI.
     Iri(Iri),
+    FeaturedCollection(Box<FeaturedCollection>),
     OrderedCollection(Box<OrderedCollection>),
     OrderedCollectionPage(Box<OrderedCollectionPage>),
     /// Anything no schema describes, as it was.
@@ -19876,6 +21020,7 @@ impl OrderedCollectionOrOrderedCollectionPage {
     pub fn id(&self) -> Option<&Iri> {
         match self {
             Self::Iri(iri) => Some(iri),
+            Self::FeaturedCollection(object) => object.id.as_ref(),
             Self::OrderedCollection(object) => object.id.as_ref(),
             Self::OrderedCollectionPage(object) => object.id.as_ref(),
             _ => None,
@@ -19898,6 +21043,12 @@ impl FromJson for OrderedCollectionOrOrderedCollectionPage {
                     && let Ok(v) = Iri::from_json(value)
                 {
                     return Ok(Self::Iri(v));
+                }
+                if json::has_type(object, FeaturedCollection::TYPE) {
+                    return Ok(FeaturedCollection::from_json(value).map_or_else(
+                        |_| Self::Other(value.clone()),
+                        |v| Self::FeaturedCollection(Box::new(v)),
+                    ));
                 }
                 if json::has_type(object, OrderedCollection::TYPE) {
                     return Ok(OrderedCollection::from_json(value).map_or_else(
@@ -19922,6 +21073,7 @@ impl ToJson for OrderedCollectionOrOrderedCollectionPage {
     fn to_json(&self) -> Value {
         match self {
             Self::Iri(v) => v.to_json(),
+            Self::FeaturedCollection(v) => v.to_json(),
             Self::OrderedCollection(v) => v.to_json(),
             Self::OrderedCollectionPage(v) => v.to_json(),
             Self::Other(v) => v.clone(),
@@ -19960,6 +21112,8 @@ serde_via_json!(
     Export,
     FeatureAuthorization,
     FeatureRequest,
+    FeaturedCollection,
+    FeaturedItem,
     Flag,
     Follow,
     Group,
@@ -20008,6 +21162,7 @@ serde_via_json!(
     TentativeAccept,
     TentativeReject,
     Tombstone,
+    Translation,
     Travel,
     Undo,
     Update,
@@ -20018,6 +21173,7 @@ serde_via_json!(
     AnyCollectionPage,
     AnyDidService,
     AnyObject,
+    AnyOrderedCollection,
     BooleanOrDateTime,
     IriOrUnits,
     LinkOrIri,

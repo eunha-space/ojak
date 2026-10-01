@@ -13,8 +13,8 @@ MIT license in *LICENSE*; nothing else in this crate is.
 Provenance
 ----------
 
-Copied from Fedify [2.3.8], commit `12119e5c4772c757804e18e9d80401163ccc2bc0`
-(2026-09-22):
+Copied from Fedify [2.4.0], commit `a0002240fd95ca028b897007ae6ab505399f2cb4`
+(2026-10-01):
 
 | Here                 | In Fedify                              |
 | -------------------- | -------------------------------------- |
@@ -25,7 +25,7 @@ Copied from Fedify [2.3.8], commit `12119e5c4772c757804e18e9d80401163ccc2bc0`
 Each file's `$schema` still names its path in Fedify's tree; it is left as it
 was so that the copies stay byte-for-byte what Fedify released.
 
-[2.3.8]: https://github.com/fedify-dev/fedify/releases/tag/2.3.8
+[2.4.0]: https://github.com/fedify-dev/fedify/releases/tag/2.4.0
 
 
 Updating

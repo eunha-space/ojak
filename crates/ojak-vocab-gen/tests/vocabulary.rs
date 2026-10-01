@@ -23,7 +23,7 @@ fn find<'a>(vocabulary: &'a Vocabulary, name: &str) -> &'a ojak_vocab_gen::model
 
 #[test]
 fn every_schema_is_understood() {
-    assert_eq!(vocabulary().types.len(), 81);
+    assert_eq!(vocabulary().types.len(), 86);
 }
 
 #[test]

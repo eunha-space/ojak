@@ -11,21 +11,6 @@
 
 additions:
 
-# ActivityPub's client-to-server endpoint for media, which Pleroma and
-# Akkoma publish.
-- to:
-  - "https://www.w3.org/ns/activitystreams#Endpoints"
-  properties:
-  - singularName: uploadMedia
-    functional: true
-    compactName: uploadMedia
-    uri: "https://www.w3.org/ns/activitystreams#uploadMedia"
-    description: |
-      Where a client uploads media, as ActivityPub's client-to-server protocol
-      describes.
-    range:
-    - "http://www.w3.org/2001/XMLSchema#anyURI"
-
 # Mastodon's media attributes, on every image, video and audio attachment.
 - to:
   - "https://www.w3.org/ns/activitystreams#Document"
@@ -151,26 +136,6 @@ additions:
       Whether what the blocked or deleted person posted is to be removed too.
     range:
     - "http://www.w3.org/2001/XMLSchema#boolean"
-
-# FEP-ef61: where a portable actor's latest document can be fetched, in
-# order. An actor whose id is an `ap` URI has to list at least one.
-- to:
-  - "https://www.w3.org/ns/activitystreams#Application"
-  - "https://www.w3.org/ns/activitystreams#Group"
-  - "https://www.w3.org/ns/activitystreams#Organization"
-  - "https://www.w3.org/ns/activitystreams#Person"
-  - "https://www.w3.org/ns/activitystreams#Service"
-  properties:
-  - singularName: gateway
-    pluralName: gateways
-    compactName: gateways
-    uri: "https://w3id.org/fep/ef61/gateways"
-    container: list
-    description: |
-      The gateways that serve the actor, as origins with no path, the first
-      preferred (FEP-ef61).
-    range:
-    - "http://www.w3.org/2001/XMLSchema#anyURI"
 
 # Misskey and its forks put the shared inbox on the actor itself, where
 # ActivityPub puts it in `endpoints`; it is the same property, and a server

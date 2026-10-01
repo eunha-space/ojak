@@ -35,6 +35,10 @@ pub struct TypeSchema {
     /// Whether documents of this type carry no `type` at all.
     #[serde(default)]
     pub typeless: bool,
+    /// Whether the type's `id` vouches for the objects embedded in it.
+    /// Unused: Ojak decides what a document vouches for by its origin when
+    /// it is fetched or received, not by its type.
+    pub trust_embedded_objects: Option<bool>,
 }
 
 /// One property of a type.
@@ -67,6 +71,10 @@ pub struct PropertySchema {
     /// document Ojak reads is normalised first, and embedded values lose
     /// theirs.
     pub embed_context: Option<Value>,
+    /// A context Fedify adds to a document it writes when the property is in
+    /// it. Unused: Ojak writes with its own context, which maps every term
+    /// it writes.
+    pub extra_context: Option<String>,
     /// TypeScript functions that adjust a value as it is read.
     #[serde(default)]
     pub preprocessors: Vec<Preprocessor>,

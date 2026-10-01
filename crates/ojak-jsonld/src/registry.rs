@@ -86,6 +86,16 @@ const BUNDLED: &[Bundled] = &[
         aliases: &[],
         document: include_str!("../contexts/fep-ef61.jsonld"),
     },
+    Bundled {
+        iri: "https://w3id.org/fep/7aa9",
+        aliases: &[],
+        document: include_str!("../contexts/fep-7aa9.jsonld"),
+    },
+    Bundled {
+        iri: "https://w3id.org/fep/22cd",
+        aliases: &[],
+        document: include_str!("../contexts/fep-22cd.jsonld"),
+    },
     // Served as `application/json` with no JSON-LD `Link` header, so a
     // conforming loader would not treat it as a context even after fetching it.
     Bundled {

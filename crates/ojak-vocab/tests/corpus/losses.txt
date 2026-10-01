@@ -1,4 +1,4 @@
-137 documents: 73 read without loss, 4 read as no known type.
+137 documents: 74 read without loss, 4 read as no known type.
 Contexts named and not bundled, which leave their terms unread:
     https://fedia.io/contexts (1)
     https://greenish.red/schemas/litepub-0.1.jsonld (2)
@@ -230,8 +230,6 @@ live/misskey/actor.json: "Person" read as Person
     lost misskey:_misskey_requireSigninToViewContents: false
     lost misskey:_misskey_summary: "このアカウントは管理者によって予約されています"
     lost publicKey.type: "CryptographicKey"
-live/pixelfed/actor.json: "Person" read as Person
-    lost interactionPolicy.canFeature: {"automaticApproval":"https://www.w3.org/ns/activitystreams#Public"}
 live/sharkey/actor.json: "Person" read as Person
     lost https://joinsharkey.org/ns#enableRss: true
     lost https://joinsharkey.org/ns#hideOnlineStatus: true

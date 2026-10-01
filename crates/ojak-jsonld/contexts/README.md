@@ -46,6 +46,8 @@ Fetched verbatim from their canonical URLs on 2026-09-17:
 | `webfinger.jsonld`                  | <https://purl.archive.org/socialweb/webfinger>                                                                                |
 | `join-lemmy.jsonld`                 | <https://join-lemmy.org/context.json>                                                                                         |
 | `fep-ef61.jsonld`                   | <https://w3id.org/fep/ef61>, copied 2026-09-27 from `fep/ef61/fep-ef61.jsonld` in the FEP repository, which is what it serves |
+| `fep-7aa9.jsonld`                   | <https://w3id.org/fep/7aa9>, copied 2026-10-01 from `fep/7aa9/fep-7aa9.jsonld` in the FEP repository, which is what it serves |
+| `fep-22cd.jsonld`                   | <https://w3id.org/fep/22cd>, copied 2026-10-01 from `fep/22cd/fep-22cd.jsonld` in the FEP repository, which is what it serves |
 
 Two of those need a word of explanation, because the reason they are bundled
 is not “to save a round trip”.
