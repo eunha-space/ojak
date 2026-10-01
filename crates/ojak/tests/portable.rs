@@ -730,11 +730,7 @@ async fn a_delivery_goes_to_the_first_gateway_that_takes_it() {
         Keys,
         client(),
         DelivererConfig {
-            retry: RetryPolicy {
-                initial: Duration::from_millis(1),
-                max_delay: Duration::from_millis(1),
-                max_attempts: 3,
-            },
+            retry: RetryPolicy::exponential(Duration::from_millis(1), Duration::from_millis(1), 3),
             ..DelivererConfig::default()
         },
     );

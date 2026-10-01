@@ -100,30 +100,56 @@ pub trait Queue: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Option<Duration>, QueueError>> + Send;
 }
 
-/// When to try a failed job again.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// When to try a failed job again: how many attempts a job gets, and how
+/// long to wait after each failure.
+#[derive(Clone, Copy, Debug)]
 pub struct RetryPolicy {
-    /// The delay after the first failure.
-    pub initial: Duration,
-    /// The longest delay between two attempts.
-    pub max_delay: Duration,
     /// Attempts in all, the first included.
     pub max_attempts: u32,
+    pub backoff: Backoff,
+}
+
+/// How long to wait before trying a failed job again.
+#[derive(Clone, Copy, Debug)]
+pub enum Backoff {
+    /// `initial` after the first failure, doubling after each one after
+    /// it, and never more than `max`.
+    Exponential { initial: Duration, max: Duration },
+    /// What the function says, given how many attempts have failed, one
+    /// for the first: for a schedule of the application's own, such as
+    /// another server's it is to behave as.
+    Custom(fn(u32) -> Duration),
 }
 
 impl Default for RetryPolicy {
     /// Thirty seconds, doubling to an hour, twelve attempts: about eight
     /// hours of a peer being down before a delivery is given up on.
     fn default() -> Self {
-        Self {
-            initial: Duration::from_secs(30),
-            max_delay: Duration::from_secs(3600),
-            max_attempts: 12,
-        }
+        Self::exponential(Duration::from_secs(30), Duration::from_secs(3600), 12)
     }
 }
 
 impl RetryPolicy {
+    /// `max_attempts` attempts, waiting `initial` after the first failure and
+    /// doubling, up to `max`.
+    #[must_use]
+    pub const fn exponential(initial: Duration, max: Duration, max_attempts: u32) -> Self {
+        Self {
+            max_attempts,
+            backoff: Backoff::Exponential { initial, max },
+        }
+    }
+
+    /// `max_attempts` attempts, waiting what `delay` says after each
+    /// failure, given how many attempts have failed.
+    #[must_use]
+    pub const fn custom(delay: fn(u32) -> Duration, max_attempts: u32) -> Self {
+        Self {
+            max_attempts,
+            backoff: Backoff::Custom(delay),
+        }
+    }
+
     /// The delay before the next attempt, after `attempts` attempts have
     /// failed; `None` when there are to be no more.
     #[must_use]
@@ -131,12 +157,13 @@ impl RetryPolicy {
         if attempts >= self.max_attempts {
             return None;
         }
-        let doublings = attempts.saturating_sub(1).min(31);
-        Some(
-            self.initial
-                .saturating_mul(1u32 << doublings)
-                .min(self.max_delay),
-        )
+        Some(match self.backoff {
+            Backoff::Exponential { initial, max } => {
+                let doublings = attempts.saturating_sub(1).min(31);
+                initial.saturating_mul(1u32 << doublings).min(max)
+            }
+            Backoff::Custom(delay) => delay(attempts),
+        })
     }
 }
 
@@ -437,5 +464,13 @@ mod tests {
         assert_eq!(policy.delay(8), Some(Duration::from_secs(3600)));
         assert_eq!(policy.delay(11), Some(Duration::from_secs(3600)));
         assert_eq!(policy.delay(12), None);
+    }
+
+    #[test]
+    fn a_custom_backoff_is_asked_how_many_have_failed() {
+        let policy = RetryPolicy::custom(|failed| Duration::from_secs(u64::from(failed) * 10), 3);
+        assert_eq!(policy.delay(1), Some(Duration::from_secs(10)));
+        assert_eq!(policy.delay(2), Some(Duration::from_secs(20)));
+        assert_eq!(policy.delay(3), None, "the third attempt was the last");
     }
 }

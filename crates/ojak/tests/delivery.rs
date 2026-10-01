@@ -149,11 +149,7 @@ impl SenderKeys for Keys {
 
 fn fast() -> DelivererConfig {
     DelivererConfig {
-        retry: RetryPolicy {
-            initial: Duration::from_millis(1),
-            max_delay: Duration::from_millis(1),
-            max_attempts: 3,
-        },
+        retry: RetryPolicy::exponential(Duration::from_millis(1), Duration::from_millis(1), 3),
         ..DelivererConfig::default()
     }
 }
@@ -580,11 +576,7 @@ async fn a_batch_is_given_up_on_at_its_deadline() {
     // Retries a minute apart, twelve of them: without a deadline, this
     // delivery would take hours to give up on.
     let config = DelivererConfig {
-        retry: RetryPolicy {
-            initial: Duration::from_secs(60),
-            max_delay: Duration::from_secs(3600),
-            max_attempts: 12,
-        },
+        retry: RetryPolicy::exponential(Duration::from_secs(60), Duration::from_secs(3600), 12),
         ..DelivererConfig::default()
     };
     let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), config)

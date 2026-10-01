@@ -39,8 +39,12 @@ Delivery:
     on its own.  An optional priority queue lets sends to a few inboxes, such
     as a reply or a direct message, go ahead of a post to thousands of
     servers;
- -  retries on network errors, 408, 429 and 5xx, with a retry policy you can
-    replace, and honours `Retry-After`;
+ -  retries on network errors, 408, 429 and 5xx, and honours `Retry-After`.
+    `DelivererConfig::retry` says how many attempts a delivery gets and how
+    long to wait after each failure: thirty seconds doubling to an hour, twelve
+    attempts, unless given.  `RetryPolicy::exponential` sets other numbers, and
+    `RetryPolicy::custom` takes a function of how many attempts have failed,
+    for a schedule of your own, such as Mastodon's;
  -  treats every other 4xx as permanent and reports it to `on_failure` with
     its status, which is where your application marks a domain unavailable.
     Which statuses are permanent is `DelivererConfig::permanent`'s to say:

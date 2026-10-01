@@ -537,11 +537,7 @@ async fn a_failing_listener_is_retried() {
     assert!(store.seen().is_empty(), "nothing runs before the worker");
     let worker =
         InboxWorker::new(federation.clone(), store.clone(), queue).with_config(InboxWorkerConfig {
-            retry: RetryPolicy {
-                initial: Duration::from_millis(1),
-                max_delay: Duration::from_millis(1),
-                max_attempts: 3,
-            },
+            retry: RetryPolicy::exponential(Duration::from_millis(1), Duration::from_millis(1), 3),
             ..InboxWorkerConfig::default()
         });
     assert_eq!(worker.run_once().await.unwrap(), 1);
