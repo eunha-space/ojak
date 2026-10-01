@@ -35,7 +35,19 @@ Delivery:
  -  retries on network errors, 408, 429 and 5xx, with a retry policy you can
     replace, and honours `Retry-After`;
  -  treats every other 4xx as permanent and reports it to `on_failure` with
-    its status, which is where your application marks a domain unavailable;
+    its status, which is where your application marks a domain unavailable.
+    Which statuses are permanent is `DelivererConfig::permanent`'s to say:
+    Mastodon, for one, retries a 401 and gives up on a 501;
+ -  holds back deliveries to a destination that keeps failing.  After ten
+    failures in a row, its circuit breaker opens, and deliveries to it are
+    retried without being sent until a minute has passed since the last
+    failure; then they are let through, and one that succeeds closes it.  A
+    held delivery counts as an attempt, as Mastodon counts it.  The breaker
+    is kept for each host, or for each inbox, as Mastodon keeps it, in
+    memory; `DelivererConfig::breaker` sets it, and `None` turns it off;
+ -  reports every attempt, delivered, failed or held, to `on_attempt`, for an
+    application that keeps its own account of which servers answer, as
+    Mastodon's delivery failure tracker does;
  -  runs at most a configured number of deliveries per remote host at once,
     and optionally shares a limit across deliverers, such as every tenant's
     in one process;

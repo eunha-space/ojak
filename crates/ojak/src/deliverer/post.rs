@@ -25,6 +25,12 @@ pub enum DeliveryError {
     /// Something the delivery needs from the application, such as the
     /// sender's key, could not be read just now.
     Unavailable(String),
+    /// It was not sent: its destination has failed too often in a row, and
+    /// the circuit breaker holds deliveries to it until its cool-off ends.
+    Held {
+        /// How long until a delivery is let through again.
+        retry_after: Duration,
+    },
     /// The inbox answered with a status other than success.
     Status {
         status: u16,
@@ -43,14 +49,20 @@ impl DeliveryError {
     /// else — 5xx, a timeout, a broken connection — may pass.
     #[must_use]
     pub fn is_permanent(&self) -> bool {
+        self.is_permanent_by(permanent_status)
+    }
+
+    /// [`DeliveryError::is_permanent`], with `permanent` saying which
+    /// statuses are.
+    #[must_use]
+    pub fn is_permanent_by(&self, permanent: fn(u16) -> bool) -> bool {
         match self {
-            Self::Status { status, .. } => {
-                (400..500).contains(status) && !matches!(status, 408 | 429)
-            }
+            Self::Status { status, .. } => permanent(*status),
             Self::Request(RequestError::Refused(_) | RequestError::InvalidUrl(_))
             | Self::Signing(_) => true,
             Self::Request(RequestError::TooLarge | RequestError::Network(_))
-            | Self::Unavailable(_) => false,
+            | Self::Unavailable(_)
+            | Self::Held { .. } => false,
         }
     }
 
@@ -63,14 +75,23 @@ impl DeliveryError {
         }
     }
 
-    /// How long the inbox asked to be left alone.
+    /// How long the inbox asked to be left alone, or the circuit breaker
+    /// holds it.
     #[must_use]
     pub fn retry_after(&self) -> Option<Duration> {
         match self {
             Self::Status { retry_after, .. } => *retry_after,
+            Self::Held { retry_after } => Some(*retry_after),
             _ => None,
         }
     }
+}
+
+/// Whether an inbox answering `status` is answering what will not change: a
+/// 4xx, except 408 and 429, which say the request came at a bad time.
+#[must_use]
+pub fn permanent_status(status: u16) -> bool {
+    (400..500).contains(&status) && !matches!(status, 408 | 429)
 }
 
 impl fmt::Display for DeliveryError {
@@ -79,6 +100,11 @@ impl fmt::Display for DeliveryError {
             Self::Request(error) => error.fmt(f),
             Self::Signing(error) => write!(f, "signing: {error}"),
             Self::Unavailable(error) => write!(f, "unavailable: {error}"),
+            Self::Held { retry_after } => write!(
+                f,
+                "held: its destination keeps failing; let through in {}s",
+                retry_after.as_secs()
+            ),
             Self::Status { status, body, .. } => write!(f, "HTTP {status}: {body}"),
         }
     }

@@ -7,7 +7,10 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use ojak::client::{Client, ClientConfig, RequestError};
 use ojak::deliverer::{self as delivery, DeliveryError};
-use ojak::deliverer::{Deliverer, DelivererConfig, DeliveryFailure, SenderKeys};
+use ojak::deliverer::{
+    AttemptOutcome, BreakerScope, CircuitBreaker, Deliverer, DelivererConfig, DeliveryAttempt,
+    DeliveryFailure, SenderKeys,
+};
 use ojak::queue::{MemoryQueue, QueueError, RetryPolicy};
 use ojak::sig::signature::{self, PrivateKey};
 use ojak::sig::{Scheme, SenderKey};
@@ -269,6 +272,112 @@ async fn retries_stop_at_the_policy_limit() {
     let records = deliverer.queue().records();
     assert!(records[0].failed);
     assert_eq!(inbox.received().len(), 3, "max_attempts is 3");
+}
+
+#[tokio::test]
+async fn a_destination_that_keeps_failing_is_held_until_its_cool_off_ends() {
+    let inbox = Inbox::answering([Answer::Status(503); 2]);
+    let url = serve(inbox.clone()).await;
+    let attempts: Arc<Mutex<Vec<DeliveryAttempt>>> = Arc::default();
+    let seen = attempts.clone();
+    let deliverer = Deliverer::new(
+        MemoryQueue::new(),
+        Keys,
+        client(),
+        DelivererConfig {
+            concurrency: 1,
+            breaker: Some(CircuitBreaker {
+                threshold: 2,
+                cool_off: Duration::from_millis(300),
+                scope: BreakerScope::Inbox,
+            }),
+            retry: RetryPolicy {
+                max_attempts: 10,
+                ..fast().retry
+            },
+            ..fast()
+        },
+    )
+    .on_attempt(move |attempt| seen.lock().unwrap().push(attempt.clone()));
+
+    for n in 0..4 {
+        deliverer
+            .send("alice", &json!({ "n": n }), [url.clone()])
+            .await
+            .unwrap();
+    }
+    deliverer.run_once().await.unwrap();
+
+    // Two failures open it; the other two are held without a request.
+    assert_eq!(inbox.received().len(), 2);
+    let outcomes: Vec<AttemptOutcome> = attempts
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|attempt| attempt.outcome.clone())
+        .collect();
+    assert_eq!(outcomes.len(), 4);
+    assert!(matches!(
+        outcomes[0],
+        AttemptOutcome::Failed {
+            status: Some(503),
+            permanent: false,
+            ..
+        }
+    ));
+    assert_eq!(outcomes[2..], [AttemptOutcome::Held, AttemptOutcome::Held]);
+    // The two that failed are due again, and held too; the held ones are
+    // not due before the cool-off ends.
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    assert_eq!(deliverer.run_once().await.unwrap(), 2);
+    assert_eq!(inbox.received().len(), 2);
+
+    tokio::time::sleep(Duration::from_millis(350)).await;
+    drain(&deliverer, 3).await;
+    assert_eq!(inbox.received().len(), 6, "let through once it cooled off");
+    assert!(
+        deliverer
+            .queue()
+            .records()
+            .iter()
+            .all(|record| record.complete)
+    );
+    assert_eq!(
+        attempts.lock().unwrap().last().unwrap().outcome,
+        AttemptOutcome::Delivered
+    );
+}
+
+#[tokio::test]
+async fn which_statuses_are_permanent_is_the_applications_to_say() {
+    // Mastodon's rule: 501 and 4xx but 401, 408 and 429.
+    fn mastodon(status: u16) -> bool {
+        status == 501 || ((400..500).contains(&status) && !matches!(status, 401 | 408 | 429))
+    }
+    let inbox = Inbox::answering([
+        Answer::Status(401),
+        Answer::Status(401),
+        Answer::Status(501),
+    ]);
+    let url = serve(inbox.clone()).await;
+    let deliverer = Deliverer::new(
+        MemoryQueue::new(),
+        Keys,
+        client(),
+        DelivererConfig {
+            permanent: mastodon,
+            ..fast()
+        },
+    );
+
+    deliverer.send("alice", &json!({}), [url]).await.unwrap();
+    drain(&deliverer, 4).await;
+
+    // A 401 in both schemes is retried; the 501 after it is not.
+    assert_eq!(inbox.received().len(), 3);
+    let records = deliverer.queue().records();
+    assert!(records[0].failed);
+    assert_eq!(records[0].job.attempts, 2);
 }
 
 #[tokio::test]

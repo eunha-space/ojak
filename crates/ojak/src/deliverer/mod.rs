@@ -18,7 +18,7 @@
 
 mod post;
 
-pub use post::{DeliveryError, deliver};
+pub use post::{DeliveryError, deliver, permanent_status};
 
 use crate::client::Client;
 use crate::portable::ApUri;
@@ -30,7 +30,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::{Notify, Semaphore};
 use url::Url;
 
@@ -91,6 +91,86 @@ pub struct DeliveryFailure {
     pub deadline: bool,
 }
 
+/// One attempt at a delivery, as it came out.
+#[derive(Clone, Debug)]
+pub struct DeliveryAttempt {
+    /// The inbox; a portable one's `ap` URI, percent-encoded.
+    pub inbox: Url,
+    pub sender: String,
+    pub outcome: AttemptOutcome,
+}
+
+/// How an attempt came out.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AttemptOutcome {
+    /// The inbox accepted it.
+    Delivered,
+    /// It was sent and not accepted, or could not be sent. It is tried again
+    /// unless `permanent`, or the retry policy or its batch's deadline has
+    /// run out, which the failure handler is then told of.
+    Failed {
+        /// The status the inbox answered with, if it answered.
+        status: Option<u16>,
+        /// Whether the answer will not change, by
+        /// [`DelivererConfig::permanent`].
+        permanent: bool,
+        error: String,
+    },
+    /// It was not sent, because the circuit breaker for its destination is
+    /// open. It is tried again as a failure is.
+    Held,
+}
+
+/// Holding back deliveries to a destination that keeps failing, rather than
+/// sending each one to fail in turn.
+///
+/// After `threshold` failures in a row a destination's breaker opens, and
+/// deliveries to it are held — retried as failures, without a request —
+/// until `cool_off` has passed since its last failure. Then they are let
+/// through: one that succeeds closes it, one that fails holds the rest for
+/// another `cool_off`. A failure is what may pass: a 5xx, 408, 429, or no
+/// answer. An answer that will not change is the server working, and closes
+/// it.
+///
+/// It is kept in memory, for each deliverer: deliverers in several processes
+/// each count their own failures.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CircuitBreaker {
+    /// Failures in a row that open it.
+    pub threshold: u32,
+    /// How long it stays open after the last failure.
+    pub cool_off: Duration,
+    /// What one breaker is kept for.
+    pub scope: BreakerScope,
+}
+
+/// What a circuit breaker is kept for.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BreakerScope {
+    /// Each host: a server that is down fails every inbox on it.
+    Host,
+    /// Each inbox, as Mastodon keeps its breakers.
+    Inbox,
+}
+
+impl Default for CircuitBreaker {
+    /// Mastodon's: ten failures in a row, a minute's cool-off, for each host.
+    fn default() -> Self {
+        Self {
+            threshold: 10,
+            cool_off: Duration::from_secs(60),
+            scope: BreakerScope::Host,
+        }
+    }
+}
+
+/// A destination's failures in a row, and when the last was.
+#[derive(Clone, Copy, Debug)]
+struct Breaker {
+    failures: u32,
+    last: Instant,
+}
+
 /// How the delivery loop behaves.
 #[derive(Clone, Debug)]
 pub struct DelivererConfig {
@@ -124,6 +204,13 @@ pub struct DelivererConfig {
     /// servers waits for every one of those: two and a half minutes behind
     /// three posts to 9,258 servers. Off unless given.
     pub priority: Option<Priority>,
+    /// Holding back deliveries to a destination that keeps failing. On by
+    /// default; `None` sends every delivery whatever came of the last.
+    pub breaker: Option<CircuitBreaker>,
+    /// Which statuses an inbox answers with say that trying again cannot
+    /// help, so that the delivery is given up on at once:
+    /// [`permanent_status`] unless given.
+    pub permanent: fn(u16) -> bool,
 }
 
 /// Where sends to few inboxes go, and how few is few.
@@ -148,6 +235,8 @@ impl Default for DelivererConfig {
             idle_poll: Duration::from_secs(30),
             shared_limit: None,
             priority: None,
+            breaker: Some(CircuitBreaker::default()),
+            permanent: permanent_status,
         }
     }
 }
@@ -254,6 +343,7 @@ impl Delivery {
 }
 
 type FailureHandler = Arc<dyn Fn(&DeliveryFailure) + Send + Sync>;
+type AttemptHandler = Arc<dyn Fn(&DeliveryAttempt) + Send + Sync>;
 
 /// Queues activities and sends them.
 pub struct Deliverer<Q, K> {
@@ -265,7 +355,10 @@ pub struct Deliverer<Q, K> {
     /// The scheme each host last accepted.
     schemes: Mutex<HashMap<String, Scheme>>,
     hosts: Mutex<HashMap<String, Arc<Semaphore>>>,
+    /// Each destination's failures in a row, while it has any.
+    breakers: Mutex<HashMap<String, Breaker>>,
     on_failure: Option<FailureHandler>,
+    on_attempt: Option<AttemptHandler>,
 }
 
 impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
@@ -278,8 +371,22 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             wake: Notify::new(),
             schemes: Mutex::new(HashMap::new()),
             hosts: Mutex::new(HashMap::new()),
+            breakers: Mutex::new(HashMap::new()),
             on_failure: None,
+            on_attempt: None,
         }
+    }
+
+    /// Call `handler` after every attempt at a delivery, whatever came of it:
+    /// where an application keeps its own account of which servers answer,
+    /// as Mastodon's delivery failure tracker does.
+    #[must_use]
+    pub fn on_attempt(
+        mut self,
+        handler: impl Fn(&DeliveryAttempt) + Send + Sync + 'static,
+    ) -> Self {
+        self.on_attempt = Some(Arc::new(handler));
+        self
     }
 
     /// Call `handler` for every delivery given up on, which is where an
@@ -564,6 +671,21 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             return;
         }
         let outcome = self.attempt(&delivery).await;
+        if let Some(handler) = &self.on_attempt {
+            handler(&DeliveryAttempt {
+                inbox: delivery.inbox.clone(),
+                sender: delivery.sender.clone(),
+                outcome: match &outcome {
+                    Ok(()) => AttemptOutcome::Delivered,
+                    Err(DeliveryError::Held { .. }) => AttemptOutcome::Held,
+                    Err(error) => AttemptOutcome::Failed {
+                        status: error.status(),
+                        permanent: error.is_permanent_by(self.config.permanent),
+                        error: error.to_string(),
+                    },
+                },
+            });
+        }
         // A backend error here leaves the job claimed; its lease lapses and it
         // is tried again, which is the safe way to be wrong.
         let _ = match outcome {
@@ -608,6 +730,18 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         key: &SenderKey,
     ) -> Result<(), DeliveryError> {
         let host = target.host_str().unwrap_or_default().to_owned();
+        let breaker = self.config.breaker.map(|breaker| {
+            let key = match breaker.scope {
+                BreakerScope::Host => host.clone(),
+                BreakerScope::Inbox => target.as_str().to_owned(),
+            };
+            (breaker, key)
+        });
+        if let Some((breaker, key)) = &breaker
+            && let Some(retry_after) = self.held(breaker, key)
+        {
+            return Err(DeliveryError::Held { retry_after });
+        }
         let permit = self.host_semaphore(&host).acquire_owned().await;
         let shared_permit = match &self.config.shared_limit {
             Some(limit) => Some(limit.clone().acquire_owned().await),
@@ -623,12 +757,53 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         let result = post::deliver(&self.client, target, body, key, first).await;
         drop(shared_permit);
         drop(permit);
+        if let Some((breaker, key)) = &breaker {
+            let failed = result
+                .as_ref()
+                .err()
+                .is_some_and(|error| !error.is_permanent_by(self.config.permanent));
+            self.record(breaker, key, failed);
+        }
         let accepted = result?;
         self.schemes
             .lock()
             .expect("scheme lock")
             .insert(host, accepted);
         Ok(())
+    }
+
+    /// How long deliveries to `key` are held, if its breaker is open.
+    fn held(&self, breaker: &CircuitBreaker, key: &str) -> Option<Duration> {
+        let breakers = self.breakers.lock().expect("breaker lock");
+        let state = breakers.get(key)?;
+        if state.failures < breaker.threshold.max(1) {
+            return None;
+        }
+        breaker
+            .cool_off
+            .checked_sub(state.last.elapsed())
+            .filter(|left| !left.is_zero())
+    }
+
+    /// Count a failure against `key`, or close its breaker.
+    fn record(&self, breaker: &CircuitBreaker, key: &str, failed: bool) {
+        let mut breakers = self.breakers.lock().expect("breaker lock");
+        if !failed {
+            breakers.remove(key);
+            return;
+        }
+        // Destinations that failed once and were not tried again since are
+        // forgotten, so that the map holds what is failing now.
+        if breakers.len() >= 4096 {
+            let forget = breaker.cool_off.max(Duration::from_secs(600));
+            breakers.retain(|_, state| state.last.elapsed() < forget);
+        }
+        let state = breakers.entry(key.to_owned()).or_insert(Breaker {
+            failures: 0,
+            last: Instant::now(),
+        });
+        state.failures = state.failures.saturating_add(1);
+        state.last = Instant::now();
     }
 
     fn host_semaphore(&self, host: &str) -> Arc<Semaphore> {
@@ -647,7 +822,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         error: &DeliveryError,
     ) -> Result<(), QueueError> {
         let attempts = job.attempts + 1;
-        let delay = if error.is_permanent() {
+        let delay = if error.is_permanent_by(self.config.permanent) {
             None
         } else {
             self.config.retry.delay(attempts)

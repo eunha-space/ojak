@@ -26,9 +26,8 @@ Not yet supported
  -  Typed dispatch: dispatchers take and return JSON (`serde_json::Value`),
     and cannot yet be registered as `object::<Note>` returning vocabulary
     types.
- -  Pausing delivery to a host that keeps failing, and attaching integrity
-    proofs as part of delivery.  Your application can sign an activity with
-    its `ProofSigner` before sending it.
+ -  Attaching integrity proofs as part of delivery.  Your application can
+    sign an activity with its `ProofSigner` before sending it.
  -  A test federation that records what a whole federation would have
     sent.  `MemoryQueue` records what was queued, and
     `ojak::testing::Remote` is another server to federate with in tests.
