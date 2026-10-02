@@ -53,7 +53,10 @@ Delivery:
  -  treats every other 4xx as permanent and reports it to `on_failure` with
     its status, which is where your application marks a domain unavailable.
     Which statuses are permanent is `DelivererConfig::permanent`'s to say:
-    Mastodon, for one, retries a 401 and gives up on a 501;
+    Mastodon, for one, retries a 401 and gives up on a 501.  A status
+    `DelivererConfig::permanent_if_sender_gone` names is permanent too when
+    `SenderKeys::gone` says the sender is gone for good, as Mastodon gives up
+    on a 401 to a deleted or suspended account's delivery;
  -  holds back deliveries to a destination that keeps failing.  After ten
     failures in a row, its circuit breaker opens, and deliveries to it are
     retried without being sent until a minute has passed since the last

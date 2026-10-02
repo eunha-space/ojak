@@ -41,6 +41,17 @@ pub trait SenderKeys: Send + Sync + 'static {
         &self,
         sender: &str,
     ) -> impl Future<Output = Result<Option<SenderKey>, QueueError>> + Send;
+
+    /// Whether `sender` is gone for good, so that a status
+    /// [`DelivererConfig::permanent_if_sender_gone`] names will not change:
+    /// Mastodon gives up at once on a 401 to a delivery from an account that
+    /// is deleted or suspended with nothing left to undo
+    /// (`unsalvageable_authorization_failure?`). Asked only after such a
+    /// status; no sender is gone unless the application says so.
+    fn gone(&self, sender: &str) -> impl Future<Output = bool> + Send {
+        let _ = sender;
+        std::future::ready(false)
+    }
 }
 
 /// One key, for an application with one sender: it signs whatever is sent.
@@ -316,6 +327,9 @@ pub struct DelivererConfig {
     /// the other queues have nothing due, as Sidekiq's lighter queues are.
     /// Off unless given; without it such a batch waits in `queue`.
     pub low_priority: Option<String>,
+    /// Which statuses also say so when the sender is gone, by
+    /// [`SenderKeys::gone`]: none unless given.
+    pub permanent_if_sender_gone: fn(u16) -> bool,
     /// Whether a retry waits at least as long as the inbox asked with
     /// `Retry-After`, and a delivery the circuit breaker held at least until
     /// its cool-off ends, rather than only what the retry policy says. On
@@ -348,6 +362,7 @@ impl Default for DelivererConfig {
             breaker: Some(CircuitBreaker::default()),
             permanent: permanent_status,
             low_priority: None,
+            permanent_if_sender_gone: |_| false,
             wait_as_asked: true,
         }
     }
@@ -895,6 +910,10 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             return;
         }
         let outcome = self.attempt(&delivery).await;
+        let permanent = match &outcome {
+            Ok(()) => false,
+            Err(error) => self.ends(&delivery.sender, error).await,
+        };
         if let Some(handler) = &self.on_attempt {
             handler(&DeliveryAttempt {
                 inbox: delivery.inbox.clone(),
@@ -904,7 +923,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                     Err(DeliveryError::Held { .. }) => AttemptOutcome::Held,
                     Err(error) => AttemptOutcome::Failed {
                         status: error.status(),
-                        permanent: error.is_permanent_by(self.config.permanent),
+                        permanent,
                         error: error.to_string(),
                     },
                 },
@@ -918,12 +937,13 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                 self.queue.complete(&job.id).await
             }
             Err(error) => {
-                if error.is_permanent_by(self.config.permanent) {
+                if permanent {
                     let status = error.status();
                     self.settle(&delivery, SettledOutcome::Refused { status })
                         .await;
                 }
-                self.record_failure(&job, &delivery, &error).await
+                self.record_failure(&job, &delivery, &error, permanent)
+                    .await
             }
         };
     }
@@ -937,6 +957,22 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                 outcome,
             })
             .await;
+        }
+    }
+
+    /// Whether `error` ends a delivery from `sender`: a status
+    /// [`DelivererConfig::permanent`] names, or one
+    /// [`DelivererConfig::permanent_if_sender_gone`] names when the sender is
+    /// gone.
+    async fn ends(&self, sender: &str, error: &DeliveryError) -> bool {
+        if error.is_permanent_by(self.config.permanent) {
+            return true;
+        }
+        match error.status() {
+            Some(status) if (self.config.permanent_if_sender_gone)(status) => {
+                self.keys.gone(sender).await
+            }
+            _ => false,
         }
     }
 
@@ -961,7 +997,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         // delivery, and one that fails is passed over rather than retried.
         let mut last = None;
         for target in delivery.targets() {
-            match self.attempt_at(target, &body, &key).await {
+            match self.attempt_at(target, &body, &key, &delivery.sender).await {
                 Ok(()) => return Ok(()),
                 Err(error) => last = Some(error),
             }
@@ -974,6 +1010,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         target: &Url,
         body: &[u8],
         key: &SenderKey,
+        sender: &str,
     ) -> Result<(), DeliveryError> {
         let host = target.host_str().unwrap_or_default().to_owned();
         let breaker = self.config.breaker.map(|breaker| {
@@ -1004,10 +1041,10 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         drop(shared_permit);
         drop(permit);
         if let Some((breaker, key)) = &breaker {
-            let failed = result
-                .as_ref()
-                .err()
-                .is_some_and(|error| !error.is_permanent_by(self.config.permanent));
+            let failed = match &result {
+                Ok(_) => false,
+                Err(error) => !self.ends(sender, error).await,
+            };
             self.breakers.record(breaker, key, failed).await;
         }
         let accepted = result?;
@@ -1032,11 +1069,10 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         job: &Job,
         delivery: &Delivery,
         error: &DeliveryError,
+        permanent: bool,
     ) -> Result<(), QueueError> {
         let attempts = job.attempts + 1;
-        let delay = if error.is_permanent_by(self.config.permanent)
-            || delivery.max_attempts.is_some_and(|max| attempts >= max)
-        {
+        let delay = if permanent || delivery.max_attempts.is_some_and(|max| attempts >= max) {
             None
         } else {
             self.config.retry.delay(attempts)

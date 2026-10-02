@@ -155,7 +155,7 @@ fn fast() -> DelivererConfig {
 }
 
 /// Run the delivery loop until nothing is due or `rounds` batches have run.
-async fn drain(deliverer: &Deliverer<MemoryQueue, Keys>, rounds: usize) {
+async fn drain<K: SenderKeys>(deliverer: &Deliverer<MemoryQueue, K>, rounds: usize) {
     for _ in 0..rounds {
         tokio::time::sleep(Duration::from_millis(5)).await;
         deliverer.run_once().await.unwrap();
@@ -1089,4 +1089,74 @@ async fn deliverers_sharing_a_breaker_store_count_failures_together() {
     second.send("alice", &json!({}), [url]).await.unwrap();
     drain(&second, 1).await;
     assert_eq!(inbox.received().len(), 2, "held by the shared breaker");
+}
+
+/// Keys for `alice`, who is here, and `gone`, who is deleted.
+struct GoneKeys;
+
+impl SenderKeys for GoneKeys {
+    async fn key(&self, sender: &str) -> Result<Option<SenderKey>, QueueError> {
+        Ok(matches!(sender, "alice" | "gone").then(key))
+    }
+
+    async fn gone(&self, sender: &str) -> bool {
+        sender == "gone"
+    }
+}
+
+/// Mastodon's `response_error_unsalvageable?`, under which a 401 is retried.
+fn unsalvageable(status: u16) -> bool {
+    status == 501 || ((400..500).contains(&status) && !matches!(status, 401 | 408 | 429))
+}
+
+/// As Mastodon's `unsalvageable_authorization_failure?`: a 401 is given up on
+/// at once when the sender is gone, and retried otherwise.
+#[tokio::test]
+async fn a_401_is_final_for_a_sender_that_is_gone() {
+    let inbox = Inbox::answering([Answer::Status(401); 4]);
+    let url = serve(inbox.clone()).await;
+    let attempts: Arc<Mutex<Vec<DeliveryAttempt>>> = Arc::default();
+    let seen = attempts.clone();
+    let deliverer = Deliverer::new(
+        MemoryQueue::new(),
+        GoneKeys,
+        client(),
+        DelivererConfig {
+            permanent: unsalvageable,
+            permanent_if_sender_gone: |status| status == 401,
+            ..fast()
+        },
+    )
+    .on_attempt(move |attempt| seen.lock().unwrap().push(attempt.clone()));
+
+    deliverer
+        .send("gone", &json!({"n": 1}), [url.clone()])
+        .await
+        .unwrap();
+    drain(&deliverer, 3).await;
+    let records = deliverer.queue().records();
+    assert!(records[0].failed);
+    assert_eq!(inbox.received().len(), 2, "one attempt, in both schemes");
+    assert!(matches!(
+        attempts.lock().unwrap()[0].outcome,
+        AttemptOutcome::Failed {
+            status: Some(401),
+            permanent: true,
+            ..
+        }
+    ));
+
+    // Each attempt tries both schemes; the second attempt is accepted.
+    let inbox = Inbox::answering([Answer::Status(401); 2]);
+    let url = serve(inbox.clone()).await;
+    deliverer
+        .send("alice", &json!({"n": 2}), [url])
+        .await
+        .unwrap();
+    drain(&deliverer, 5).await;
+    let records = deliverer.queue().records();
+    assert!(
+        records[1].complete,
+        "a 401 to a sender who is here is retried"
+    );
 }
