@@ -34,12 +34,14 @@ unauthenticated.
 
 1.  The body is bounded, at 1 MiB (`MAX_INBOX_BODY`), and must be a JSON
     object with an `actor`.
-2.  A `blocked` hook sees the host the activity claims to come from, or a
-    portable actor's DID, before any key is fetched, so a blocked server costs
-    nothing. A blocked activity is answered 202 and dropped, so the server
-    does not retry it. A hook that fails is a 500. The hook is asked about
-    the host of the signature's key too, before the key is looked for, and
-    a request signed with a key on a blocked server does not verify.
+2.  A `blocked` hook is asked first about the host of the HTTP signature's
+    key, before the key is looked for: a request signed with a key on a
+    blocked server is refused 403, with the body Mastodon's
+    `SignatureVerification` renders,
+    `{"error":"Public key not found for key …"}`. It then sees the host the
+    activity claims to come from, or a portable actor's DID, before any key
+    is fetched, so a blocked server costs nothing: such an activity is
+    answered 202 and dropped. A hook that fails is a 500.
 3.  The HTTP signature is parsed and checked. A draft-cavage
     signature covers `(request-target)`, `host`, and `date` or `(created)`;
     an RFC 9421 one covers `@method` and `@target-uri`. Either way the digest
@@ -186,10 +188,13 @@ listener inside the request, where a listener that fails is answered 500, so
 the sender retries. A queue that refuses the activity is a 500 too.
 
 An activity processed once is not processed again: its `id` goes into the
-key-value store, under the canonical origin it arrived at, for a day, once a
-listener is found for it. The mark is taken back when the listener fails
-without a queue or the activity could not be queued, so that the retry is
-processed.
+key-value store, with a digest of the activity as it arrived, under the
+canonical origin it arrived at, for a day, once a listener is found for it.
+Another activity under an `id` already seen is processed, since Mastodon
+remembers no ids and names some activities alike (every `Reject` of a
+`QuoteRequest` an account sends has one `id`). The mark is taken back when the
+listener fails without a queue or the activity could not be queued, so that the
+retry is processed.
 
 
 Forwarding
@@ -240,20 +245,21 @@ relay's actor. Running a relay is not supported yet.
 Errors and responses
 --------------------
 
-| Outcome                                         | Status |
-| ----------------------------------------------- | ------ |
-| queued, run, blocked, duplicate, no listener    | 202    |
-| not readable as the listener's type             | 202    |
-| unauthenticated `Delete`                        | 202    |
-| forwarded and not established                   | 202    |
-| body too large                                  | 413    |
-| not a JSON object, no `actor`, not JSON-LD      | 400    |
-| actor or id on another origin than sender       | 401    |
-| unauthenticated                                 | 401    |
-| portable, proof failed, `Delete` included       | 401    |
-| not a POST                                      | 405    |
-| `blocked` failed, listener failed with no queue | 500    |
-| could not be queued                             | 500    |
+| Outcome                                            | Status |
+| -------------------------------------------------- | ------ |
+| queued, run, blocked actor, duplicate, no listener | 202    |
+| not readable as the listener's type                | 202    |
+| unauthenticated `Delete`                           | 202    |
+| forwarded and not established                      | 202    |
+| body too large                                     | 413    |
+| not a JSON object, no `actor`, not JSON-LD         | 400    |
+| actor or id on another origin than sender          | 401    |
+| unauthenticated                                    | 401    |
+| portable, proof failed, `Delete` included          | 401    |
+| signed with a key on a blocked server              | 403    |
+| not a POST                                         | 405    |
+| `blocked` failed, listener failed with no queue    | 500    |
+| could not be queued                                | 500    |
 
 A 400 or 401 says why in plain text. Every failure is reported to
 `.on_error`.

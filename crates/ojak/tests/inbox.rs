@@ -447,6 +447,21 @@ async fn an_activity_is_processed_once_and_unknown_ones_are_dropped() {
     }
     assert_eq!(store.seen().len(), 1, "the second delivery is a duplicate");
 
+    // Another activity under the same id is not a duplicate: Mastodon names
+    // every Reject of a QuoteRequest an account sends alike.
+    let mut another = activity.clone();
+    another["object"] = json!(format!("https://{HOST}/ap/users/2"));
+    assert_eq!(
+        deliver(
+            &federation,
+            &store,
+            post("/ap/inbox", &key_id, &another, &another)
+        )
+        .await,
+        202
+    );
+    assert_eq!(store.seen().len(), 2, "what arrived differs");
+
     let unknown = json!({
         "@context": "https://www.w3.org/ns/activitystreams",
         "id": format!("{bob}/views/1"),
@@ -463,9 +478,11 @@ async fn an_activity_is_processed_once_and_unknown_ones_are_dropped() {
         .await,
         202
     );
-    assert_eq!(store.seen().len(), 1);
+    assert_eq!(store.seen().len(), 2);
 }
 
+/// Refused 403, as Mastodon's `keypair_from_key_id` refuses a key on a
+/// domain it does not federate with, and without fetching the key.
 #[tokio::test]
 async fn a_blocked_server_costs_no_key_fetch() {
     let remote = Remote::default();
@@ -484,7 +501,7 @@ async fn a_blocked_server_costs_no_key_fetch() {
             post("/ap/inbox", &key_id, &activity, &activity)
         )
         .await,
-        202
+        403
     );
     assert!(store.seen().is_empty());
     assert_eq!(remote.fetches.load(Ordering::SeqCst), 0);

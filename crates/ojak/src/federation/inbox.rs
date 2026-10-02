@@ -399,6 +399,31 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
 
     let portable = ApUri::parse(&actor);
 
+    // A request signed with a key on a blocked server is refused, 403, before
+    // the key is looked for, as Mastodon's `keypair_from_key_id` refuses it,
+    // and with the body its `require_actor_signature!` renders.
+    if portable.is_none() {
+        match signer::blocked_key_id(&context, body).await {
+            Ok(Some(key_id)) => {
+                let mut response = empty(StatusCode::FORBIDDEN);
+                *response.body_mut() =
+                    json!({ "error": format!("Public key not found for key {key_id}") })
+                        .to_string()
+                        .into_bytes();
+                response.headers_mut().insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/json; charset=utf-8"),
+                );
+                return response;
+            }
+            Ok(None) => {}
+            Err(error) => {
+                context.report(&error);
+                return empty(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    }
+
     // A blocked server costs nothing: no key is fetched for it. A portable
     // actor has no server, and is blocked by its DID.
     if let Some(blocked) = &inner.blocked {
@@ -579,10 +604,20 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
 
     // Once each: the id is remembered under the origin it arrived at, so
     // that the same activity delivered to two instances in one process is
-    // processed by both.
+    // processed by both, and with a digest of what arrived, so that another
+    // activity under an id already seen is still processed. Mastodon itself
+    // remembers no ids, and names some activities alike: every Reject of a
+    // QuoteRequest an account sends has the one id.
+    let digest = id.as_ref().map(|_| {
+        use base64::Engine as _;
+        use sha2::Digest as _;
+        let bytes = serde_json::to_vec(&document).unwrap_or_default();
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(&bytes))
+    });
     let seen = id
         .as_deref()
-        .map(|id| ["ojak", "inbox", origin.as_str(), id]);
+        .zip(digest.as_deref())
+        .map(|(id, digest)| ["ojak", "inbox", origin.as_str(), id, digest]);
     if let (Some(seen), Some(settings)) = (&seen, &inner.signed_fetch) {
         match settings
             .kv

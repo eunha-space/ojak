@@ -155,6 +155,49 @@ pub(super) async fn authenticate<D: Clone + Send + Sync + 'static>(
         })
 }
 
+/// The key id the request `context` was made for is signed with, when its key
+/// is on a host [`super::Builder::blocked`] refuses: `Ok(None)` for a request
+/// that is unsigned, malformed or signed from elsewhere, which the rest of
+/// the checks then take up.
+///
+/// Mastodon's `SignatureVerification#keypair_from_key_id` asks this first of
+/// any signed request, and refuses one from such a host with 403 before it
+/// looks for the key.
+pub(super) async fn blocked_key_id<D: Clone + Send + Sync + 'static>(
+    context: &Context<D>,
+    body: &[u8],
+) -> Result<Option<String>, Error> {
+    let Some(blocked) = &context.inner.federation.blocked else {
+        return Ok(None);
+    };
+    let Some(info) = context.inner.request.as_ref() else {
+        return Ok(None);
+    };
+    let headers: Vec<(&str, &str)> = info
+        .headers
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    let request = Request {
+        method: &info.method,
+        path_and_query: &info.path_and_query,
+        headers: &headers,
+        body,
+    };
+    let Ok(signature) = verification::parse(&request) else {
+        return Ok(None);
+    };
+    let Some(host) = Url::parse(&signature.key_id)
+        .ok()
+        .and_then(|key| key.host_str().map(str::to_owned))
+    else {
+        return Ok(None);
+    };
+    Ok(blocked(context.clone(), host)
+        .await?
+        .then_some(signature.key_id))
+}
+
 async fn authenticate_signed<D: Clone + Send + Sync + 'static>(
     context: &Context<D>,
     body: &[u8],
