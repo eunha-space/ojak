@@ -132,8 +132,9 @@ pub enum AttemptOutcome {
 /// answer. An answer that will not change is the server working, and closes
 /// it.
 ///
-/// It is kept in memory, for each deliverer: deliverers in several processes
-/// each count their own failures.
+/// It is kept in memory, for each deliverer, unless the application gives
+/// the deliverer a [`BreakerStore`] of its own: deliverers in several
+/// processes sharing one store count their failures together.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CircuitBreaker {
     /// Failures in a row that open it.
@@ -169,6 +170,106 @@ impl Default for CircuitBreaker {
 struct Breaker {
     failures: u32,
     last: Instant,
+}
+
+/// A future a [`BreakerStore`] answers with.
+pub type BreakerFuture<'a, T> = std::pin::Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Where circuit breakers are kept: in the deliverer's memory unless the
+/// application gives it a store of its own, such as one in Redis that the
+/// deliverers of every process share, as Mastodon keeps its Stoplights.
+pub trait BreakerStore: Send + Sync + 'static {
+    /// How long deliveries to `key` are held, if its breaker is open.
+    fn held<'a>(
+        &'a self,
+        breaker: &'a CircuitBreaker,
+        key: &'a str,
+    ) -> BreakerFuture<'a, Option<Duration>>;
+
+    /// Count a failure against `key`, or, when it did not fail, close its
+    /// breaker.
+    fn record<'a>(
+        &'a self,
+        breaker: &'a CircuitBreaker,
+        key: &'a str,
+        failed: bool,
+    ) -> BreakerFuture<'a, ()>;
+}
+
+/// Breakers in memory, each deliverer its own: the default.
+#[derive(Default)]
+pub struct MemoryBreakers {
+    breakers: Mutex<HashMap<String, Breaker>>,
+}
+
+impl BreakerStore for MemoryBreakers {
+    fn held<'a>(
+        &'a self,
+        breaker: &'a CircuitBreaker,
+        key: &'a str,
+    ) -> BreakerFuture<'a, Option<Duration>> {
+        let held = (|| {
+            let breakers = self.breakers.lock().expect("breaker lock");
+            let state = breakers.get(key)?;
+            if state.failures < breaker.threshold.max(1) {
+                return None;
+            }
+            breaker
+                .cool_off
+                .checked_sub(state.last.elapsed())
+                .filter(|left| !left.is_zero())
+        })();
+        Box::pin(std::future::ready(held))
+    }
+
+    fn record<'a>(
+        &'a self,
+        breaker: &'a CircuitBreaker,
+        key: &'a str,
+        failed: bool,
+    ) -> BreakerFuture<'a, ()> {
+        let mut breakers = self.breakers.lock().expect("breaker lock");
+        if !failed {
+            breakers.remove(key);
+            return Box::pin(std::future::ready(()));
+        }
+        // Destinations that failed once and were not tried again since are
+        // forgotten, so that the map holds what is failing now.
+        if breakers.len() >= 4096 {
+            let forget = breaker.cool_off.max(Duration::from_secs(600));
+            breakers.retain(|_, state| state.last.elapsed() < forget);
+        }
+        let state = breakers.entry(key.to_owned()).or_insert(Breaker {
+            failures: 0,
+            last: Instant::now(),
+        });
+        state.failures = state.failures.saturating_add(1);
+        state.last = Instant::now();
+        Box::pin(std::future::ready(()))
+    }
+}
+
+/// A delivery that is done with, other than by running out of retries or
+/// its batch's deadline: what [`Deliverer::on_settled`] is told.
+#[derive(Clone, Debug)]
+pub struct Settled {
+    pub inbox: Url,
+    pub sender: String,
+    /// The tag of the batch it was sent in, if any.
+    pub tag: Option<String>,
+    pub outcome: SettledOutcome,
+}
+
+/// How a delivery settled.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SettledOutcome {
+    /// The inbox accepted it.
+    Delivered,
+    /// The inbox answered with a status that will not change, by
+    /// [`DelivererConfig::permanent`].
+    Refused { status: Option<u16> },
+    /// The application's [`Deliverer::skip_if`] dropped it unsent.
+    Skipped,
 }
 
 /// How the delivery loop behaves.
@@ -211,6 +312,10 @@ pub struct DelivererConfig {
     /// help, so that the delivery is given up on at once:
     /// [`permanent_status`] unless given.
     pub permanent: fn(u16) -> bool,
+    /// A lane for what can wait — [`Batch::low_priority`] — claimed only once
+    /// the other queues have nothing due, as Sidekiq's lighter queues are.
+    /// Off unless given; without it such a batch waits in `queue`.
+    pub low_priority: Option<String>,
     /// Whether a retry waits at least as long as the inbox asked with
     /// `Retry-After`, and a delivery the circuit breaker held at least until
     /// its cool-off ends, rather than only what the retry policy says. On
@@ -242,6 +347,7 @@ impl Default for DelivererConfig {
             priority: None,
             breaker: Some(CircuitBreaker::default()),
             permanent: permanent_status,
+            low_priority: None,
             wait_as_asked: true,
         }
     }
@@ -273,6 +379,11 @@ pub struct Batch {
     /// activity is about, so that its `Delete` cannot overtake its `Create`
     /// while the `Create` is being retried. Inboxes do not wait on each other.
     pub ordering_key: Option<String>,
+    /// How many times each delivery is tried at most, when fewer than the
+    /// retry policy allows: its backoff stays the policy's.
+    pub max_attempts: Option<u32>,
+    /// Sent in [`DelivererConfig::low_priority`]'s lane, when there is one.
+    pub low_priority: bool,
 }
 
 /// One delivery, as it waits in the queue.
@@ -287,6 +398,7 @@ struct Delivery {
     tag: Option<String>,
     /// Seconds since the Unix epoch.
     deadline: Option<u64>,
+    max_attempts: Option<u32>,
 }
 
 impl Delivery {
@@ -298,6 +410,7 @@ impl Delivery {
             sender: sender.to_owned(),
             tag: batch.tag.clone(),
             deadline: batch.deadline.map(unix),
+            max_attempts: batch.max_attempts,
         }
     }
 
@@ -321,6 +434,9 @@ impl Delivery {
         if let Some(deadline) = self.deadline {
             payload["deadline"] = deadline.into();
         }
+        if let Some(max_attempts) = self.max_attempts {
+            payload["max_attempts"] = max_attempts.into();
+        }
         payload
     }
 
@@ -342,6 +458,10 @@ impl Delivery {
                 .and_then(Value::as_str)
                 .map(str::to_owned),
             deadline: payload.get("deadline").and_then(Value::as_u64),
+            max_attempts: payload
+                .get("max_attempts")
+                .and_then(Value::as_u64)
+                .and_then(|n| u32::try_from(n).ok()),
         })
     }
 
@@ -358,6 +478,8 @@ impl Delivery {
 type FailureHandler = Arc<dyn Fn(&DeliveryFailure) + Send + Sync>;
 type AttemptHandler = Arc<dyn Fn(&DeliveryAttempt) + Send + Sync>;
 type SkipPredicate = Arc<dyn Fn(&Url, &Value) -> bool + Send + Sync>;
+type SettledHandler =
+    Arc<dyn Fn(Settled) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 /// Queues activities and sends them.
 pub struct Deliverer<Q, K> {
@@ -370,9 +492,10 @@ pub struct Deliverer<Q, K> {
     schemes: Mutex<HashMap<String, Scheme>>,
     hosts: Mutex<HashMap<String, Arc<Semaphore>>>,
     /// Each destination's failures in a row, while it has any.
-    breakers: Mutex<HashMap<String, Breaker>>,
+    breakers: Arc<dyn BreakerStore>,
     on_failure: Option<FailureHandler>,
     on_attempt: Option<AttemptHandler>,
+    on_settled: Option<SettledHandler>,
     skip_if: Option<SkipPredicate>,
 }
 
@@ -386,11 +509,37 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             wake: Notify::new(),
             schemes: Mutex::new(HashMap::new()),
             hosts: Mutex::new(HashMap::new()),
-            breakers: Mutex::new(HashMap::new()),
+            breakers: Arc::new(MemoryBreakers::default()),
             on_failure: None,
             on_attempt: None,
+            on_settled: None,
             skip_if: None,
         }
+    }
+
+    /// Keep circuit breakers in `store` rather than in this deliverer's
+    /// memory.
+    #[must_use]
+    pub fn breaker_store(mut self, store: impl BreakerStore) -> Self {
+        self.breakers = Arc::new(store);
+        self
+    }
+
+    /// Await `handler` for every delivery that settles — delivered, refused
+    /// for good, or skipped — before it leaves the queue: where an
+    /// application does what is to follow a delivery having gone through,
+    /// such as leaving the account a follower moved away from once the
+    /// `Follow` of the new one has. A process that stops in between sends
+    /// the delivery again, and calls `handler` again, so it is to be safe to
+    /// repeat.
+    #[must_use]
+    pub fn on_settled<F, Fut>(mut self, handler: F) -> Self
+    where
+        F: Fn(Settled) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        self.on_settled = Some(Arc::new(move |settled| Box::pin(handler(settled))));
+        self
     }
 
     /// Drop, unsent, each delivery that `skip`, given its inbox and its
@@ -466,7 +615,10 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         if inboxes.is_empty() {
             return Ok(());
         }
-        let queue = self.queue_for(inboxes.len());
+        let queue = match (&self.config.low_priority, batch.low_priority) {
+            (Some(low), true) => low.as_str(),
+            _ => self.queue_for(inboxes.len()),
+        };
         match &batch.ordering_key {
             Some(key) => {
                 let jobs = inboxes
@@ -680,14 +832,29 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                     .await?,
             );
         }
+        if let Some(low) = &self.config.low_priority
+            && jobs.len() < limit
+        {
+            jobs.extend(
+                self.queue
+                    .claim(low, limit - jobs.len(), self.config.lease)
+                    .await?,
+            );
+        }
         Ok(jobs)
     }
 
     async fn idle(&self) {
         let mut due = self.queue.next_due(&self.config.queue).await.ok().flatten();
-        if let Some(priority) = &self.config.priority {
-            let first = self.queue.next_due(&priority.queue).await.ok().flatten();
-            due = match (due, first) {
+        let lanes = self
+            .config
+            .priority
+            .iter()
+            .map(|priority| priority.queue.as_str())
+            .chain(self.config.low_priority.as_deref());
+        for lane in lanes {
+            let next = self.queue.next_due(lane).await.ok().flatten();
+            due = match (due, next) {
                 (Some(a), Some(b)) => Some(a.min(b)),
                 (a, b) => a.or(b),
             };
@@ -723,6 +890,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             .as_ref()
             .is_some_and(|skip| skip(&delivery.inbox, &delivery.activity))
         {
+            self.settle(&delivery, SettledOutcome::Skipped).await;
             let _ = self.queue.complete(&job.id).await;
             return;
         }
@@ -745,9 +913,31 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         // A backend error here leaves the job claimed; its lease lapses and it
         // is tried again, which is the safe way to be wrong.
         let _ = match outcome {
-            Ok(()) => self.queue.complete(&job.id).await,
-            Err(error) => self.record_failure(&job, &delivery, &error).await,
+            Ok(()) => {
+                self.settle(&delivery, SettledOutcome::Delivered).await;
+                self.queue.complete(&job.id).await
+            }
+            Err(error) => {
+                if error.is_permanent_by(self.config.permanent) {
+                    let status = error.status();
+                    self.settle(&delivery, SettledOutcome::Refused { status })
+                        .await;
+                }
+                self.record_failure(&job, &delivery, &error).await
+            }
         };
+    }
+
+    async fn settle(&self, delivery: &Delivery, outcome: SettledOutcome) {
+        if let Some(handler) = &self.on_settled {
+            handler(Settled {
+                inbox: delivery.inbox.clone(),
+                sender: delivery.sender.clone(),
+                tag: delivery.tag.clone(),
+                outcome,
+            })
+            .await;
+        }
     }
 
     async fn attempt(&self, delivery: &Delivery) -> Result<(), DeliveryError> {
@@ -794,7 +984,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             (breaker, key)
         });
         if let Some((breaker, key)) = &breaker
-            && let Some(retry_after) = self.held(breaker, key)
+            && let Some(retry_after) = self.breakers.held(breaker, key).await
         {
             return Err(DeliveryError::Held { retry_after });
         }
@@ -818,7 +1008,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                 .as_ref()
                 .err()
                 .is_some_and(|error| !error.is_permanent_by(self.config.permanent));
-            self.record(breaker, key, failed);
+            self.breakers.record(breaker, key, failed).await;
         }
         let accepted = result?;
         self.schemes
@@ -826,40 +1016,6 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             .expect("scheme lock")
             .insert(host, accepted);
         Ok(())
-    }
-
-    /// How long deliveries to `key` are held, if its breaker is open.
-    fn held(&self, breaker: &CircuitBreaker, key: &str) -> Option<Duration> {
-        let breakers = self.breakers.lock().expect("breaker lock");
-        let state = breakers.get(key)?;
-        if state.failures < breaker.threshold.max(1) {
-            return None;
-        }
-        breaker
-            .cool_off
-            .checked_sub(state.last.elapsed())
-            .filter(|left| !left.is_zero())
-    }
-
-    /// Count a failure against `key`, or close its breaker.
-    fn record(&self, breaker: &CircuitBreaker, key: &str, failed: bool) {
-        let mut breakers = self.breakers.lock().expect("breaker lock");
-        if !failed {
-            breakers.remove(key);
-            return;
-        }
-        // Destinations that failed once and were not tried again since are
-        // forgotten, so that the map holds what is failing now.
-        if breakers.len() >= 4096 {
-            let forget = breaker.cool_off.max(Duration::from_secs(600));
-            breakers.retain(|_, state| state.last.elapsed() < forget);
-        }
-        let state = breakers.entry(key.to_owned()).or_insert(Breaker {
-            failures: 0,
-            last: Instant::now(),
-        });
-        state.failures = state.failures.saturating_add(1);
-        state.last = Instant::now();
     }
 
     fn host_semaphore(&self, host: &str) -> Arc<Semaphore> {
@@ -878,7 +1034,9 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         error: &DeliveryError,
     ) -> Result<(), QueueError> {
         let attempts = job.attempts + 1;
-        let delay = if error.is_permanent_by(self.config.permanent) {
+        let delay = if error.is_permanent_by(self.config.permanent)
+            || delivery.max_attempts.is_some_and(|max| attempts >= max)
+        {
             None
         } else {
             self.config.retry.delay(attempts)

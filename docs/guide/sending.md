@@ -44,7 +44,10 @@ Delivery:
     long to wait after each failure: thirty seconds doubling to an hour, twelve
     attempts, unless given.  `RetryPolicy::exponential` sets other numbers, and
     `RetryPolicy::custom` takes a function of how many attempts have failed,
-    for a schedule of your own, such as Mastodon's.  A retry waits at least
+    for a schedule of your own, such as Mastodon's.  A `Batch` may give its
+    deliveries fewer attempts with `max_attempts`, and put them in a
+    low-priority lane, claimed only when nothing else is due, with
+    `low_priority` and `DelivererConfig::low_priority`.  A retry waits at least
     what `Retry-After` asked, and a delivery the circuit breaker held at least
     until its cool-off ends, unless `DelivererConfig::wait_as_asked` is off;
  -  treats every other 4xx as permanent and reports it to `on_failure` with
@@ -57,10 +60,16 @@ Delivery:
     failure; then they are let through, and one that succeeds closes it.  A
     held delivery counts as an attempt, as Mastodon counts it.  The breaker
     is kept for each host, or for each inbox, as Mastodon keeps it, in
-    memory; `DelivererConfig::breaker` sets it, and `None` turns it off;
+    memory unless `breaker_store` gives the deliverer a `BreakerStore` of
+    your own, such as one in Redis that every process shares, as Mastodon's
+    Stoplights are; `DelivererConfig::breaker` sets it, and `None` turns it
+    off;
  -  reports every attempt, delivered, failed or held, to `on_attempt`, for an
     application that keeps its own account of which servers answer, as
     Mastodon's delivery failure tracker does;
+ -  awaits `on_settled` for each delivery that is done with — delivered,
+    refused for good, or skipped — before it leaves the queue, with its
+    batch's tag, for what is to follow a delivery having gone through;
  -  drops unsent what `skip_if`, given the inbox and the activity, says no
     longer to send when it comes due, such as a delivery to a server marked
     unavailable since it was queued;

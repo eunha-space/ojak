@@ -907,3 +907,186 @@ async fn a_send_to_one_inbox_goes_ahead_of_a_fan_out() {
         started.elapsed()
     );
 }
+
+/// A batch may give its deliveries fewer tries than the retry policy does,
+/// keeping the policy's backoff.
+#[tokio::test]
+async fn a_batch_may_try_its_deliveries_fewer_times() {
+    use ojak::deliverer::Batch;
+
+    let inbox = Inbox::answering([Answer::Status(500); 10]);
+    let url = serve(inbox.clone()).await;
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), fast());
+    let batch = Batch {
+        max_attempts: Some(2),
+        ..Batch::default()
+    };
+    deliverer
+        .send_batch("alice", &json!({}), [url], &batch)
+        .await
+        .unwrap();
+    drain(&deliverer, 6).await;
+
+    assert!(deliverer.queue().records()[0].failed);
+    assert_eq!(inbox.received().len(), 2);
+}
+
+/// What can wait goes in the low-priority lane, and is claimed once the
+/// other queues have nothing due.
+#[tokio::test]
+async fn a_low_priority_batch_waits_in_its_own_lane() {
+    use ojak::deliverer::Batch;
+
+    let inbox = Inbox::default();
+    let url = serve(inbox.clone()).await;
+    let config = DelivererConfig {
+        low_priority: Some("pull".to_owned()),
+        batch: 1,
+        ..fast()
+    };
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), config);
+    let low = Batch {
+        low_priority: true,
+        ..Batch::default()
+    };
+    deliverer
+        .send_batch("alice", &json!({"n": "low"}), [url.clone()], &low)
+        .await
+        .unwrap();
+    deliverer
+        .send("alice", &json!({"n": "normal"}), [url])
+        .await
+        .unwrap();
+    let records = deliverer.queue().records();
+    assert_eq!(records[0].job.queue, "pull");
+    assert_eq!(records[1].job.queue, "delivery");
+
+    drain(&deliverer, 2).await;
+    let order: Vec<String> = inbox
+        .received()
+        .iter()
+        .map(|r| serde_json::from_slice::<serde_json::Value>(&r.body).unwrap()["n"].to_string())
+        .collect();
+    assert_eq!(order, ["\"normal\"", "\"low\""]);
+}
+
+/// A delivery that goes through, or is refused for good, settles, and the
+/// application is told before it leaves the queue; one that runs out of
+/// retries does not settle.
+#[tokio::test]
+async fn the_application_hears_of_each_delivery_that_settles() {
+    use ojak::deliverer::{Batch, Settled, SettledOutcome};
+
+    let accepted = Inbox::default();
+    let refused = Inbox::answering([Answer::Status(404)]);
+    let failing = Inbox::answering([Answer::Status(500); 10]);
+    let (accepted_url, refused_url, failing_url) = (
+        serve(accepted.clone()).await,
+        serve(refused.clone()).await,
+        serve(failing.clone()).await,
+    );
+    let settled: Arc<Mutex<Vec<Settled>>> = Arc::default();
+    let seen = settled.clone();
+    let deliverer =
+        Deliverer::new(MemoryQueue::new(), Keys, client(), fast()).on_settled(move |done| {
+            let seen = seen.clone();
+            async move { seen.lock().unwrap().push(done) }
+        });
+    let batch = Batch {
+        tag: Some("follow-42".into()),
+        ..Batch::default()
+    };
+    deliverer
+        .send_batch(
+            "alice",
+            &json!({"type": "Follow"}),
+            [accepted_url.clone(), refused_url.clone(), failing_url],
+            &batch,
+        )
+        .await
+        .unwrap();
+    drain(&deliverer, 6).await;
+
+    let settled = settled.lock().unwrap();
+    assert_eq!(settled.len(), 2, "{settled:?}");
+    let outcome = |url: &Url| {
+        settled
+            .iter()
+            .find(|s| s.inbox == *url)
+            .map(|s| (s.tag.clone(), s.outcome.clone()))
+    };
+    assert_eq!(
+        outcome(&accepted_url),
+        Some((Some("follow-42".into()), SettledOutcome::Delivered))
+    );
+    assert_eq!(
+        outcome(&refused_url),
+        Some((
+            Some("follow-42".into()),
+            SettledOutcome::Refused { status: Some(404) }
+        ))
+    );
+}
+
+/// Breakers kept in a store the application gives are shared by every
+/// deliverer that is given it: one deliverer's failures hold back another's
+/// deliveries.
+#[tokio::test]
+async fn deliverers_sharing_a_breaker_store_count_failures_together() {
+    use ojak::deliverer::{BreakerFuture, BreakerStore, MemoryBreakers};
+
+    #[derive(Clone, Default)]
+    struct Shared(Arc<MemoryBreakers>);
+
+    impl BreakerStore for Shared {
+        fn held<'a>(
+            &'a self,
+            breaker: &'a CircuitBreaker,
+            key: &'a str,
+        ) -> BreakerFuture<'a, Option<Duration>> {
+            self.0.held(breaker, key)
+        }
+
+        fn record<'a>(
+            &'a self,
+            breaker: &'a CircuitBreaker,
+            key: &'a str,
+            failed: bool,
+        ) -> BreakerFuture<'a, ()> {
+            self.0.record(breaker, key, failed)
+        }
+    }
+
+    let inbox = Inbox::answering([Answer::Status(503); 10]);
+    let url = serve(inbox.clone()).await;
+    let config = || DelivererConfig {
+        breaker: Some(CircuitBreaker {
+            threshold: 2,
+            cool_off: Duration::from_secs(60),
+            scope: BreakerScope::Inbox,
+        }),
+        retry: RetryPolicy::exponential(Duration::from_secs(60), Duration::from_secs(60), 5),
+        ..fast()
+    };
+    let store = Shared::default();
+    let first =
+        Deliverer::new(MemoryQueue::new(), Keys, client(), config()).breaker_store(store.clone());
+    let second = Deliverer::new(MemoryQueue::new(), Keys, client(), config()).breaker_store(store);
+
+    first
+        .send("alice", &json!({}), [url.clone()])
+        .await
+        .unwrap();
+    drain(&first, 1).await;
+    second
+        .send("alice", &json!({}), [url.clone()])
+        .await
+        .unwrap();
+    drain(&second, 1).await;
+    assert_eq!(inbox.received().len(), 2);
+
+    // Two failures, counted across both deliverers: held now.
+    second.send("alice", &json!({}), [url]).await.unwrap();
+    drain(&second, 1).await;
+    assert_eq!(inbox.received().len(), 2, "held by the shared breaker");
+}
