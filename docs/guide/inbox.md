@@ -83,7 +83,10 @@ reading names another actor or `id` than the copy as written. Its contexts
 have to be ones ojak ships, since none is fetched, and the signature's
 `creator` is held to `blocked` as a signature's key is. *ojak-sig*'s
 `linked_data` makes and checks these signatures, byte for byte as Mastodon
-does.
+does. Whichever way a forwarded activity was established, the listener is
+told who passed it on (`Received::forwarder`), which is how an application
+asks Mastodon's question of whether it came through a relay it subscribes
+to.
 
 A portable actor, whose identity is a key, is authenticated
 by the proof on its activity alone, checked against its DID; an HTTP

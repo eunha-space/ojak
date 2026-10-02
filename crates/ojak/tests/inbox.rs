@@ -32,6 +32,7 @@ struct Seen {
     kind: &'static str,
     sender: String,
     recipient: Option<ActorRef>,
+    forwarder: Option<String>,
     activity: Value,
 }
 
@@ -70,6 +71,7 @@ fn record<T: ojak_vocab::json::ToJson>(
         kind,
         sender: received.sender.to_string(),
         recipient: received.recipient.clone(),
+        forwarder: received.forwarder.as_ref().map(ToString::to_string),
         activity: received.activity.to_json(),
     });
     Ok(())
@@ -250,6 +252,7 @@ async fn an_authenticated_activity_reaches_its_listener_typed() {
     assert_eq!(seen.len(), 2);
     assert_eq!(seen[0].kind, "Follow");
     assert_eq!(seen[0].sender, bob);
+    assert_eq!(seen[0].forwarder, None, "delivered by its own server");
     assert_eq!(seen[0].recipient, Some(ActorRef::new("person", "1")));
     assert_eq!(
         seen[1].recipient, None,
@@ -1068,6 +1071,7 @@ async fn a_relayed_activity_is_taken_on_its_linked_data_signature() {
     assert_eq!(seen.len(), 1, "{seen:?}");
     assert_eq!(seen[0].kind, "Create");
     assert_eq!(seen[0].sender, author);
+    assert_eq!(seen[0].forwarder.as_deref(), Some(relay.as_str()));
 
     // Changed on the way: not the author's, and dropped.
     let mut changed = signed_create(&author, 2);

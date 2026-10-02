@@ -52,6 +52,12 @@ pub struct Received<T> {
     /// Linked Data signature is here as JSON-LD reads it, in ojak's spelling,
     /// since that and not its sender's spelling is what the signature covers.
     pub vouched: Value,
+    /// The server's actor that delivered it, when that was not its sender's
+    /// server: a relay, or a server forwarding a reply. The activity is taken
+    /// on its sender's proof or Linked Data signature, or as its sender's
+    /// server serves it; this says who passed it on, which is what Mastodon's
+    /// `requested_through_relay?` asks.
+    pub forwarder: Option<Url>,
     /// What reading it into the listener's type did not keep.
     pub lost: Vec<Loss>,
 }
@@ -64,6 +70,7 @@ pub(super) struct Incoming {
     document: Value,
     vouched: Value,
     sender: Url,
+    forwarder: Option<Url>,
     recipient: Option<ActorRef>,
 }
 
@@ -158,6 +165,7 @@ where
             recipient: incoming.recipient,
             document: incoming.document,
             vouched: incoming.vouched,
+            forwarder: incoming.forwarder,
             lost,
         };
         let future = listen(context, received);
@@ -414,6 +422,8 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
     // How an activity taken on its Linked Data signature reads (see
     // `read_linked_data`); `None` for every other activity.
     let mut read: Option<Value> = None;
+    // Who delivered it, when that was not the actor's server.
+    let mut forwarder: Option<Url> = None;
     let sender = if let Some(uri) = &portable {
         // A portable actor is vouched for by its key alone: the HTTP
         // signature, if there is one, is the gateway's that sent it.
@@ -440,6 +450,11 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         }
     } else {
         let signed = signer::authenticate(&context, body).await;
+        forwarder = signed
+            .as_ref()
+            .ok()
+            .filter(|signer| !same_origin(&actor, signer.as_str()))
+            .cloned();
         match signed {
             Ok(sender) if same_origin(&actor, sender.as_str()) => sender,
             signed => match signer::prove(&context, &document, &actor).await {
@@ -595,6 +610,9 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
             if let Some(read) = read {
                 payload["read"] = read;
             }
+            if let Some(forwarder) = &forwarder {
+                payload["forwarder"] = Value::from(forwarder.as_str());
+            }
             queue
                 .enqueue(QUEUE, vec![payload])
                 .await
@@ -611,6 +629,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
                     document,
                     vouched,
                     sender,
+                    forwarder,
                     recipient,
                 },
             )
@@ -848,6 +867,10 @@ impl<D: Clone + Send + Sync + 'static> InboxWorker<D> {
                 r.get("identifier")?.as_str()?,
             ))
         });
+        let forwarder = payload
+            .get("forwarder")
+            .and_then(Value::as_str)
+            .and_then(|forwarder| Url::parse(forwarder).ok());
         let (normalized, vouched) = readings(
             &document,
             payload.get("read"),
@@ -871,6 +894,7 @@ impl<D: Clone + Send + Sync + 'static> InboxWorker<D> {
                 document,
                 vouched,
                 sender,
+                forwarder,
                 recipient,
             },
         )
