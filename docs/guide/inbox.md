@@ -37,7 +37,9 @@ unauthenticated.
 2.  A `blocked` hook sees the host the activity claims to come from, or a
     portable actor's DID, before any key is fetched, so a blocked server costs
     nothing. A blocked activity is answered 202 and dropped, so the server
-    does not retry it. A hook that fails is a 500.
+    does not retry it. A hook that fails is a 500. The hook is asked about
+    the host of the signature's key too, before the key is looked for, and
+    a request signed with a key on a blocked server does not verify.
 3.  The HTTP signature is parsed and checked. A draft-cavage
     signature covers `(request-target)`, `host`, and `date` or `(created)`;
     an RFC 9421 one covers `@method` and `@target-uri`. Either way the digest

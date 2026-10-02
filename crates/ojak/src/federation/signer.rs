@@ -91,8 +91,53 @@ impl Published {
     }
 }
 
-pub(super) async fn verify<D: Clone + Send + Sync + 'static>(context: &Context<D>) -> Option<Url> {
-    authenticate(context, b"").await.ok()
+/// How a GET was signed, as [`Context::signing`] tells it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Signing {
+    /// Not signed.
+    Unsigned,
+    /// Signed by this actor, whose published key verifies the signature.
+    Verified(Url),
+    /// Signed with a key on this host, which [`super::Builder::blocked`]
+    /// refuses: nothing was fetched from it, and nothing verified.
+    Blocked(String),
+    /// Signed, but the signature does not hold, for this reason.
+    Invalid(String),
+}
+
+pub(super) async fn verify<D: Clone + Send + Sync + 'static>(context: &Context<D>) -> Signing {
+    let signed = context.inner.request.as_ref().is_some_and(|info| {
+        info.headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("signature"))
+    });
+    if !signed {
+        return Signing::Unsigned;
+    }
+    match authenticate_signed(context, b"").await {
+        Ok(signer) => Signing::Verified(signer),
+        Err(Refusal::Blocked(host)) => Signing::Blocked(host),
+        Err(Refusal::Invalid(why)) => Signing::Invalid(why),
+    }
+}
+
+/// Why a signature was not taken.
+enum Refusal {
+    /// Its key is on a blocked host.
+    Blocked(String),
+    Invalid(String),
+}
+
+impl From<String> for Refusal {
+    fn from(why: String) -> Self {
+        Self::Invalid(why)
+    }
+}
+
+impl From<&str> for Refusal {
+    fn from(why: &str) -> Self {
+        Self::Invalid(why.to_owned())
+    }
 }
 
 /// Who signed the request `context` was made for, carrying `body`: the actor
@@ -102,6 +147,18 @@ pub(super) async fn authenticate<D: Clone + Send + Sync + 'static>(
     context: &Context<D>,
     body: &[u8],
 ) -> Result<Url, String> {
+    authenticate_signed(context, body)
+        .await
+        .map_err(|refusal| match refusal {
+            Refusal::Blocked(host) => format!("signed with a key on {host}, which is blocked"),
+            Refusal::Invalid(why) => why,
+        })
+}
+
+async fn authenticate_signed<D: Clone + Send + Sync + 'static>(
+    context: &Context<D>,
+    body: &[u8],
+) -> Result<Url, Refusal> {
     let settings = context
         .inner
         .federation
@@ -121,6 +178,23 @@ pub(super) async fn authenticate<D: Clone + Send + Sync + 'static>(
         body,
     };
     let signature = verification::parse(&request).map_err(|error| error.to_string())?;
+    // A key on a blocked server is neither looked for nor fetched, as the
+    // inbox fetches nothing for an activity from one.
+    if let (Some(blocked), Some(host)) = (
+        &context.inner.federation.blocked,
+        Url::parse(&signature.key_id)
+            .ok()
+            .and_then(|key| key.host_str().map(str::to_owned)),
+    ) {
+        match blocked(context.clone(), host.clone()).await {
+            Ok(true) => return Err(Refusal::Blocked(host)),
+            Ok(false) => {}
+            Err(error) => {
+                context.report(&error);
+                return Err(format!("could not tell whether {host} is blocked").into());
+            }
+        }
+    }
     let canonical = authority(context.origin());
     let hosts = [info.host.as_str(), canonical.as_str()];
     verification::check(

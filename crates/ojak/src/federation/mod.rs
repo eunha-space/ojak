@@ -24,7 +24,7 @@ pub use inbox::{
     MAX_BODY as MAX_INBOX_BODY, Received,
 };
 pub use nodeinfo::{NodeInfo, Software, Usage};
-pub use signer::KnownKey;
+pub use signer::{KnownKey, Signing};
 
 use crate::fetch::Fetcher;
 use crate::kv::{KvError, KvStore};
@@ -59,6 +59,20 @@ pub fn default_context() -> Value {
         "https://w3id.org/security/v1",
         "https://w3id.org/security/multikey/v1",
     ])
+}
+
+/// What a guard ([`Builder::guard`]) makes of a request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Access {
+    /// Serve it.
+    Allow,
+    /// Refuse it as unauthorized, 401: it has to be signed, or signed by
+    /// someone else.
+    Unauthorized,
+    /// Refuse it as forbidden, 403: whoever signed it is refused.
+    Forbidden,
+    /// Answer it as if nothing were there, 404.
+    NotFound,
 }
 
 /// What a dispatcher found.
@@ -193,11 +207,8 @@ type ActorFn<D> = Arc<
 type ObjectFn<D> = Arc<
     dyn Fn(Context<D>, Values) -> BoxFuture<'static, Result<Found<Value>, Error>> + Send + Sync,
 >;
-type AuthorizeFn<D> = Arc<
-    dyn Fn(Context<D>, Values, Option<Url>) -> BoxFuture<'static, Result<bool, Error>>
-        + Send
-        + Sync,
->;
+type AuthorizeFn<D> =
+    Arc<dyn Fn(Context<D>, Values) -> BoxFuture<'static, Result<Access, Error>> + Send + Sync>;
 type KeysFn<D> = Arc<
     dyn Fn(Context<D>, ActorRef) -> BoxFuture<'static, Result<Vec<PublicKey>, Error>> + Send + Sync,
 >;
@@ -680,14 +691,17 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
         values: Values,
         query: Option<&str>,
     ) -> Result<http::Response<Vec<u8>>, Error> {
+        let url = context.request_url();
         if let Some(authorize) = &entry.authorize {
-            let signer = context.signer().await;
-            let signed = signer.is_some();
-            if !authorize(context.clone(), values.clone(), signer).await? {
-                return Ok(unauthorized(signed));
+            match authorize(context.clone(), values.clone()).await? {
+                Access::Allow => {}
+                Access::Unauthorized => {
+                    return Ok(unauthorized(context.signer().await.is_some()));
+                }
+                Access::Forbidden => return Ok(forbidden()),
+                Access::NotFound => return Ok(found(Found::NotFound, &url)),
             }
         }
-        let url = context.request_url();
         match &entry.dispatcher {
             Dispatcher::Actor(load) => {
                 let identifier = values.single().unwrap_or_default().to_owned();
@@ -867,16 +881,48 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     /// It receives the verified signer of the request, if it was signed and
     /// signed fetches are configured. A request it refuses is 401.
     #[must_use]
-    pub fn authorize<F, Fut, E>(mut self, kind: &str, authorize: F) -> Self
+    pub fn authorize<F, Fut, E>(self, kind: &str, authorize: F) -> Self
     where
         F: Fn(Context<D>, Values, Option<Url>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<bool, E>> + Send + 'static,
         E: Into<Error>,
     {
-        let authorize = boxed(move |(context, values, signer)| authorize(context, values, signer));
+        let authorize = Arc::new(authorize);
+        self.guard(kind, move |context: Context<D>, values| {
+            let authorize = authorize.clone();
+            async move {
+                let signer = context.signer().await;
+                Ok::<_, Error>(
+                    if authorize(context, values, signer)
+                        .await
+                        .map_err(Into::into)?
+                    {
+                        Access::Allow
+                    } else {
+                        Access::Unauthorized
+                    },
+                )
+            }
+        })
+    }
+
+    /// Serve what is registered as `kind` only as `guard` says: to all, or
+    /// refused as unauthorized (401), forbidden (403) or not there (404).
+    /// Unlike [`Builder::authorize`], nothing is verified before it is asked:
+    /// the guard asks [`Context::signing`] or [`Context::signer`] when it
+    /// needs to know who signed, so a guard that lets everyone through costs
+    /// no signature check, nor a key fetched to make one.
+    #[must_use]
+    pub fn guard<F, Fut, E>(mut self, kind: &str, guard: F) -> Self
+    where
+        F: Fn(Context<D>, Values) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Access, E>> + Send + 'static,
+        E: Into<Error>,
+    {
+        let guard = boxed(move |(context, values)| guard(context, values));
         self.authorize.push((
             kind.to_owned(),
-            Arc::new(move |context, values, signer| authorize((context, values, signer))),
+            Arc::new(move |context, values| guard((context, values))),
         ));
         self
     }
@@ -1108,6 +1154,11 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
 
     /// Whether activities from `host` are refused, asked before any key is
     /// fetched for them. A refused activity is answered 202 and dropped.
+    ///
+    /// A request signed with a key on `host` is refused too, before the key
+    /// is looked for: its signer is not verified, an inbox POST is answered
+    /// as one that does not verify, and a GET's signing is
+    /// [`Signing::Blocked`].
     #[must_use]
     pub fn blocked<F, Fut, E>(mut self, blocked: F) -> Self
     where
@@ -1492,7 +1543,7 @@ struct ContextInner<D> {
     data: D,
     origin: Url,
     request: Option<RequestInfo>,
-    signer: tokio::sync::OnceCell<Option<Url>>,
+    signer: tokio::sync::OnceCell<Signing>,
 }
 
 /// The templates URIs are built from, apart from what serves them.
@@ -1826,6 +1877,17 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
     /// there is no request, or signed fetches are not configured. Verified
     /// once per request, however often it is asked.
     pub async fn signer(&self) -> Option<Url> {
+        match self.signing().await {
+            Signing::Verified(signer) => Some(signer),
+            _ => None,
+        }
+    }
+
+    /// How the request was signed: not at all, by an actor whose signature
+    /// verifies, with a key on a server [`Builder::blocked`] refuses, or with
+    /// a signature that does not hold. Verified once per request, however
+    /// often it is asked, and as [`Context::signer`] verifies it.
+    pub async fn signing(&self) -> Signing {
         self.inner
             .signer
             .get_or_init(|| signer::verify(self))
@@ -1941,6 +2003,14 @@ fn unauthorized(signed: bool) -> http::Response<Vec<u8>> {
             HeaderValue::from_static("Signature realm=\"ActivityPub\""),
         );
     }
+    response
+        .headers_mut()
+        .insert(header::VARY, HeaderValue::from_static("Accept, Signature"));
+    response
+}
+
+fn forbidden() -> http::Response<Vec<u8>> {
+    let mut response = empty(StatusCode::FORBIDDEN);
     response
         .headers_mut()
         .insert(header::VARY, HeaderValue::from_static("Accept, Signature"));

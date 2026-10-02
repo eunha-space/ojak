@@ -7,8 +7,8 @@ use axum::routing;
 use chrono::{TimeZone, Utc};
 use ojak::client::{Client, ClientConfig};
 use ojak::federation::{
-    ActorRef, Collection, Context, Federation, First, Found, Handled, NodeInfo, Page, PublicKey,
-    Route, Software, with_keys,
+    Access, ActorRef, Collection, Context, Federation, First, Found, Handled, NodeInfo, Page,
+    PublicKey, Route, Signing, Software, with_keys,
 };
 use ojak::fetch::Fetcher;
 use ojak::kv::MemoryKvStore;
@@ -750,6 +750,90 @@ async fn authorize_refuses_what_it_does_not_allow() {
     )
     .await;
     assert_eq!(instance.status, 200, "the instance actor stays public");
+}
+
+#[tokio::test]
+async fn a_guard_verifies_only_what_it_asks_about() {
+    let remote = Remote::default();
+    let bob = serve_remote(remote.clone()).await;
+    let key_id = format!("{bob}#main-key");
+    // Lets everyone see people without asking who signed, and refuses
+    // notes as each of its answers says.
+    let federation = with_signed_fetch(
+        builder()
+            .guard("person", |_, _| async { Ok::<_, String>(Access::Allow) })
+            .guard("note", |ctx: Context<App>, values: Values| async move {
+                Ok::<_, String>(match &values["post_id"] {
+                    "10" => match ctx.signing().await {
+                        Signing::Verified(_) => Access::Allow,
+                        _ => Access::Unauthorized,
+                    },
+                    "11" => Access::Forbidden,
+                    _ => Access::NotFound,
+                })
+            }),
+    );
+
+    let person = send(&federation, signed_request("/ap/users/1", &key_id)).await;
+    assert_eq!(person.status, 200);
+    assert_eq!(
+        remote.fetches.load(Ordering::SeqCst),
+        0,
+        "a guard that does not ask verifies nothing"
+    );
+
+    let unsigned = send(
+        &federation,
+        request("GET", "oeee.test", "/ap/posts/10", Some(ACCEPT_AP)),
+    )
+    .await;
+    assert_eq!(unsigned.status, 401);
+    assert!(unsigned.header("www-authenticate").starts_with("Signature"));
+    let signed = send(&federation, signed_request("/ap/posts/10", &key_id)).await;
+    assert_eq!(signed.status, 200);
+    assert_eq!(remote.fetches.load(Ordering::SeqCst), 1);
+
+    let forbidden = send(&federation, signed_request("/ap/posts/11", &key_id)).await;
+    assert_eq!(forbidden.status, 403);
+    assert_eq!(forbidden.header("vary"), "Accept, Signature");
+    let hidden = send(&federation, signed_request("/ap/posts/12", &key_id)).await;
+    assert_eq!(hidden.status, 404);
+}
+
+#[tokio::test]
+async fn a_key_on_a_blocked_server_is_never_fetched() {
+    let remote = Remote::default();
+    let bob = serve_remote(remote.clone()).await;
+    let key_id = format!("{bob}#main-key");
+    let seen = Arc::new(Mutex::new(None));
+    let federation = with_signed_fetch(
+        builder()
+            .blocked(|_, host: String| async move { Ok::<_, String>(host == "127.0.0.1") })
+            .guard("person", {
+                let seen = seen.clone();
+                move |ctx: Context<App>, _| {
+                    let seen = seen.clone();
+                    async move {
+                        let signing = ctx.signing().await;
+                        let access = match &signing {
+                            Signing::Verified(_) => Access::Allow,
+                            Signing::Blocked(_) => Access::Forbidden,
+                            Signing::Unsigned | Signing::Invalid(_) => Access::Unauthorized,
+                        };
+                        *seen.lock().unwrap() = Some(signing);
+                        Ok::<_, String>(access)
+                    }
+                }
+            }),
+    );
+
+    let answer = send(&federation, signed_request("/ap/users/1", &key_id)).await;
+    assert_eq!(answer.status, 403);
+    assert_eq!(
+        seen.lock().unwrap().clone(),
+        Some(Signing::Blocked("127.0.0.1".into()))
+    );
+    assert_eq!(remote.fetches.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

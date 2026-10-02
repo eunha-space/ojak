@@ -302,6 +302,29 @@ at all. There is no global switch; each kind is authorised on its own. An
 unauthorised request is 401 with `Vary: Accept, Signature`, and, when it was
 unsigned, `WWW-Authenticate: Signature`.
 
+A predicate is handed the signer, so every signed GET of its kind is
+verified before it is asked. A `guard` asks for itself, when it needs to:
+
+~~~~ rust
+.guard("person", |ctx, values| async move {
+    if !ctx.data().secure_mode() {
+        return Ok(Access::Allow); // nothing verified
+    }
+    Ok(match ctx.signing().await {
+        Signing::Verified(_) => Access::Allow,
+        Signing::Blocked(_) => Access::Forbidden,
+        Signing::Unsigned | Signing::Invalid(_) => Access::Unauthorized,
+    })
+})
+~~~~
+
+and answers `Access::Allow`, `Unauthorized` (401, as above), `Forbidden` (403,
+with `Vary: Accept, Signature`) or `NotFound` (404). `ctx.signing()` says how
+the request was signed: not at all, by a verified actor, with a key on a server
+the `blocked` hook of [the inbox](./inbox.md) refuses, or with a signature that
+does not hold. A key on a blocked server is never looked for or fetched, here
+or in the inbox.
+
 
 WebFinger follows from the actors
 ---------------------------------
