@@ -9,7 +9,7 @@
 use super::{BoxFuture, Context, DynKv, Error, authority};
 use crate::fetch::Fetcher;
 use crate::sig::SenderKey;
-use crate::sig::verification::{self, Policy, PublishedKey, Request, Signature};
+use crate::sig::verification::{self, Policy, PublishedKey, Request};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
@@ -205,18 +205,29 @@ async fn authenticate_signed<D: Clone + Send + Sync + 'static>(
     )
     .map_err(|error| error.to_string())?;
 
+    find_key(context, settings, &signature.key_id, |key| {
+        verification::verify(&signature, &request, key.as_key()).is_ok()
+    })
+    .await
+    .map_err(Refusal::from)
+}
+
+/// The actor publishing `key_id`, when the key passes `check`: the copy the
+/// application holds first, then a cached one, then one fetched from its
+/// actor, since a key that no longer passes may have been rotated.
+async fn find_key<D: Clone + Send + Sync + 'static>(
+    context: &Context<D>,
+    settings: &SignedFetch<D>,
+    key_id: &str,
+    check: impl Fn(&PublishedKey) -> bool,
+) -> Result<Url, String> {
     // A key the application holds, as eunha holds remote accounts' keys, is
     // tried first; one that does not verify is fetched fresh below.
     if let Some(known) = &settings.known_key {
-        match known(context.clone(), signature.key_id.clone()).await {
+        match known(context.clone(), key_id.to_owned()).await {
             Ok(Some(known)) => {
-                let published = Published {
-                    key: PublishedKey::RsaPem(known.pem),
-                    actor: known.actor,
-                    document: None,
-                };
-                if check(&signature, &request, &published) {
-                    return Ok(published.actor);
+                if check(&PublishedKey::RsaPem(known.pem)) {
+                    return Ok(known.actor);
                 }
             }
             Ok(None) => {}
@@ -224,11 +235,11 @@ async fn authenticate_signed<D: Clone + Send + Sync + 'static>(
         }
     }
 
-    let cache_key = ["ojak", "key", signature.key_id.as_str()];
+    let cache_key = ["ojak", "key", key_id];
     match settings.kv.get(&cache_key).await {
         Ok(Some(cached)) => {
             if let Some(published) = Published::from_json(&cached)
-                && check(&signature, &request, &published)
+                && check(&published.key)
             {
                 return Ok(published.actor);
             }
@@ -237,10 +248,10 @@ async fn authenticate_signed<D: Clone + Send + Sync + 'static>(
         Err(error) => context.report(&Error::from(error)),
     }
 
-    let published = fetch_key(context, settings, &signature)
+    let published = fetch_key(context, settings, key_id)
         .await
-        .ok_or_else(|| format!("no key {} published by its actor", signature.key_id))?;
-    let verified = check(&signature, &request, &published);
+        .ok_or_else(|| format!("no key {key_id} published by its actor"))?;
+    let verified = check(&published.key);
     // A verified key that came with its actor's document, handed to an
     // application that stores actors and gives their keys back through
     // `known_key`, is the application's to keep. Caching it here as well held
@@ -270,6 +281,60 @@ async fn authenticate_signed<D: Clone + Send + Sync + 'static>(
     } else {
         Err("the signature does not verify".into())
     }
+}
+
+/// Who the Linked Data Signature (`RsaSignature2017`) on `document` says
+/// made it: the actor `actor`, when the signature verifies with a key `actor`
+/// publishes. Mastodon's `actor_from_verified_ld_signature`, for an activity
+/// passed on by a server other than its actor's.
+pub(super) async fn verify_linked_data<D: Clone + Send + Sync + 'static>(
+    context: &Context<D>,
+    document: &Value,
+    actor: &str,
+) -> Result<Url, String> {
+    use crate::sig::linked_data::Signed;
+
+    let settings = context
+        .inner
+        .federation
+        .signed_fetch
+        .as_ref()
+        .ok_or("signed fetches are not configured")?;
+    let Some(creator) = crate::sig::linked_data::creator(document) else {
+        return Err("no RsaSignature2017".into());
+    };
+    // A key on a blocked server is neither looked for nor fetched, as
+    // Mastodon checks `domain_not_allowed?` on the signature's creator.
+    if let (Some(blocked), Some(host)) = (
+        &context.inner.federation.blocked,
+        Url::parse(creator)
+            .ok()
+            .and_then(|key| key.host_str().map(str::to_owned)),
+    ) {
+        match blocked(context.clone(), host.clone()).await {
+            Ok(true) => return Err(format!("signed with a key on {host}, which is blocked")),
+            Ok(false) => {}
+            Err(error) => {
+                context.report(&error);
+                return Err(format!("could not tell whether {host} is blocked"));
+            }
+        }
+    }
+    let signed = Signed::read(
+        &crate::fetch::REGISTRY,
+        document,
+        chrono::Utc::now().timestamp(),
+    )
+    .map_err(|error| error.to_string())?;
+    let signer = find_key(context, settings, signed.creator(), |key| match key {
+        PublishedKey::RsaPem(pem) => signed.verify(pem).is_ok(),
+        PublishedKey::Ed25519(_) => false,
+    })
+    .await?;
+    if signer.as_str() != actor {
+        return Err(format!("signed by {signer}, not {actor}"));
+    }
+    Ok(signer)
 }
 
 /// Who an FEP-8b32 integrity proof on `document` says made it: the actor
@@ -388,18 +453,14 @@ fn assertion_method(actor: &Value, method: &str) -> Option<String> {
     })
 }
 
-fn check(signature: &Signature, request: &Request<'_>, published: &Published) -> bool {
-    verification::verify(signature, request, published.key.as_key()).is_ok()
-}
-
 /// Fetch the actor the key ID points at, and read the key from it if the
 /// actor publishes it as its own.
 async fn fetch_key<D: Clone + Send + Sync + 'static>(
     context: &Context<D>,
     settings: &SignedFetch<D>,
-    signature: &Signature,
+    key_id: &str,
 ) -> Option<Published> {
-    let owner = Url::parse(verification::key_owner(&signature.key_id)).ok()?;
+    let owner = Url::parse(verification::key_owner(key_id)).ok()?;
     let key = match (settings.key)(context.clone()).await {
         Ok(key) => key,
         Err(error) => {
@@ -412,7 +473,7 @@ async fn fetch_key<D: Clone + Send + Sync + 'static>(
         .document(&owner, key.as_ref())
         .await
         .ok()?;
-    let key = verification::published_key(&document.json, &signature.key_id)?;
+    let key = verification::published_key(&document.json, key_id)?;
     Some(Published {
         key,
         actor: Url::parse(&document.id).ok()?,

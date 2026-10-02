@@ -64,12 +64,26 @@ unauthenticated.
     sender's origin. A server vouches for its own actors, as Mastodon's rule
     has it, and for nobody else's.
 7.  A request signed by a server other than the actor's was forwarded: by a
-    gateway ([Portable objects](./portable.md)), or by a server passing a reply
-    on to its followers. Its signature says nothing of the actor, so a proof by
-    the actor is looked for, and failing that the activity is fetched from its
-    `id` and processed as the actor's server serves it, if it is the same
+    relay, by a gateway ([Portable objects](./portable.md)), or by a server
+    passing a reply on to its followers. Its signature says nothing of the
+    actor, so a proof by the actor is looked for; then a Linked Data
+    Signature (`RsaSignature2017`) by a key the actor publishes, as Mastodon
+    signs what relays pass on; and failing both the activity is fetched from
+    its `id` and processed as the actor's server serves it, if it is the same
     activity by the same actor. Only a request that verified gets this far, so
     an unsigned POST cannot make the server fetch.
+
+A Linked Data Signature covers the RDF a document means rather than the JSON
+it is written in, hashed in its canonical form (URDNA2015), so a document can
+be reworded to read differently to a reader of keys and still verify: `actor`
+mapped to nothing in its `@context` and the real one under `as:actor`, say.
+An activity taken on one is therefore handed on as JSON-LD processing reads
+it, normalised, even under `read_inbox_as_written`, and is refused if that
+reading names another actor or `id` than the copy as written. Its contexts
+have to be ones ojak ships, since none is fetched, and the signature's
+`creator` is held to `blocked` as a signature's key is. *ojak-sig*'s
+`linked_data` makes and checks these signatures, byte for byte as Mastodon
+does.
 
 A portable actor, whose identity is a key, is authenticated
 by the proof on its activity alone, checked against its DID; an HTTP
@@ -213,7 +227,8 @@ Relays
 
 A relay passes public activities between the servers subscribed to it,
 signed by the relay, so what it sends on is forwarded and is established as
-any forwarded activity is: receiving from one needs nothing more. Subscribing
+any forwarded activity is, by its author's Linked Data Signature when it has
+one: receiving from one needs nothing more. Subscribing
 to one is a Follow the application sends and keeps, in whichever convention
 the relay speaks, Mastodon's follow of `as:Public` or LitePub's follow of the
 relay's actor. Running a relay is not supported yet.

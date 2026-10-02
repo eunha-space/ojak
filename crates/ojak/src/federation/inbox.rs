@@ -48,7 +48,9 @@ pub struct Received<T> {
     pub document: Value,
     /// The activity as it arrived, in its sender's spelling, with what the
     /// sender could not vouch for reduced to references as in `activity`:
-    /// for an application whose handlers read JSON.
+    /// for an application whose handlers read JSON. An activity taken on its
+    /// Linked Data signature is here as JSON-LD reads it, in ojak's spelling,
+    /// since that and not its sender's spelling is what the signature covers.
     pub vouched: Value,
     /// What reading it into the listener's type did not keep.
     pub lost: Vec<Loss>,
@@ -272,6 +274,66 @@ fn prepare(document: &Value, sender: &Url, as_written: bool) -> Result<Value, St
     Ok(normalized)
 }
 
+/// What a listener is given of an activity: normalised (or, `as_written`,
+/// as it is) and in its sender's spelling, each reduced to what `sender`
+/// vouches for. An activity taken on its Linked Data signature is given as
+/// `read`, the reading [`read_linked_data`] made of it, both times.
+fn readings(
+    document: &Value,
+    read: Option<&Value>,
+    sender: &Url,
+    as_written: bool,
+) -> Result<(Value, Value), String> {
+    let normalized = match read {
+        Some(read) => prepare(read, sender, true)?,
+        None => prepare(document, sender, as_written)?,
+    };
+    let mut vouched = read.unwrap_or(document).clone();
+    reduce(&mut vouched, sender);
+    Ok((normalized, vouched))
+}
+
+/// An activity forwarded by a server other than its actor's, taken on its
+/// actor's Linked Data signature: how it reads, and the actor that signed.
+///
+/// The reading has to say what the copy as written said of who sent it and
+/// which activity it is, since those are what the inbox went on before it
+/// read it: a copy whose keys say one actor and whose statements another is
+/// refused.
+async fn linked_data<D: Clone + Send + Sync + 'static>(
+    context: &Context<D>,
+    document: &Value,
+    actor: &str,
+) -> Result<(Value, Url), String> {
+    let sender = signer::verify_linked_data(context, document, actor).await?;
+    let reading = read_linked_data(document)?;
+    if actor_of(&reading) != Some(actor) {
+        return Err(format!("as JSON-LD reads it, it is not by {actor}"));
+    }
+    if reading.get("id") != document.get("id") {
+        return Err("as JSON-LD reads it, it is another activity".into());
+    }
+    Ok((reading, sender))
+}
+
+/// How an activity reads to a JSON-LD processor, in ojak's spelling.
+///
+/// A Linked Data signature covers the statements a document makes, not the
+/// keys it makes them with, so a document can be reworded to read
+/// differently to a reader of keys — `actor` mapped to nothing in its
+/// `@context`, the real actor under `as:actor` — and still verify. Mastodon
+/// compacts such an activity before reading it; ojak normalises it.
+fn read_linked_data(document: &Value) -> Result<Value, String> {
+    ojak_jsonld::normalize_with_cache(
+        &crate::fetch::REGISTRY,
+        document,
+        ojak_jsonld::Limits::default(),
+        &*crate::fetch::CONTEXTS,
+    )
+    .map(ojak_jsonld::Processed::into_document)
+    .map_err(|error| error.to_string())
+}
+
 fn status(code: StatusCode, why: &str) -> http::Response<Vec<u8>> {
     let mut response = empty(code);
     if !why.is_empty() {
@@ -349,6 +411,9 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         }
     }
 
+    // How an activity taken on its Linked Data signature reads (see
+    // `read_linked_data`); `None` for every other activity.
+    let mut read: Option<Value> = None;
     let sender = if let Some(uri) = &portable {
         // A portable actor is vouched for by its key alone: the HTTP
         // signature, if there is one, is the gateway's that sent it.
@@ -380,33 +445,44 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
             signed => match signer::prove(&context, &document, &actor).await {
                 Ok(sender) => sender,
                 // Signed by a server other than the actor's: forwarded, by
-                // a gateway or a server passing on a reply. The forwarder
-                // vouches for nothing of the actor's; the activity is taken
-                // from where its id says it lives instead. Only a signed
-                // request gets this far, so an unsigned POST cannot make
-                // this server fetch.
+                // a relay, a gateway or a server passing on a reply. The
+                // forwarder vouches for nothing of the actor's. The actor's
+                // own Linked Data signature, as Mastodon signs what relays
+                // pass on, vouches for it; failing that, the activity is
+                // taken from where its id says it lives instead. Only a
+                // signed request gets this far, so an unsigned POST cannot
+                // make this server fetch.
                 Err(unproven) if signed.is_ok() => {
-                    match signer::establish(&context, &document, &actor).await {
-                        Ok((established, sender)) => {
-                            document = established;
+                    match linked_data(&context, &document, &actor).await {
+                        Ok((reading, sender)) => {
+                            read = Some(reading);
                             sender
                         }
-                        // Dropped, and answered 202 as Mastodon answers it:
-                        // the forwarder's own signature verified, so there is
-                        // nothing for it to retry, and a 401 had forwarders
-                        // sending the same activity dozens of times. Mastodon
-                        // accepts a delivery once its signature verifies and
-                        // drops a relayed activity it cannot verify later
-                        // (ActivityPub::ProcessActivityService). The reason
-                        // goes back in the body, for the application to log.
-                        Err(unfetched) => {
-                            return status(
-                                StatusCode::ACCEPTED,
-                                &format!(
-                                    "dropped: forwarded; proof: {unproven}; origin: {unfetched}"
-                                ),
-                            );
-                        }
+                        Err(unsigned) => match signer::establish(&context, &document, &actor).await
+                        {
+                            Ok((established, sender)) => {
+                                document = established;
+                                sender
+                            }
+                            // Dropped, and answered 202 as Mastodon answers
+                            // it: the forwarder's own signature verified, so
+                            // there is nothing for it to retry, and a 401 had
+                            // forwarders sending the same activity dozens of
+                            // times. Mastodon accepts a delivery once its
+                            // signature verifies and drops a relayed activity
+                            // it cannot verify later
+                            // (ActivityPub::ProcessActivityService). The reason
+                            // goes back in the body, for the application to log.
+                            Err(unfetched) => {
+                                return status(
+                                    StatusCode::ACCEPTED,
+                                    &format!(
+                                        "dropped: forwarded; proof: {unproven}; \
+                                         linked data: {unsigned}; origin: {unfetched}"
+                                    ),
+                                );
+                            }
+                        },
                     }
                 }
                 Err(unproven) => {
@@ -449,12 +525,11 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         );
     }
 
-    let normalized = match prepare(&document, &sender, inner.read_as_written) {
-        Ok(normalized) => normalized,
-        Err(error) => return status(StatusCode::BAD_REQUEST, &error),
-    };
-    let mut vouched = document.clone();
-    reduce(&mut vouched, &sender);
+    let (normalized, vouched) =
+        match readings(&document, read.as_ref(), &sender, inner.read_as_written) {
+            Ok(readings) => readings,
+            Err(error) => return status(StatusCode::BAD_REQUEST, &error),
+        };
 
     // Forwarded before anything else is decided, whether or not a listener
     // wants it: the other gateways keep the actor's data too.
@@ -474,7 +549,9 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
                 forward(&context, &origin, id, &document, to).await;
             }
         }
-        let collections = forwarded_to(&context, &document);
+        // Who it is addressed to is read as everything else is; what is
+        // forwarded is the activity as it came, its signature intact.
+        let collections = forwarded_to(&context, read.as_ref().unwrap_or(&document));
         if !collections.is_empty() {
             let to = ForwardTo::Collections(collections);
             forward(&context, &origin, id, &document, to).await;
@@ -509,12 +586,15 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         .and_then(|queue| queue(context.data()));
     let outcome = match queue {
         Some(queue) => {
-            let payload = json!({
+            let mut payload = json!({
                 "document": document,
                 "sender": sender.as_str(),
                 "recipient": recipient.as_ref().map(|r| json!({"kind": r.kind, "identifier": r.identifier})),
                 "origin": origin,
             });
+            if let Some(read) = read {
+                payload["read"] = read;
+            }
             queue
                 .enqueue(QUEUE, vec![payload])
                 .await
@@ -768,9 +848,12 @@ impl<D: Clone + Send + Sync + 'static> InboxWorker<D> {
                 r.get("identifier")?.as_str()?,
             ))
         });
-        let normalized = prepare(&document, &sender, self.federation.inner.read_as_written)?;
-        let mut vouched = document.clone();
-        reduce(&mut vouched, &sender);
+        let (normalized, vouched) = readings(
+            &document,
+            payload.get("read"),
+            &sender,
+            self.federation.inner.read_as_written,
+        )?;
         let inner = &self.federation.inner;
         let Some(listener) = listener_for(inner, &normalized) else {
             return Ok(());

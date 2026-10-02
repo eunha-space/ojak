@@ -1002,3 +1002,153 @@ async fn a_key_id_that_is_the_actor_names_its_main_key() {
     );
     assert_eq!(store.seen()[0].sender, bob);
 }
+
+/// A Create by `author`, as Mastodon signs one for relays to pass on.
+fn signed_create(author: &str, n: u32) -> Value {
+    let create = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{author}/notes/{n}/activity"),
+        "type": "Create",
+        "actor": author,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "object": {
+            "id": format!("{author}/notes/{n}"),
+            "type": "Note",
+            "attributedTo": author,
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "content": "signed by its author",
+        },
+    });
+    let now = chrono::Utc::now().timestamp();
+    ojak::sig::linked_data::sign(
+        &ojak_jsonld::Registry::bundled(),
+        &create,
+        &format!("{author}#main-key"),
+        &PrivateKey::from_pem(PRIVATE_KEY).unwrap(),
+        now,
+        now + ojak::sig::linked_data::DEFAULT_LIFETIME_SECONDS,
+    )
+    .unwrap()
+}
+
+/// `signed_create`, reworded so that a reader of keys reads other content:
+/// the signed content moved under `as:content`, and `content`, mapped to
+/// nothing in its `@context`, saying something else. The statements are
+/// the same, so the signature still holds.
+fn reworded_create(author: &str, n: u32) -> Value {
+    let mut reworded = signed_create(author, n);
+    reworded["@context"] = json!([
+        "https://www.w3.org/ns/activitystreams",
+        "https://w3id.org/security/v1",
+        {"content": null}
+    ]);
+    let object = reworded["object"].as_object_mut().unwrap();
+    let content = object.remove("content").unwrap();
+    object.insert("as:content".into(), content);
+    object.insert("content".into(), json!("read by a reader of keys"));
+    reworded
+}
+
+/// Passed on by a relay, an activity its author signed in Linked Data is
+/// taken on that signature, from its author; one changed on the way, or
+/// signed by someone else, is dropped.
+#[tokio::test]
+async fn a_relayed_activity_is_taken_on_its_linked_data_signature() {
+    let author = serve_remote(Remote::default()).await;
+    let relay = serve_remote(Remote::default()).await;
+    let relay_key = format!("{relay}#main-key");
+    let federation = federation(|b| b);
+    let store = App::default();
+    let relayed = |activity: &Value| post("/ap/inbox", &relay_key, activity, activity);
+
+    // Signed by its author, sent by the relay: taken, from the author.
+    let create = signed_create(&author, 1);
+    assert_eq!(deliver(&federation, &store, relayed(&create)).await, 202);
+    let seen = store.seen();
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    assert_eq!(seen[0].kind, "Create");
+    assert_eq!(seen[0].sender, author);
+
+    // Changed on the way: not the author's, and dropped.
+    let mut changed = signed_create(&author, 2);
+    changed["object"]["content"] = json!("changed by the relay");
+    assert_eq!(deliver(&federation, &store, relayed(&changed)).await, 202);
+    assert_eq!(store.seen().len(), 1);
+
+    // Reworded: what arrives is what was signed.
+    let reworded = reworded_create(&author, 3);
+    assert_eq!(deliver(&federation, &store, relayed(&reworded)).await, 202);
+    let seen = store.seen();
+    assert_eq!(seen.len(), 2, "{seen:?}");
+    assert_eq!(
+        seen[1].activity["object"]["content"],
+        "signed by its author"
+    );
+
+    // Signed by the relay in its author's name: not the author's.
+    let impersonated = {
+        let now = chrono::Utc::now().timestamp();
+        let mut create = signed_create(&author, 4);
+        create.as_object_mut().unwrap().remove("signature");
+        ojak::sig::linked_data::sign(
+            &ojak_jsonld::Registry::bundled(),
+            &create,
+            &relay_key,
+            &PrivateKey::from_pem(PRIVATE_KEY).unwrap(),
+            now,
+            now + 60,
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        deliver(&federation, &store, relayed(&impersonated)).await,
+        202
+    );
+    assert_eq!(store.seen().len(), 2);
+}
+
+/// Read as written, an activity taken on its Linked Data signature still
+/// reaches an application that reads JSON as JSON-LD reads it, since that is
+/// what the signature covers.
+#[tokio::test]
+async fn a_relayed_activity_read_as_written_is_read_as_signed() {
+    let author = serve_remote(Remote::default()).await;
+    let relay = serve_remote(Remote::default()).await;
+    let relay_key = format!("{relay}#main-key");
+    let vouched: Arc<Mutex<Vec<Value>>> = Arc::default();
+    let kept = vouched.clone();
+    let client = Client::new(ClientConfig {
+        allow_private: vec!["127.0.0.0/8".parse().unwrap()],
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    let federation = Federation::<App>::builder()
+        .origin(Url::parse(&format!("https://{HOST}")).unwrap())
+        .shared_inbox("/ap/inbox")
+        .signed_fetch(
+            Arc::new(Fetcher::new(client, Scheme::DraftCavage)),
+            MemoryKvStore::new(),
+            Duration::from_secs(3600),
+            |_| async { Ok::<_, String>(None) },
+        )
+        .read_inbox_as_written()
+        .on_any(move |_, received| {
+            let kept = kept.clone();
+            async move {
+                kept.lock().unwrap().push(received.vouched);
+                Ok::<_, String>(())
+            }
+        })
+        .build()
+        .unwrap();
+    let store = App::default();
+
+    let reworded = reworded_create(&author, 1);
+    let request = post("/ap/inbox", &relay_key, &reworded, &reworded);
+    assert_eq!(deliver(&federation, &store, request).await, 202);
+
+    let vouched = vouched.lock().unwrap();
+    assert_eq!(vouched.len(), 1);
+    assert_eq!(vouched[0]["actor"], author);
+    assert_eq!(vouched[0]["object"]["content"], "signed by its author");
+}
