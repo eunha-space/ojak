@@ -255,9 +255,10 @@ impl Queue for PostgresQueue {
     ) -> Result<Vec<Job>, QueueError> {
         let table = &self.table;
         let rows = sqlx::query(&format!(
-            "UPDATE {table} SET run_at = now() + make_interval(secs => $3)
-             WHERE id IN (
-                 SELECT id FROM {table} AS job
+            // `UPDATE ... RETURNING` hands rows back in no particular order,
+            // so the picked order is carried through and reapplied.
+            "WITH picked AS (
+                 SELECT id, run_at FROM {table} AS job
                  WHERE queue = $1 AND failed_at IS NULL AND run_at <= now()
                    AND (ordering_key IS NULL OR NOT EXISTS (
                        SELECT 1 FROM {table} AS ahead
@@ -267,8 +268,12 @@ impl Queue for PostgresQueue {
                  ORDER BY run_at, id
                  LIMIT $2
                  FOR UPDATE SKIP LOCKED
+             ), claimed AS (
+                 UPDATE {table} AS job SET run_at = now() + make_interval(secs => $3)
+                 FROM picked WHERE job.id = picked.id
+                 RETURNING job.id, job.queue, job.payload, job.attempts, picked.run_at AS picked_at
              )
-             RETURNING id, queue, payload, attempts"
+             SELECT id, queue, payload, attempts FROM claimed ORDER BY picked_at, id"
         ))
         .bind(queue)
         .bind(i64::try_from(limit).unwrap_or(i64::MAX))
