@@ -35,9 +35,13 @@
 //! sender's own additions go unread; [`Processed::unresolved_contexts`] says
 //! which contexts those were. It rejects `@graph`,
 //! `@included` and `@reverse` outright, for reasons recorded on
-//! [`Error::RestructuringKeyword`]. It has no flattening, no framing, no RDF
-//! canonicalisation, and no `@nest`, `@index` maps, `@id` maps or `@type`
-//! maps — none of which appear in ActivityPub traffic.
+//! [`Error::RestructuringKeyword`]. It has no flattening, no framing, and no
+//! `@nest`, `@index` maps, `@id` maps or `@type` maps — none of which appear
+//! in ActivityPub traffic.
+//!
+//! It does turn a document into RDF and canonicalise it ([`rdf`]), because
+//! that is what a Linked Data Signature signs; see that module for how it is
+//! stricter than the reading path.
 //!
 //! What it does cover is the JSON-LD 1.1 needed by the contexts the fediverse
 //! actually serves: term and compact-IRI expansion, `@vocab`, `@base`,
@@ -63,6 +67,7 @@ use serde_json::Value;
 mod compact;
 mod context;
 mod expand;
+pub mod rdf;
 mod registry;
 
 pub use context::{ContextCache, NoCache, ProcessedContext};
@@ -134,6 +139,14 @@ pub enum Error {
     /// disclosed across several fediverse projects in 2025 with the
     /// recommendation that implementations reject all three; ojak does.
     RestructuringKeyword(String),
+    /// A context ojak does not ship, met where guessing is not good enough:
+    /// turning a document into RDF ([`rdf`]), which a signature covers.
+    UnresolvedContext(String),
+    /// Something JSON-LD allows that ojak does not turn into RDF.
+    Unsupported(String),
+    /// Labelling the blank nodes of a dataset took more work than
+    /// [`rdf::canonicalize`] allows one dataset.
+    CanonicalizationBudgetExceeded,
 }
 
 impl fmt::Display for Error {
@@ -148,6 +161,11 @@ impl fmt::Display for Error {
             Self::InvalidTermDefinition(term) => write!(f, "invalid term definition: {term}"),
             Self::RestructuringKeyword(keyword) => {
                 write!(f, "refusing graph-restructuring keyword: {keyword}")
+            }
+            Self::UnresolvedContext(iri) => write!(f, "context not bundled: {iri}"),
+            Self::Unsupported(what) => write!(f, "not supported in RDF: {what}"),
+            Self::CanonicalizationBudgetExceeded => {
+                f.write_str("canonicalizing the dataset takes too much work")
             }
         }
     }

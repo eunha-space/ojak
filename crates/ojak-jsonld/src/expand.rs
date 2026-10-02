@@ -165,6 +165,8 @@ fn expand_object(
                 )?;
                 if definition.as_ref().is_some_and(|d| d.container.list) {
                     wrap_list(expanded)
+                } else if session.rdf && definition.as_ref().is_some_and(|d| d.container.graph) {
+                    wrap_graphs(expanded)
                 } else {
                     expanded
                 }
@@ -178,7 +180,7 @@ fn expand_object(
         merge(&mut result, expanded_key, expanded_value);
     }
 
-    finish_node(result)
+    finish_node(result, session.rdf)
 }
 
 /// Apply the scoped context of every type the node declares.
@@ -355,6 +357,27 @@ fn expand_value(active: &ActiveContext, property: Option<&TermDefinition>, value
     Value::Object(object)
 }
 
+/// Wrap each node object of an expanded value in a graph object, as a term
+/// whose `@container` is `@graph` asks: what it holds is a graph of its own.
+fn wrap_graphs(expanded: Value) -> Value {
+    let wrap = |item: Value| {
+        let is_node = item
+            .as_object()
+            .is_some_and(|object| !object.contains_key("@value") && !object.contains_key("@list"));
+        if !is_node {
+            return item;
+        }
+        let mut object = Map::new();
+        object.insert("@graph".to_owned(), Value::Array(Vec::from([item])));
+        Value::Object(object)
+    };
+    match expanded {
+        Value::Array(items) => Value::Array(items.into_iter().map(wrap).collect()),
+        Value::Null => Value::Null,
+        other => wrap(other),
+    }
+}
+
 /// Wrap an expanded value in a `@list` unless it already is one.
 fn wrap_list(expanded: Value) -> Value {
     if expanded
@@ -391,8 +414,9 @@ fn merge(result: &mut Map<String, Value>, key: String, value: Value) {
     }
 }
 
-/// Tidy a finished node object, dropping what says nothing.
-fn finish_node(mut result: Map<String, Value>) -> Result<Value, Error> {
+/// Tidy a finished node object, dropping what says nothing — to a tree
+/// reader. In RDF (`rdf`) a node with nothing in it is still a blank node.
+fn finish_node(mut result: Map<String, Value>, rdf: bool) -> Result<Value, Error> {
     if result.contains_key("@value") {
         // A value object is only its value; `{"@value": null}` says nothing.
         if result.get("@value").is_some_and(Value::is_null) {
@@ -413,7 +437,7 @@ fn finish_node(mut result: Map<String, Value>) -> Result<Value, Error> {
     if let Some(set) = result.get("@set") {
         return Ok(set.clone());
     }
-    if result.is_empty() {
+    if result.is_empty() && !rdf {
         return Ok(Value::Null);
     }
     Ok(Value::Object(result))

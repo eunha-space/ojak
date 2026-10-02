@@ -1,0 +1,1 @@
+{"@context": "https://www.w3.org/ns/activitystreams", "id": "https://a.example/2", "type": "Note", "attachment": [{"type": "Image", "icon": {"type": "Image"}}, {"type": "Image", "icon": {"type": "Image"}}, {"type": "Image", "icon": {"type": "Image", "icon": {"type": "Image"}}}]}

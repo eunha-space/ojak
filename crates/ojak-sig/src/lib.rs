@@ -1,7 +1,8 @@
 //! Signatures and proofs: HTTP Signatures (draft-cavage, and RFC 9421 with
 //! RSA or Ed25519) and the policy an inbox holds them to, FEP-8b32 Object
 //! Integrity Proofs (`eddsa-jcs-2022`, and the post-quantum
-//! `mldsa44-jcs-2024`), and `did:key`.
+//! `mldsa44-jcs-2024`), Linked Data Signatures (`RsaSignature2017`), and
+//! `did:key`.
 //!
 //! They do no I/O: callers supply byte slices, header pairs, keys, the time
 //! and, to make a key, randomness. Ojak fetches keys and sends requests with
@@ -16,6 +17,7 @@ use core::fmt;
 pub mod did;
 pub mod digest;
 pub mod integrity;
+pub mod linked_data;
 pub mod rfc9421;
 pub mod signature;
 pub mod verification;

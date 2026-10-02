@@ -1,0 +1,88 @@
+{
+  "@context": [
+    "https://w3id.org/identity/v1",
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/data-integrity/v1",
+    "https://gotosocial.org/ns",
+    {
+      "toot": "http://joinmastodon.org/ns#",
+      "misskey": "https://misskey-hub.net/ns#",
+      "fedibird": "http://fedibird.com/ns#",
+      "sensitive": "as:sensitive",
+      "votersCount": {
+        "@id": "toot:votersCount",
+        "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"
+      },
+      "Emoji": "toot:Emoji",
+      "Hashtag": "as:Hashtag",
+      "ChatMessage": "http://litepub.social/ns#ChatMessage",
+      "quote": {
+        "@id": "https://w3id.org/fep/044f#quote",
+        "@type": "@id"
+      },
+      "quoteUrl": "as:quoteUrl",
+      "_misskey_quote": "misskey:_misskey_quote",
+      "quoteUri": "fedibird:quoteUri",
+      "QuoteAuthorization": "https://w3id.org/fep/044f#QuoteAuthorization",
+      "QuoteRequest": "https://w3id.org/fep/044f#QuoteRequest",
+      "quoteAuthorization": {
+        "@id": "https://w3id.org/fep/044f#quoteAuthorization",
+        "@type": "@id"
+      },
+      "emojiReactions": {
+        "@id": "fedibird:emojiReactions",
+        "@type": "@id"
+      }
+    }
+  ],
+  "id": "https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#create",
+  "type": "Create",
+  "actor": "https://hollo.social/@fedify",
+  "object": {
+    "id": "https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45",
+    "type": "Note",
+    "emojiReactions": "https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45/reactions",
+    "interactionPolicy": {
+      "canQuote": {
+        "automaticApproval": "as:Public"
+      }
+    },
+    "attributedTo": "https://hollo.social/@fedify",
+    "content": "<p>The official account for the Fedify project is moving to <a  data-account-id=\"019f1e3a-3cc2-7a66-ac1a-db7893bf572d\" data-account-handle=\"@fedify@hackers.pub\" translate=\"no\" class=\"h-card u-url mention\" href=\"https://hackers.pub/@fedify\">@<span>fedify</span></a>. This account will be replaced by the new one. Followers should automatically follow the new account unless any issues occur.</p>\n",
+    "contentMap": {
+      "en": "<p>The official account for the Fedify project is moving to <a  data-account-id=\"019f1e3a-3cc2-7a66-ac1a-db7893bf572d\" data-account-handle=\"@fedify@hackers.pub\" translate=\"no\" class=\"h-card u-url mention\" href=\"https://hackers.pub/@fedify\">@<span>fedify</span></a>. This account will be replaced by the new one. Followers should automatically follow the new account unless any issues occur.</p>\n"
+    },
+    "likes": {
+      "id": "https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#likes",
+      "type": "Collection",
+      "totalItems": 4
+    },
+    "published": "2026-07-01T15:09:19.201Z",
+    "replies": "https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45/replies",
+    "sensitive": false,
+    "shares": {
+      "id": "https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#shares",
+      "type": "Collection",
+      "totalItems": 6
+    },
+    "source": {
+      "content": "The official account for the Fedify project is moving to @fedify@hackers.pub. This account will be replaced by the new one. Followers should automatically follow the new account unless any issues occur.",
+      "mediaType": "text/markdown"
+    },
+    "tag": {
+      "type": "Mention",
+      "href": "https://hackers.pub/ap/actors/019f1e2f-bb0c-714f-bbc9-d588fb9a93ce",
+      "name": "@fedify@hackers.pub"
+    },
+    "to": [
+      "as:Public",
+      "https://hackers.pub/ap/actors/019f1e2f-bb0c-714f-bbc9-d588fb9a93ce"
+    ],
+    "url": "https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45"
+  },
+  "published": "2026-07-01T15:09:19.201Z",
+  "to": [
+    "as:Public",
+    "https://hackers.pub/ap/actors/019f1e2f-bb0c-714f-bbc9-d588fb9a93ce"
+  ]
+}

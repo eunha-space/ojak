@@ -8,7 +8,12 @@ license.workspace = true
 iri-string.workspace = true
 # Not inherited from the workspace: this crate is `no_std`, and an inherited
 # dependency cannot turn the workspace's default features back off.
-serde_json = { version = "1.0.140", default-features = false, features = ["alloc"] }
+# `float_roundtrip`: a number must parse to the double its text names, or
+# its canonical RDF form (`rdf`) is one digit off what its signer hashed.
+serde_json = { version = "1.0.140", default-features = false, features = ["alloc", "float_roundtrip"] }
+
+# The canonical form's blank-node labels are SHA-256 hashes (`rdf`).
+sha2 = { version = "0.10", default-features = false }
 
 [lints]
 workspace = true

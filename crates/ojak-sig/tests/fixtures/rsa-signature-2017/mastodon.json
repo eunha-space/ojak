@@ -1,0 +1,581 @@
+{
+  "key_id": "https://m.example/users/alice#main-key",
+  "created": "2026-10-01T12:00:00Z",
+  "expires": "2026-10-03T12:00:00Z",
+  "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkLWhxa+gFBLByUw1+9+5\ny29E4iNVbONxLvp3kAwhu6kF5q7FvV7iVpztNjNdxxEAGYYWVQWKW4a6m2VxqQNU\n49MhaZapUdbY8v3lGPzOcTjXuNZPbVrCKJ1r40pPfEBKnuzZBCY6kK2zRycgxEob\ngAtiUyjNTd6weijWGSlyGDP8+85iARw1Xlpeu4oVA9cVfzFtISnlXq8kYEuPCWPe\nKrLKCVXgGgH22UJbdrhX7Q3LrTSm6YtbdwSC5hZY+GW1KjBO8nJJ0zAL2oevDedG\n50cAUhBpVBv4IoZA794D+v9uPkjkvnXgK430n7EmHe9Zc2VYkJ6oeYxtQ7Qiutk2\n/QIDAQAB\n-----END PUBLIC KEY-----\n",
+  "vectors": [
+    {
+      "name": "create_note",
+      "unsigned": {
+        "@context": [
+          "https://www.w3.org/ns/activitystreams",
+          {
+            "ostatus": "http://ostatus.org#",
+            "atomUri": "ostatus:atomUri",
+            "inReplyToAtomUri": "ostatus:inReplyToAtomUri",
+            "conversation": "ostatus:conversation",
+            "sensitive": "as:sensitive",
+            "toot": "http://joinmastodon.org/ns#",
+            "votersCount": "toot:votersCount",
+            "blurhash": "toot:blurhash",
+            "focalPoint": {
+              "@container": "@list",
+              "@id": "toot:focalPoint"
+            },
+            "Hashtag": "as:Hashtag",
+            "Emoji": "toot:Emoji",
+            "quote": {
+              "@id": "https://w3id.org/fep/044f#quote",
+              "@type": "@id"
+            },
+            "interactionPolicy": {
+              "@id": "gts:interactionPolicy",
+              "@type": "@id"
+            },
+            "gts": "https://gotosocial.org/ns#",
+            "canQuote": {
+              "@id": "gts:canQuote",
+              "@type": "@id"
+            },
+            "automaticApproval": {
+              "@id": "gts:automaticApproval",
+              "@type": "@id"
+            },
+            "manualApproval": {
+              "@id": "gts:manualApproval",
+              "@type": "@id"
+            }
+          },
+          "https://w3id.org/security/v1"
+        ],
+        "id": "https://m.example/users/alice/statuses/1/activity",
+        "type": "Create",
+        "actor": "https://m.example/users/alice",
+        "published": "2026-10-01T12:00:00Z",
+        "to": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "cc": [
+          "https://m.example/users/alice/followers"
+        ],
+        "object": {
+          "id": "https://m.example/users/alice/statuses/1",
+          "type": "Note",
+          "summary": null,
+          "inReplyTo": null,
+          "published": "2026-10-01T12:00:00Z",
+          "url": "https://m.example/@alice/1",
+          "attributedTo": "https://m.example/users/alice",
+          "to": [
+            "https://www.w3.org/ns/activitystreams#Public"
+          ],
+          "cc": [
+            "https://m.example/users/alice/followers"
+          ],
+          "sensitive": false,
+          "atomUri": "https://m.example/users/alice/statuses/1",
+          "inReplyToAtomUri": null,
+          "conversation": "tag:m.example,2026-10-01:objectId=1:objectType=Conversation",
+          "content": "<p>Hello <a href=\"https://m.example/tags/rust\" class=\"mention hashtag\" rel=\"tag\">#<span>rust</span></a> :blob:</p>",
+          "contentMap": {
+            "en": "<p>Hello</p>"
+          },
+          "attachment": [
+            {
+              "type": "Document",
+              "mediaType": "image/png",
+              "url": "https://m.example/a.png",
+              "name": null,
+              "blurhash": "UABC",
+              "focalPoint": [
+                0.0,
+                0.0
+              ],
+              "width": 640,
+              "height": 480
+            }
+          ],
+          "tag": [
+            {
+              "type": "Hashtag",
+              "href": "https://m.example/tags/rust",
+              "name": "#rust"
+            },
+            {
+              "id": "https://m.example/emojis/1",
+              "type": "Emoji",
+              "name": ":blob:",
+              "updated": "2026-01-01T00:00:00Z",
+              "icon": {
+                "type": "Image",
+                "mediaType": "image/png",
+                "url": "https://m.example/blob.png"
+              }
+            }
+          ],
+          "replies": {
+            "id": "https://m.example/users/alice/statuses/1/replies",
+            "type": "Collection",
+            "first": {
+              "type": "CollectionPage",
+              "next": "https://m.example/users/alice/statuses/1/replies?page=true",
+              "partOf": "https://m.example/users/alice/statuses/1/replies",
+              "items": []
+            }
+          },
+          "likes": {
+            "id": "https://m.example/users/alice/statuses/1/likes",
+            "type": "Collection",
+            "totalItems": 0
+          },
+          "shares": {
+            "id": "https://m.example/users/alice/statuses/1/shares",
+            "type": "Collection",
+            "totalItems": 0
+          },
+          "interactionPolicy": {
+            "canQuote": {
+              "automaticApproval": [
+                "https://www.w3.org/ns/activitystreams#Public"
+              ]
+            }
+          }
+        }
+      },
+      "signed": {
+        "@context": [
+          "https://www.w3.org/ns/activitystreams",
+          {
+            "ostatus": "http://ostatus.org#",
+            "atomUri": "ostatus:atomUri",
+            "inReplyToAtomUri": "ostatus:inReplyToAtomUri",
+            "conversation": "ostatus:conversation",
+            "sensitive": "as:sensitive",
+            "toot": "http://joinmastodon.org/ns#",
+            "votersCount": "toot:votersCount",
+            "blurhash": "toot:blurhash",
+            "focalPoint": {
+              "@container": "@list",
+              "@id": "toot:focalPoint"
+            },
+            "Hashtag": "as:Hashtag",
+            "Emoji": "toot:Emoji",
+            "quote": {
+              "@id": "https://w3id.org/fep/044f#quote",
+              "@type": "@id"
+            },
+            "interactionPolicy": {
+              "@id": "gts:interactionPolicy",
+              "@type": "@id"
+            },
+            "gts": "https://gotosocial.org/ns#",
+            "canQuote": {
+              "@id": "gts:canQuote",
+              "@type": "@id"
+            },
+            "automaticApproval": {
+              "@id": "gts:automaticApproval",
+              "@type": "@id"
+            },
+            "manualApproval": {
+              "@id": "gts:manualApproval",
+              "@type": "@id"
+            }
+          },
+          "https://w3id.org/security/v1"
+        ],
+        "id": "https://m.example/users/alice/statuses/1/activity",
+        "type": "Create",
+        "actor": "https://m.example/users/alice",
+        "published": "2026-10-01T12:00:00Z",
+        "to": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "cc": [
+          "https://m.example/users/alice/followers"
+        ],
+        "object": {
+          "id": "https://m.example/users/alice/statuses/1",
+          "type": "Note",
+          "summary": null,
+          "inReplyTo": null,
+          "published": "2026-10-01T12:00:00Z",
+          "url": "https://m.example/@alice/1",
+          "attributedTo": "https://m.example/users/alice",
+          "to": [
+            "https://www.w3.org/ns/activitystreams#Public"
+          ],
+          "cc": [
+            "https://m.example/users/alice/followers"
+          ],
+          "sensitive": false,
+          "atomUri": "https://m.example/users/alice/statuses/1",
+          "inReplyToAtomUri": null,
+          "conversation": "tag:m.example,2026-10-01:objectId=1:objectType=Conversation",
+          "content": "<p>Hello <a href=\"https://m.example/tags/rust\" class=\"mention hashtag\" rel=\"tag\">#<span>rust</span></a> :blob:</p>",
+          "contentMap": {
+            "en": "<p>Hello</p>"
+          },
+          "attachment": [
+            {
+              "type": "Document",
+              "mediaType": "image/png",
+              "url": "https://m.example/a.png",
+              "name": null,
+              "blurhash": "UABC",
+              "focalPoint": [
+                0.0,
+                0.0
+              ],
+              "width": 640,
+              "height": 480
+            }
+          ],
+          "tag": [
+            {
+              "type": "Hashtag",
+              "href": "https://m.example/tags/rust",
+              "name": "#rust"
+            },
+            {
+              "id": "https://m.example/emojis/1",
+              "type": "Emoji",
+              "name": ":blob:",
+              "updated": "2026-01-01T00:00:00Z",
+              "icon": {
+                "type": "Image",
+                "mediaType": "image/png",
+                "url": "https://m.example/blob.png"
+              }
+            }
+          ],
+          "replies": {
+            "id": "https://m.example/users/alice/statuses/1/replies",
+            "type": "Collection",
+            "first": {
+              "type": "CollectionPage",
+              "next": "https://m.example/users/alice/statuses/1/replies?page=true",
+              "partOf": "https://m.example/users/alice/statuses/1/replies",
+              "items": []
+            }
+          },
+          "likes": {
+            "id": "https://m.example/users/alice/statuses/1/likes",
+            "type": "Collection",
+            "totalItems": 0
+          },
+          "shares": {
+            "id": "https://m.example/users/alice/statuses/1/shares",
+            "type": "Collection",
+            "totalItems": 0
+          },
+          "interactionPolicy": {
+            "canQuote": {
+              "automaticApproval": [
+                "https://www.w3.org/ns/activitystreams#Public"
+              ]
+            }
+          }
+        },
+        "signature": {
+          "type": "RsaSignature2017",
+          "creator": "https://m.example/users/alice#main-key",
+          "created": "2026-10-01T12:00:00Z",
+          "expires": "2026-10-03T12:00:00Z",
+          "signatureValue": "SMGthQurRbawVF1yczOynForAhBoDAbNIaSkFmzSsV6jQBTDt3hiZJmLOG+FC9JZePKsj4SyrbD35J6PvwQb0ED3qiQmmRO9FAGNsKlBxp0AdcUwBGVwaOCVJ+3q2Gg376/4IsQKWrxjjLeqccfFmbv3zUhT0eSDhqTZV8LcIjfv6563xCP6ErygENUtR33NyqunvoCUWyAS91tWyKIzP6qUvLLAuU3f/Gzz4bxHI2xpyoeykBDINsqwi3Y/HkmuQHbmHucH/XTeOcI1+L/FfC8HpNWIj6DoR3dXGgnmv9JFjm7rK26GMayG0gM6PdqIzbQ2Rs/1kNxAVQY6Pzpuuw=="
+        }
+      },
+      "canonical": "<https://m.example/emojis/1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://joinmastodon.org/ns#Emoji> .\n<https://m.example/emojis/1> <https://www.w3.org/ns/activitystreams#icon> _:c14n3 .\n<https://m.example/emojis/1> <https://www.w3.org/ns/activitystreams#name> \":blob:\" .\n<https://m.example/emojis/1> <https://www.w3.org/ns/activitystreams#updated> \"2026-01-01T00:00:00Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n<https://m.example/users/alice/statuses/1/activity> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Create> .\n<https://m.example/users/alice/statuses/1/activity> <https://www.w3.org/ns/activitystreams#actor> <https://m.example/users/alice> .\n<https://m.example/users/alice/statuses/1/activity> <https://www.w3.org/ns/activitystreams#cc> <https://m.example/users/alice/followers> .\n<https://m.example/users/alice/statuses/1/activity> <https://www.w3.org/ns/activitystreams#object> <https://m.example/users/alice/statuses/1> .\n<https://m.example/users/alice/statuses/1/activity> <https://www.w3.org/ns/activitystreams#published> \"2026-10-01T12:00:00Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n<https://m.example/users/alice/statuses/1/activity> <https://www.w3.org/ns/activitystreams#to> <https://www.w3.org/ns/activitystreams#Public> .\n<https://m.example/users/alice/statuses/1/likes> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Collection> .\n<https://m.example/users/alice/statuses/1/likes> <https://www.w3.org/ns/activitystreams#totalItems> \"0\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger> .\n<https://m.example/users/alice/statuses/1/replies> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Collection> .\n<https://m.example/users/alice/statuses/1/replies> <https://www.w3.org/ns/activitystreams#first> _:c14n0 .\n<https://m.example/users/alice/statuses/1/shares> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Collection> .\n<https://m.example/users/alice/statuses/1/shares> <https://www.w3.org/ns/activitystreams#totalItems> \"0\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger> .\n<https://m.example/users/alice/statuses/1> <http://ostatus.org#atomUri> \"https://m.example/users/alice/statuses/1\" .\n<https://m.example/users/alice/statuses/1> <http://ostatus.org#conversation> \"tag:m.example,2026-10-01:objectId=1:objectType=Conversation\" .\n<https://m.example/users/alice/statuses/1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Note> .\n<https://m.example/users/alice/statuses/1> <https://gotosocial.org/ns#interactionPolicy> _:c14n6 .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#attachment> _:c14n2 .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#attributedTo> <https://m.example/users/alice> .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#cc> <https://m.example/users/alice/followers> .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#content> \"<p>Hello <a href=\\\"https://m.example/tags/rust\\\" class=\\\"mention hashtag\\\" rel=\\\"tag\\\">#<span>rust</span></a> :blob:</p>\" .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#content> \"<p>Hello</p>\"@en .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#likes> <https://m.example/users/alice/statuses/1/likes> .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#published> \"2026-10-01T12:00:00Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#replies> <https://m.example/users/alice/statuses/1/replies> .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#sensitive> \"false\"^^<http://www.w3.org/2001/XMLSchema#boolean> .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#shares> <https://m.example/users/alice/statuses/1/shares> .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#tag> <https://m.example/emojis/1> .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#tag> _:c14n7 .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#to> <https://www.w3.org/ns/activitystreams#Public> .\n<https://m.example/users/alice/statuses/1> <https://www.w3.org/ns/activitystreams#url> <https://m.example/@alice/1> .\n_:c14n0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#CollectionPage> .\n_:c14n0 <https://www.w3.org/ns/activitystreams#next> <https://m.example/users/alice/statuses/1/replies?page=true> .\n_:c14n0 <https://www.w3.org/ns/activitystreams#partOf> <https://m.example/users/alice/statuses/1/replies> .\n_:c14n1 <https://gotosocial.org/ns#automaticApproval> <https://www.w3.org/ns/activitystreams#Public> .\n_:c14n2 <http://joinmastodon.org/ns#blurhash> \"UABC\" .\n_:c14n2 <http://joinmastodon.org/ns#focalPoint> _:c14n5 .\n_:c14n2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Document> .\n_:c14n2 <https://www.w3.org/ns/activitystreams#height> \"480\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger> .\n_:c14n2 <https://www.w3.org/ns/activitystreams#mediaType> \"image/png\" .\n_:c14n2 <https://www.w3.org/ns/activitystreams#url> <https://m.example/a.png> .\n_:c14n2 <https://www.w3.org/ns/activitystreams#width> \"640\"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger> .\n_:c14n3 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Image> .\n_:c14n3 <https://www.w3.org/ns/activitystreams#mediaType> \"image/png\" .\n_:c14n3 <https://www.w3.org/ns/activitystreams#url> <https://m.example/blob.png> .\n_:c14n4 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> \"0\"^^<http://www.w3.org/2001/XMLSchema#integer> .\n_:c14n4 <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> .\n_:c14n5 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> \"0\"^^<http://www.w3.org/2001/XMLSchema#integer> .\n_:c14n5 <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:c14n4 .\n_:c14n6 <https://gotosocial.org/ns#canQuote> _:c14n1 .\n_:c14n7 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Hashtag> .\n_:c14n7 <https://www.w3.org/ns/activitystreams#href> <https://m.example/tags/rust> .\n_:c14n7 <https://www.w3.org/ns/activitystreams#name> \"#rust\" .\n"
+    },
+    {
+      "name": "update_person",
+      "unsigned": {
+        "@context": [
+          "https://www.w3.org/ns/activitystreams",
+          "https://w3id.org/security/v1",
+          {
+            "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+            "toot": "http://joinmastodon.org/ns#",
+            "featured": {
+              "@id": "toot:featured",
+              "@type": "@id"
+            },
+            "featuredTags": {
+              "@id": "toot:featuredTags",
+              "@type": "@id"
+            },
+            "alsoKnownAs": {
+              "@id": "as:alsoKnownAs",
+              "@type": "@id"
+            },
+            "movedTo": {
+              "@id": "as:movedTo",
+              "@type": "@id"
+            },
+            "schema": "http://schema.org#",
+            "PropertyValue": "schema:PropertyValue",
+            "value": "schema:value",
+            "discoverable": "toot:discoverable",
+            "suspended": "toot:suspended",
+            "memorial": "toot:memorial",
+            "indexable": "toot:indexable",
+            "attributionDomains": {
+              "@id": "toot:attributionDomains",
+              "@type": "@id"
+            },
+            "focalPoint": {
+              "@container": "@list",
+              "@id": "toot:focalPoint"
+            }
+          }
+        ],
+        "id": "https://m.example/users/alice#updates/1727784000",
+        "type": "Update",
+        "actor": "https://m.example/users/alice",
+        "to": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "object": {
+          "id": "https://m.example/users/alice",
+          "type": "Person",
+          "following": "https://m.example/users/alice/following",
+          "followers": "https://m.example/users/alice/followers",
+          "inbox": "https://m.example/users/alice/inbox",
+          "outbox": "https://m.example/users/alice/outbox",
+          "featured": "https://m.example/users/alice/collections/featured",
+          "featuredTags": "https://m.example/users/alice/collections/tags",
+          "preferredUsername": "alice",
+          "name": "Alice ✨",
+          "summary": "<p>Hi, I am Alice.</p>",
+          "url": "https://m.example/@alice",
+          "manuallyApprovesFollowers": false,
+          "discoverable": true,
+          "indexable": false,
+          "published": "2024-01-01T00:00:00Z",
+          "memorial": false,
+          "attributionDomains": [
+            "m.example"
+          ],
+          "publicKey": {
+            "id": "https://m.example/users/alice#main-key",
+            "owner": "https://m.example/users/alice",
+            "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----\n"
+          },
+          "tag": [],
+          "attachment": [
+            {
+              "type": "PropertyValue",
+              "name": "Site",
+              "value": "<a href=\"https://alice.example\">alice.example</a>"
+            }
+          ],
+          "endpoints": {
+            "sharedInbox": "https://m.example/inbox"
+          },
+          "icon": {
+            "type": "Image",
+            "mediaType": "image/png",
+            "url": "https://m.example/avatar.png"
+          },
+          "image": {
+            "type": "Image",
+            "mediaType": "image/jpeg",
+            "url": "https://m.example/header.jpg",
+            "focalPoint": [
+              0.25,
+              -0.5
+            ]
+          }
+        }
+      },
+      "signed": {
+        "@context": [
+          "https://www.w3.org/ns/activitystreams",
+          "https://w3id.org/security/v1",
+          {
+            "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+            "toot": "http://joinmastodon.org/ns#",
+            "featured": {
+              "@id": "toot:featured",
+              "@type": "@id"
+            },
+            "featuredTags": {
+              "@id": "toot:featuredTags",
+              "@type": "@id"
+            },
+            "alsoKnownAs": {
+              "@id": "as:alsoKnownAs",
+              "@type": "@id"
+            },
+            "movedTo": {
+              "@id": "as:movedTo",
+              "@type": "@id"
+            },
+            "schema": "http://schema.org#",
+            "PropertyValue": "schema:PropertyValue",
+            "value": "schema:value",
+            "discoverable": "toot:discoverable",
+            "suspended": "toot:suspended",
+            "memorial": "toot:memorial",
+            "indexable": "toot:indexable",
+            "attributionDomains": {
+              "@id": "toot:attributionDomains",
+              "@type": "@id"
+            },
+            "focalPoint": {
+              "@container": "@list",
+              "@id": "toot:focalPoint"
+            }
+          }
+        ],
+        "id": "https://m.example/users/alice#updates/1727784000",
+        "type": "Update",
+        "actor": "https://m.example/users/alice",
+        "to": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "object": {
+          "id": "https://m.example/users/alice",
+          "type": "Person",
+          "following": "https://m.example/users/alice/following",
+          "followers": "https://m.example/users/alice/followers",
+          "inbox": "https://m.example/users/alice/inbox",
+          "outbox": "https://m.example/users/alice/outbox",
+          "featured": "https://m.example/users/alice/collections/featured",
+          "featuredTags": "https://m.example/users/alice/collections/tags",
+          "preferredUsername": "alice",
+          "name": "Alice ✨",
+          "summary": "<p>Hi, I am Alice.</p>",
+          "url": "https://m.example/@alice",
+          "manuallyApprovesFollowers": false,
+          "discoverable": true,
+          "indexable": false,
+          "published": "2024-01-01T00:00:00Z",
+          "memorial": false,
+          "attributionDomains": [
+            "m.example"
+          ],
+          "publicKey": {
+            "id": "https://m.example/users/alice#main-key",
+            "owner": "https://m.example/users/alice",
+            "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----\n"
+          },
+          "tag": [],
+          "attachment": [
+            {
+              "type": "PropertyValue",
+              "name": "Site",
+              "value": "<a href=\"https://alice.example\">alice.example</a>"
+            }
+          ],
+          "endpoints": {
+            "sharedInbox": "https://m.example/inbox"
+          },
+          "icon": {
+            "type": "Image",
+            "mediaType": "image/png",
+            "url": "https://m.example/avatar.png"
+          },
+          "image": {
+            "type": "Image",
+            "mediaType": "image/jpeg",
+            "url": "https://m.example/header.jpg",
+            "focalPoint": [
+              0.25,
+              -0.5
+            ]
+          }
+        },
+        "signature": {
+          "type": "RsaSignature2017",
+          "creator": "https://m.example/users/alice#main-key",
+          "created": "2026-10-01T12:00:00Z",
+          "expires": "2026-10-03T12:00:00Z",
+          "signatureValue": "UmZMfTF9cQRnF3RLK40Vh8ZJvK6UTf1xstkWVjQXkDeydnfEU2qDnA2xMRYXV9rr8Xb7wrGMoUITfDd+zHk4doCR1XhzBwJ3peCsQBdwIfE9poG36AsNiTTALh3XIr5EKalQTWtZYM22Rpf+6Qs5jrGHTBQh2YlzvzE/lR5n8EQkfESKOSjRQeRdHIC/YmBRbF0Dn9iHbpZ+euXUr5S+AbptpoGNsPqIxAYhW6+V+d+mYP3blczoNnGobbmsoHhSXlLsmHwF5MqQybWDY8HEFwzaDnJLjzV/qVtwIHqzTsIAyVgLuUxXEg6YvJsfEjssutvQP84VHQ2k9K+U+DbjoQ=="
+        }
+      },
+      "canonical": "<https://m.example/users/alice#main-key> <https://w3id.org/security#owner> <https://m.example/users/alice> .\n<https://m.example/users/alice#main-key> <https://w3id.org/security#publicKeyPem> \"-----BEGIN PUBLIC KEY-----\\nMIIB\\n-----END PUBLIC KEY-----\\n\" .\n<https://m.example/users/alice#updates/1727784000> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Update> .\n<https://m.example/users/alice#updates/1727784000> <https://www.w3.org/ns/activitystreams#actor> <https://m.example/users/alice> .\n<https://m.example/users/alice#updates/1727784000> <https://www.w3.org/ns/activitystreams#object> <https://m.example/users/alice> .\n<https://m.example/users/alice#updates/1727784000> <https://www.w3.org/ns/activitystreams#to> <https://www.w3.org/ns/activitystreams#Public> .\n<https://m.example/users/alice> <http://joinmastodon.org/ns#discoverable> \"true\"^^<http://www.w3.org/2001/XMLSchema#boolean> .\n<https://m.example/users/alice> <http://joinmastodon.org/ns#featured> <https://m.example/users/alice/collections/featured> .\n<https://m.example/users/alice> <http://joinmastodon.org/ns#featuredTags> <https://m.example/users/alice/collections/tags> .\n<https://m.example/users/alice> <http://joinmastodon.org/ns#indexable> \"false\"^^<http://www.w3.org/2001/XMLSchema#boolean> .\n<https://m.example/users/alice> <http://joinmastodon.org/ns#memorial> \"false\"^^<http://www.w3.org/2001/XMLSchema#boolean> .\n<https://m.example/users/alice> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Person> .\n<https://m.example/users/alice> <http://www.w3.org/ns/ldp#inbox> <https://m.example/users/alice/inbox> .\n<https://m.example/users/alice> <https://w3id.org/security#publicKey> <https://m.example/users/alice#main-key> .\n<https://m.example/users/alice> <https://www.w3.org/ns/activitystreams#attachment> _:c14n1 .\n<https://m.example/users/alice> <https://www.w3.org/ns/activitystreams#endpoints> _:c14n4 .\n<https://m.example/users/alice> <https://www.w3.org/ns/activitystreams#followers> <https://m.example/users/alice/followers> .\n<https://m.example/users/alice> <https://www.w3.org/ns/activitystreams#following> <https://m.example/users/alice/following> .\n<https://m.example/users/alice> <https://www.w3.org/ns/activitystreams#icon> _:c14n5 .\n<https://m.example/users/alice> <https://www.w3.org/ns/activitystreams#image> _:c14n0 .\n<https://m.example/users/alice> <https://www.w3.org/ns/activitystreams#manuallyApprovesFollowers> \"false\"^^<http://www.w3.org/2001/XMLSchema#boolean> .\n<https://m.example/users/alice> <https://www.w3.org/ns/activitystreams#name> \"Alice ✨\" .\n<https://m.example/users/alice> <https://www.w3.org/ns/activitystreams#outbox> <https://m.example/users/alice/outbox> .\n<https://m.example/users/alice> <https://www.w3.org/ns/activitystreams#preferredUsername> \"alice\" .\n<https://m.example/users/alice> <https://www.w3.org/ns/activitystreams#published> \"2024-01-01T00:00:00Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n<https://m.example/users/alice> <https://www.w3.org/ns/activitystreams#summary> \"<p>Hi, I am Alice.</p>\" .\n<https://m.example/users/alice> <https://www.w3.org/ns/activitystreams#url> <https://m.example/@alice> .\n_:c14n0 <http://joinmastodon.org/ns#focalPoint> _:c14n3 .\n_:c14n0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Image> .\n_:c14n0 <https://www.w3.org/ns/activitystreams#mediaType> \"image/jpeg\" .\n_:c14n0 <https://www.w3.org/ns/activitystreams#url> <https://m.example/header.jpg> .\n_:c14n1 <http://schema.org#value> \"<a href=\\\"https://alice.example\\\">alice.example</a>\" .\n_:c14n1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org#PropertyValue> .\n_:c14n1 <https://www.w3.org/ns/activitystreams#name> \"Site\" .\n_:c14n2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> \"-5.0E-1\"^^<http://www.w3.org/2001/XMLSchema#double> .\n_:c14n2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> .\n_:c14n3 <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> \"2.5E-1\"^^<http://www.w3.org/2001/XMLSchema#double> .\n_:c14n3 <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:c14n2 .\n_:c14n4 <https://www.w3.org/ns/activitystreams#sharedInbox> <https://m.example/inbox> .\n_:c14n5 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Image> .\n_:c14n5 <https://www.w3.org/ns/activitystreams#mediaType> \"image/png\" .\n_:c14n5 <https://www.w3.org/ns/activitystreams#url> <https://m.example/avatar.png> .\n"
+    },
+    {
+      "name": "delete_actor",
+      "unsigned": {
+        "@context": [
+          "https://www.w3.org/ns/activitystreams",
+          "https://w3id.org/security/v1"
+        ],
+        "id": "https://m.example/users/alice#delete",
+        "type": "Delete",
+        "actor": "https://m.example/users/alice",
+        "to": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "object": "https://m.example/users/alice"
+      },
+      "signed": {
+        "@context": [
+          "https://www.w3.org/ns/activitystreams",
+          "https://w3id.org/security/v1"
+        ],
+        "id": "https://m.example/users/alice#delete",
+        "type": "Delete",
+        "actor": "https://m.example/users/alice",
+        "to": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "object": "https://m.example/users/alice",
+        "signature": {
+          "type": "RsaSignature2017",
+          "creator": "https://m.example/users/alice#main-key",
+          "created": "2026-10-01T12:00:00Z",
+          "expires": "2026-10-03T12:00:00Z",
+          "signatureValue": "VYhcCT/XAeMgD9kiWNakWodDU852rUPg1HdL7ueaayGHdJB5XshgS4L0zpYYQRtKLg1v5OFBCvmH9nc73WIMKO2+pOn02Vm9/bbVMC9z4V5AI90uk+7Se4OkzIgmrxZ2C+qi2W+fj8I0QTlA5C5RbNrz2QsKr4a5bmvGnxII73+4M4FzodWjC2JTcMKiQvpKFYXm7cuMpbf508OFZRvDh4/UzKuRAVLu39FUMRNfVJfRRIf1256TNOwZt6xMxPYTMtPnUdsLmUyE85uxV5+usB4gWIpCl/FYYKeQYJolzXx10Lv+LJQ7g+PUw+wswBWmpDjJoBydvD6MqWRQivqLKg=="
+        }
+      },
+      "canonical": "<https://m.example/users/alice#delete> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Delete> .\n<https://m.example/users/alice#delete> <https://www.w3.org/ns/activitystreams#actor> <https://m.example/users/alice> .\n<https://m.example/users/alice#delete> <https://www.w3.org/ns/activitystreams#object> <https://m.example/users/alice> .\n<https://m.example/users/alice#delete> <https://www.w3.org/ns/activitystreams#to> <https://www.w3.org/ns/activitystreams#Public> .\n"
+    },
+    {
+      "name": "announce",
+      "unsigned": {
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": "https://m.example/users/alice/statuses/2/activity",
+        "type": "Announce",
+        "actor": "https://m.example/users/alice",
+        "published": "2026-10-01T12:00:00Z",
+        "to": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "cc": [
+          "https://r.example/users/bob",
+          "https://m.example/users/alice/followers"
+        ],
+        "object": "https://r.example/users/bob/statuses/9"
+      },
+      "signed": {
+        "@context": [
+          "https://www.w3.org/ns/activitystreams",
+          "https://w3id.org/security/v1"
+        ],
+        "id": "https://m.example/users/alice/statuses/2/activity",
+        "type": "Announce",
+        "actor": "https://m.example/users/alice",
+        "published": "2026-10-01T12:00:00Z",
+        "to": [
+          "https://www.w3.org/ns/activitystreams#Public"
+        ],
+        "cc": [
+          "https://r.example/users/bob",
+          "https://m.example/users/alice/followers"
+        ],
+        "object": "https://r.example/users/bob/statuses/9",
+        "signature": {
+          "type": "RsaSignature2017",
+          "creator": "https://m.example/users/alice#main-key",
+          "created": "2026-10-01T12:00:00Z",
+          "expires": "2026-10-03T12:00:00Z",
+          "signatureValue": "Wgdmqtn4Pg3KWIrQ8bL4WMtyVehZHWbUt3yg+TwRU1f4zycKgfybY/9DsMxVI2Fc0yCksSY8Ywbx7boFb7pHsX3Sk1rjYGL4C0NhEYcEnS1kAE1fUgRcgn2YmvNf+U8UUYtD09Y80qvzaqocqS4X4aeP14lNyTNChB2BI05I4E9Zw4Sf2CG7JATlmTYvwJT0kkWgckn4l5oJzXsuYT94d36Xn1wj+x2wwPMiquMxiLe0IT0CAe6p8xgJPC5qDAdhfjVjoC9jzVahrZTyTV+mGGWzs/1naAAFL0n7BfqFeUsPiKxDOezSZaOaShBLCrMK64GkDQZGcUa8bIp3RMOX5A=="
+        }
+      },
+      "canonical": "<https://m.example/users/alice/statuses/2/activity> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Announce> .\n<https://m.example/users/alice/statuses/2/activity> <https://www.w3.org/ns/activitystreams#actor> <https://m.example/users/alice> .\n<https://m.example/users/alice/statuses/2/activity> <https://www.w3.org/ns/activitystreams#cc> <https://m.example/users/alice/followers> .\n<https://m.example/users/alice/statuses/2/activity> <https://www.w3.org/ns/activitystreams#cc> <https://r.example/users/bob> .\n<https://m.example/users/alice/statuses/2/activity> <https://www.w3.org/ns/activitystreams#object> <https://r.example/users/bob/statuses/9> .\n<https://m.example/users/alice/statuses/2/activity> <https://www.w3.org/ns/activitystreams#published> \"2026-10-01T12:00:00Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n<https://m.example/users/alice/statuses/2/activity> <https://www.w3.org/ns/activitystreams#to> <https://www.w3.org/ns/activitystreams#Public> .\n"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+<https://mitra.social/activities/create/019f57cf-693a-77f2-b006-c4c76338956a> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Create> .
+<https://mitra.social/activities/create/019f57cf-693a-77f2-b006-c4c76338956a> <https://w3id.org/security#proof> _:c14n0 .
+<https://mitra.social/activities/create/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#actor> <https://mitra.social/users/test> .
+<https://mitra.social/activities/create/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#cc> <https://mitra.social/users/test/followers> .
+<https://mitra.social/activities/create/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#object> <https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a> .
+<https://mitra.social/activities/create/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#to> <https://voyager.lemmy.ml/c/pubtest0906> .
+<https://mitra.social/activities/create/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#to> <https://www.w3.org/ns/activitystreams#Public> .
+<https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Note> .
+<https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#attributedTo> <https://mitra.social/users/test> .
+<https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#audience> <https://voyager.lemmy.ml/c/pubtest0906> .
+<https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#cc> <https://mitra.social/users/test/followers> .
+<https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#content> "<p>Remote post 5</p>" .
+<https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#content> "<p>Remote post 5</p>"@da .
+<https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#context> <https://mitra.social/collections/conversations/019f57cf-693a-77f2-b006-c4d06a6602cb> .
+<https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#published> "2026-07-12T19:30:38.521875Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+<https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#replies> <https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a/replies> .
+<https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#sensitive> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#to> <https://voyager.lemmy.ml/c/pubtest0906> .
+<https://mitra.social/objects/019f57cf-693a-77f2-b006-c4c76338956a> <https://www.w3.org/ns/activitystreams#to> <https://www.w3.org/ns/activitystreams#Public> .
+_:c14n1 <http://purl.org/dc/terms/created> "2026-07-12T19:30:38.560996451Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> _:c14n0 .
+_:c14n1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://w3id.org/security#DataIntegrityProof> _:c14n0 .
+_:c14n1 <https://w3id.org/security#cryptosuite> "eddsa-jcs-2022"^^<https://w3id.org/security#cryptosuiteString> _:c14n0 .
+_:c14n1 <https://w3id.org/security#proofPurpose> <https://w3id.org/security#assertionMethod> _:c14n0 .
+_:c14n1 <https://w3id.org/security#proofValue> "zEcoGfTSgqBKd6kYh8cEeaDV96vqo8BVCrCriYHAYJT2Wa1tUnpstmhpFk2jr2osKX4d5gpd6bwueBDe4iYxT3K8"^^<https://w3id.org/security#multibase> _:c14n0 .
+_:c14n1 <https://w3id.org/security#verificationMethod> <https://mitra.social/users/test#ed25519-key> _:c14n0 .

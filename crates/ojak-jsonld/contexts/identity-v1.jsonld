@@ -1,0 +1,152 @@
+{
+  "@context": {
+    "Credential": "https://w3id.org/credentials#Credential",
+    "CryptographicKey": "https://w3id.org/security#Key",
+    "CryptographicKeyCredential": "https://w3id.org/credentials#CryptographicKeyCredential",
+    "EncryptedMessage": "https://w3id.org/security#EncryptedMessage",
+    "GraphSignature2012": "https://w3id.org/security#GraphSignature2012",
+    "Group": "https://www.w3.org/ns/activitystreams#Group",
+    "Identity": "https://w3id.org/identity#Identity",
+    "LinkedDataSignature2015": "https://w3id.org/security#LinkedDataSignature2015",
+    "Organization": "http://schema.org/Organization",
+    "Person": "http://schema.org/Person",
+    "PostalAddress": "http://schema.org/PostalAddress",
+    "about": {
+      "@id": "http://schema.org/about",
+      "@type": "@id"
+    },
+    "accessControl": {
+      "@id": "https://w3id.org/permissions#accessControl",
+      "@type": "@id"
+    },
+    "address": {
+      "@id": "http://schema.org/address",
+      "@type": "@id"
+    },
+    "addressCountry": "http://schema.org/addressCountry",
+    "addressLocality": "http://schema.org/addressLocality",
+    "addressRegion": "http://schema.org/addressRegion",
+    "cipherAlgorithm": "https://w3id.org/security#cipherAlgorithm",
+    "cipherData": "https://w3id.org/security#cipherData",
+    "cipherKey": "https://w3id.org/security#cipherKey",
+    "claim": {
+      "@id": "https://w3id.org/credentials#claim",
+      "@type": "@id"
+    },
+    "comment": "http://www.w3.org/2000/01/rdf-schema#comment",
+    "created": {
+      "@id": "http://purl.org/dc/terms/created",
+      "@type": "xsd:dateTime"
+    },
+    "creator": {
+      "@id": "http://purl.org/dc/terms/creator",
+      "@type": "@id"
+    },
+    "cred": "https://w3id.org/credentials#",
+    "credential": {
+      "@id": "https://w3id.org/credentials#credential",
+      "@type": "@id"
+    },
+    "dc": "http://purl.org/dc/terms/",
+    "description": "http://schema.org/description",
+    "digestAlgorithm": "https://w3id.org/security#digestAlgorithm",
+    "digestValue": "https://w3id.org/security#digestValue",
+    "domain": "https://w3id.org/security#domain",
+    "email": "http://schema.org/email",
+    "expires": {
+      "@id": "https://w3id.org/security#expiration",
+      "@type": "xsd:dateTime"
+    },
+    "familyName": "http://schema.org/familyName",
+    "givenName": "http://schema.org/givenName",
+    "id": "@id",
+    "identity": "https://w3id.org/identity#",
+    "identityService": {
+      "@id": "https://w3id.org/identity#identityService",
+      "@type": "@id"
+    },
+    "idp": {
+      "@id": "https://w3id.org/identity#idp",
+      "@type": "@id"
+    },
+    "image": {
+      "@id": "http://schema.org/image",
+      "@type": "@id"
+    },
+    "initializationVector": "https://w3id.org/security#initializationVector",
+    "issued": {
+      "@id": "https://w3id.org/credentials#issued",
+      "@type": "xsd:dateTime"
+    },
+    "issuer": {
+      "@id": "https://w3id.org/credentials#issuer",
+      "@type": "@id"
+    },
+    "label": "http://www.w3.org/2000/01/rdf-schema#label",
+    "member": {
+      "@id": "http://schema.org/member",
+      "@type": "@id"
+    },
+    "memberOf": {
+      "@id": "http://schema.org/memberOf",
+      "@type": "@id"
+    },
+    "name": "http://schema.org/name",
+    "nonce": "https://w3id.org/security#nonce",
+    "normalizationAlgorithm": "https://w3id.org/security#normalizationAlgorithm",
+    "owner": {
+      "@id": "https://w3id.org/security#owner",
+      "@type": "@id"
+    },
+    "password": "https://w3id.org/security#password",
+    "paymentProcessor": "https://w3id.org/payswarm#processor",
+    "perm": "https://w3id.org/permissions#",
+    "postalCode": "http://schema.org/postalCode",
+    "preferences": {
+      "@id": "https://w3id.org/payswarm#preferences",
+      "@type": "@vocab"
+    },
+    "privateKey": {
+      "@id": "https://w3id.org/security#privateKey",
+      "@type": "@id"
+    },
+    "privateKeyPem": "https://w3id.org/security#privateKeyPem",
+    "ps": "https://w3id.org/payswarm#",
+    "publicKey": {
+      "@id": "https://w3id.org/security#publicKey",
+      "@type": "@id"
+    },
+    "publicKeyPem": "https://w3id.org/security#publicKeyPem",
+    "publicKeyService": {
+      "@id": "https://w3id.org/security#publicKeyService",
+      "@type": "@id"
+    },
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "recipient": {
+      "@id": "https://w3id.org/credentials#recipient",
+      "@type": "@id"
+    },
+    "revoked": {
+      "@id": "https://w3id.org/security#revoked",
+      "@type": "xsd:dateTime"
+    },
+    "schema": "http://schema.org/",
+    "sec": "https://w3id.org/security#",
+    "signature": "https://w3id.org/security#signature",
+    "signatureAlgorithm": "https://w3id.org/security#signatureAlgorithm",
+    "signatureValue": "https://w3id.org/security#signatureValue",
+    "streetAddress": "http://schema.org/streetAddress",
+    "title": "http://purl.org/dc/terms/title",
+    "type": "@type",
+    "url": {
+      "@id": "http://schema.org/url",
+      "@type": "@id"
+    },
+    "writePermission": {
+      "@id": "https://w3id.org/permissions#writePermission",
+      "@type": "@id"
+    },
+    "xsd": "http://www.w3.org/2001/XMLSchema#"
+  }
+}

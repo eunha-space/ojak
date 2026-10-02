@@ -36,6 +36,7 @@ Fetched verbatim from their canonical URLs on 2026-09-17:
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `activitystreams.jsonld`            | <https://www.w3.org/ns/activitystreams>                                                                                       |
 | `security-v1.jsonld`                | <https://w3id.org/security/v1>                                                                                                |
+| `identity-v1.jsonld`                | <https://w3id.org/identity/v1>, transcribed 2026-10-02 from Mastodon 4.7.1's `config/initializers/json_ld_identity.rb`        |
 | `security-data-integrity-v1.jsonld` | <https://w3id.org/security/data-integrity/v1>                                                                                 |
 | `security-data-integrity-v2.jsonld` | <https://w3id.org/security/data-integrity/v2>, fetched 2026-09-27                                                             |
 | `security-multikey-v1.jsonld`       | <https://w3id.org/security/multikey/v1>                                                                                       |
@@ -49,7 +50,7 @@ Fetched verbatim from their canonical URLs on 2026-09-17:
 | `fep-7aa9.jsonld`                   | <https://w3id.org/fep/7aa9>, copied 2026-10-01 from `fep/7aa9/fep-7aa9.jsonld` in the FEP repository, which is what it serves |
 | `fep-22cd.jsonld`                   | <https://w3id.org/fep/22cd>, copied 2026-10-01 from `fep/22cd/fep-22cd.jsonld` in the FEP repository, which is what it serves |
 
-Two of those need a word of explanation, because the reason they are bundled
+Three of those need a word of explanation, because the reason they are bundled
 is not “to save a round trip”.
 
  -  **`join-lemmy.jsonld`** is served as `application/json` with no
@@ -64,6 +65,13 @@ is not “to save a round trip”.
     Mastodon's emitted `@context` from 4.7 onward.  It supersedes
     `did-v1` + `multikey-v1` for verification-method terms; all three are
     bundled because all three are still in circulation.
+
+ -  **`identity-v1.jsonld`** is what a Linked Data Signature's options
+    (`creator`, `created`, `expires`) are read against when the signature is
+    made and checked.  <https://w3id.org/identity/v1> redirects to
+    web-payments.org, which no longer answers, so the copy here is the one
+    Mastodon ships in its initializers, serialised by the `json-ld` gem
+    Mastodon uses.
 
 `joinmastodon.jsonld` is not fetched, because it cannot be.
 <http://joinmastodon.org/ns> has never served a JSON-LD context document and

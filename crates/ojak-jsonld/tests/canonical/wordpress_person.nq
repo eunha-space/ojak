@@ -1,0 +1,30 @@
+<https://pfefferle.org/author/pfefferle/#main-key> <https://w3id.org/security#owner> <https://pfefferle.org/author/pfefferle/> .
+<https://pfefferle.org/author/pfefferle/#main-key> <https://w3id.org/security#publicKeyPem> "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvTA5RA40nOsso04RSwyX\nHXTojRPUMlIlArDcSy3M5GUJp9/xbxSUOdBjqd31KKB1GIi3vrLmD1Qi/ZqS95Qy\nw2Zd3xOsCg+o9bsyOG+O6Y8Lu+HEB5JKLUbNHdiSviakJ8wGadH9Wm4WIiN20y+q\n/u6lgxgiWfZ2CFCN6SOc28fUKi9NmKvXK+M12BhFfy1tC5KWXKDm0UbfI1+dmqhR\n3Ffe6vEsCI/YIVVdWxQ9kouOd0XSHOGdslktkepRO7IP9i9TdwyeCa0WWRoeO5Wa\ntVpc1Y0WuNbTM2ksIXTg0G+rO1/6KO/hrHnGu3RCfb/ZIHK5L/aWYb9B3PG3LyKV\n+wIDAQAB\n-----END PUBLIC KEY-----\n" .
+<https://pfefferle.org/author/pfefferle/> <http://joinmastodon.org/ns#discoverable> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://pfefferle.org/author/pfefferle/> <http://joinmastodon.org/ns#featured> <https://pfefferle.org/wp-json/activitypub/1.0/users/1/collections/featured> .
+<https://pfefferle.org/author/pfefferle/> <http://joinmastodon.org/ns#indexable> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://pfefferle.org/author/pfefferle/> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Person> .
+<https://pfefferle.org/author/pfefferle/> <http://www.w3.org/ns/ldp#inbox> <https://pfefferle.org/wp-json/activitypub/1.0/users/1/inbox> .
+<https://pfefferle.org/author/pfefferle/> <https://w3id.org/security#publicKey> <https://pfefferle.org/author/pfefferle/#main-key> .
+<https://pfefferle.org/author/pfefferle/> <https://webfinger.net/#> "matthias@pfefferle.org" .
+<https://pfefferle.org/author/pfefferle/> <https://www.w3.org/ns/activitystreams#attachment> _:c14n0 .
+<https://pfefferle.org/author/pfefferle/> <https://www.w3.org/ns/activitystreams#attachment> _:c14n3 .
+<https://pfefferle.org/author/pfefferle/> <https://www.w3.org/ns/activitystreams#endpoints> _:c14n2 .
+<https://pfefferle.org/author/pfefferle/> <https://www.w3.org/ns/activitystreams#followers> <https://pfefferle.org/wp-json/activitypub/1.0/users/1/followers> .
+<https://pfefferle.org/author/pfefferle/> <https://www.w3.org/ns/activitystreams#following> <https://pfefferle.org/wp-json/activitypub/1.0/users/1/following> .
+<https://pfefferle.org/author/pfefferle/> <https://www.w3.org/ns/activitystreams#icon> _:c14n1 .
+<https://pfefferle.org/author/pfefferle/> <https://www.w3.org/ns/activitystreams#manuallyApprovesFollowers> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://pfefferle.org/author/pfefferle/> <https://www.w3.org/ns/activitystreams#name> "Matthias Pfefferle" .
+<https://pfefferle.org/author/pfefferle/> <https://www.w3.org/ns/activitystreams#outbox> <https://pfefferle.org/wp-json/activitypub/1.0/users/1/outbox> .
+<https://pfefferle.org/author/pfefferle/> <https://www.w3.org/ns/activitystreams#preferredUsername> "matthias" .
+<https://pfefferle.org/author/pfefferle/> <https://www.w3.org/ns/activitystreams#published> "2014-02-10T15:23:08Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+<https://pfefferle.org/author/pfefferle/> <https://www.w3.org/ns/activitystreams#summary> "<p>Ich arbeite als Open Web Lead für Automattic.</p>\n" .
+<https://pfefferle.org/author/pfefferle/> <https://www.w3.org/ns/activitystreams#url> <https://pfefferle.org/author/pfefferle/> .
+_:c14n0 <http://schema.org#value> "<a rel=\"me\" title=\"https://pfefferle.org/\" target=\"_blank\" href=\"https://pfefferle.org/\">pfefferle.org</a>" .
+_:c14n0 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org#PropertyValue> .
+_:c14n0 <https://www.w3.org/ns/activitystreams#name> "Blog" .
+_:c14n1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Image> .
+_:c14n2 <https://www.w3.org/ns/activitystreams#sharedInbox> <https://pfefferle.org/wp-json/activitypub/1.0/inbox> .
+_:c14n3 <http://schema.org#value> "<a rel=\"me\" title=\"https://pfefferle.org/author/pfefferle/\" target=\"_blank\" href=\"https://pfefferle.org/author/pfefferle/\">pfefferle.org</a>" .
+_:c14n3 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://schema.org#PropertyValue> .
+_:c14n3 <https://www.w3.org/ns/activitystreams#name> "Profile" .

@@ -40,6 +40,13 @@ const BUNDLED: &[Bundled] = &[
         aliases: &["http://w3id.org/security/v1"],
         document: include_str!("../contexts/security-v1.jsonld"),
     },
+    // What a Linked Data Signature's options are read against. Its home,
+    // web-payments.org, no longer answers; Mastodon ships a copy.
+    Bundled {
+        iri: "https://w3id.org/identity/v1",
+        aliases: &["http://w3id.org/identity/v1"],
+        document: include_str!("../contexts/identity-v1.jsonld"),
+    },
     Bundled {
         iri: "https://w3id.org/security/data-integrity/v1",
         aliases: &[],

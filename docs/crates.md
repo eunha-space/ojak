@@ -23,7 +23,8 @@ in fails the check.
 
  -  *ojak-jsonld*: JSON-LD term expansion and compaction over bundled contexts,
     so that a document is read by what its keys stand for rather than how they
-    are spelled.
+    are spelled; and the RDF a document means, in the canonical N-Quads of
+    URDNA2015, which is what a Linked Data Signature signs.
 
 
 Signatures
@@ -32,6 +33,7 @@ Signatures
  -  *ojak-sig*: HTTP Signatures (draft-cavage, and RFC 9421 with RSA or
     Ed25519) and the policy the inbox holds them to, FEP-8b32 Object
     Integrity Proofs (`eddsa-jcs-2022`, and `mldsa44-jcs-2024` to verify),
+    Linked Data Signatures (`RsaSignature2017`, as Mastodon makes them),
     and `did:key`.  It does no I/O and needs no async runtime: the caller
     passes in bytes, headers, keys, the time and, to make a key,
     randomness.  It uses the standard library, which two of its parsers

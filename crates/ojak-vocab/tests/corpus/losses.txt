@@ -5,7 +5,6 @@ Contexts named and not bundled, which leave their terms unread:
     https://ihatebeinga.live/schemas/litepub-0.1.jsonld (1)
     https://mycrowd.ca/schemas/litepub-0.1.jsonld (1)
     https://queer.hacktivis.me/schemas/litepub-0.1.jsonld (3)
-    https://w3id.org/identity/v1 (3)
     https://webmonetization.org/ns.jsonld (1)
 
 lemmy/friendica/activities/create_note.json: "Create" read as Create

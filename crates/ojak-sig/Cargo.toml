@@ -13,6 +13,8 @@ bs58.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["alloc"] }
 ed25519-dalek.workspace = true
 ml-dsa = "0.1"
+# Linked Data Signatures hash the canonical RDF of what they sign.
+ojak-jsonld.workspace = true
 # Without `getrandom`: randomness comes from the caller.
 rand_core = { version = "0.6", default-features = false }
 rsa.workspace = true

@@ -1,0 +1,33 @@
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#create> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Create> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#create> <https://www.w3.org/ns/activitystreams#actor> <https://hollo.social/@fedify> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#create> <https://www.w3.org/ns/activitystreams#object> <https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#create> <https://www.w3.org/ns/activitystreams#published> "2026-07-01T15:09:19.201Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#create> <https://www.w3.org/ns/activitystreams#to> <https://hackers.pub/ap/actors/019f1e2f-bb0c-714f-bbc9-d588fb9a93ce> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#create> <https://www.w3.org/ns/activitystreams#to> <https://www.w3.org/ns/activitystreams#Public> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#likes> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Collection> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#likes> <https://www.w3.org/ns/activitystreams#totalItems> "4"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#shares> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Collection> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#shares> <https://www.w3.org/ns/activitystreams#totalItems> "6"^^<http://www.w3.org/2001/XMLSchema#nonNegativeInteger> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <http://fedibird.com/ns#emojiReactions> <https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45/reactions> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Note> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://gotosocial.org/ns#interactionPolicy> _:c14n0 .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://www.w3.org/ns/activitystreams#attributedTo> <https://hollo.social/@fedify> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://www.w3.org/ns/activitystreams#content> "<p>The official account for the Fedify project is moving to <a  data-account-id=\"019f1e3a-3cc2-7a66-ac1a-db7893bf572d\" data-account-handle=\"@fedify@hackers.pub\" translate=\"no\" class=\"h-card u-url mention\" href=\"https://hackers.pub/@fedify\">@<span>fedify</span></a>. This account will be replaced by the new one. Followers should automatically follow the new account unless any issues occur.</p>\n" .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://www.w3.org/ns/activitystreams#content> "<p>The official account for the Fedify project is moving to <a  data-account-id=\"019f1e3a-3cc2-7a66-ac1a-db7893bf572d\" data-account-handle=\"@fedify@hackers.pub\" translate=\"no\" class=\"h-card u-url mention\" href=\"https://hackers.pub/@fedify\">@<span>fedify</span></a>. This account will be replaced by the new one. Followers should automatically follow the new account unless any issues occur.</p>\n"@en .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://www.w3.org/ns/activitystreams#likes> <https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#likes> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://www.w3.org/ns/activitystreams#published> "2026-07-01T15:09:19.201Z"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://www.w3.org/ns/activitystreams#replies> <https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45/replies> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://www.w3.org/ns/activitystreams#sensitive> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://www.w3.org/ns/activitystreams#shares> <https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45#shares> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://www.w3.org/ns/activitystreams#source> _:c14n3 .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://www.w3.org/ns/activitystreams#tag> _:c14n2 .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://www.w3.org/ns/activitystreams#to> <https://hackers.pub/ap/actors/019f1e2f-bb0c-714f-bbc9-d588fb9a93ce> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://www.w3.org/ns/activitystreams#to> <https://www.w3.org/ns/activitystreams#Public> .
+<https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> <https://www.w3.org/ns/activitystreams#url> <https://hollo.social/@fedify/019f1e3a-2fc9-7d21-8483-19793f0b3d45> .
+_:c14n0 <https://gotosocial.org/ns#canQuote> _:c14n1 .
+_:c14n1 <https://gotosocial.org/ns#automaticApproval> <https://www.w3.org/ns/activitystreams#Public> .
+_:c14n2 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Mention> .
+_:c14n2 <https://www.w3.org/ns/activitystreams#href> <https://hackers.pub/ap/actors/019f1e2f-bb0c-714f-bbc9-d588fb9a93ce> .
+_:c14n2 <https://www.w3.org/ns/activitystreams#name> "@fedify@hackers.pub" .
+_:c14n3 <https://www.w3.org/ns/activitystreams#content> "The official account for the Fedify project is moving to @fedify@hackers.pub. This account will be replaced by the new one. Followers should automatically follow the new account unless any issues occur." .
+_:c14n3 <https://www.w3.org/ns/activitystreams#mediaType> "text/markdown" .

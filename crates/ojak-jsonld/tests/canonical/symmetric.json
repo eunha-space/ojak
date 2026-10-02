@@ -1,0 +1,1 @@
+{"@context": "https://www.w3.org/ns/activitystreams", "id": "https://a.example/1", "type": "Note", "tag": [{"type": "Mention"}, {"type": "Mention"}, {"type": "Mention", "name": "x"}]}

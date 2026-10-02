@@ -1,0 +1,4 @@
+<https://a.example/4> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://www.w3.org/ns/activitystreams#Note> .
+<https://a.example/4> <https://www.w3.org/ns/activitystreams#content> "a\u0000b\bc\fd\u001Fe\u007Ff\"g\\h\ti\nj\rk l😀" .
+<https://a.example/4> <https://www.w3.org/ns/activitystreams#content> "x"@en .
+<https://a.example/4> <https://www.w3.org/ns/activitystreams#content> "y"@ko-kr .

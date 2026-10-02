@@ -178,6 +178,9 @@ pub(crate) struct Session<'a> {
     pub contexts: usize,
     pub nodes: usize,
     pub unresolved: Vec<String>,
+    /// Expanding for RDF (`crate::rdf`), which keeps what a tree reader can
+    /// do without but a graph cannot.
+    pub rdf: bool,
 }
 
 impl<'a> Session<'a> {
@@ -197,6 +200,7 @@ impl<'a> Session<'a> {
             contexts: 0,
             nodes: 0,
             unresolved: Vec::new(),
+            rdf: false,
         }
     }
 

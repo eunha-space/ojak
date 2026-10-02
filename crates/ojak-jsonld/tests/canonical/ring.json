@@ -1,0 +1,1 @@
+{"@context": "https://www.w3.org/ns/activitystreams", "type": "Collection", "items": [{"id": "_:1", "next": {"id": "_:2"}}, {"id": "_:2", "next": {"id": "_:3"}}, {"id": "_:3", "next": {"id": "_:1"}}, {"id": "_:4", "next": {"id": "_:5"}}, {"id": "_:5", "next": {"id": "_:4"}}]}

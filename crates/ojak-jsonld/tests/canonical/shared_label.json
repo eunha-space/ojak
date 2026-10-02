@@ -1,0 +1,1 @@
+{"@context": "https://www.w3.org/ns/activitystreams", "type": "Note", "tag": [{"id": "_:a", "name": "a", "tag": {"id": "_:b"}}, {"id": "_:b", "name": "a", "tag": {"id": "_:a"}}]}

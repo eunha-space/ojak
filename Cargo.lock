@@ -1278,6 +1278,7 @@ version = "0.1.0"
 dependencies = [
  "iri-string",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -1299,6 +1300,7 @@ dependencies = [
  "chrono",
  "ed25519-dalek",
  "ml-dsa",
+ "ojak-jsonld",
  "rand 0.8.6",
  "rand_core 0.6.4",
  "rsa",
