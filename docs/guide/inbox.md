@@ -81,9 +81,22 @@ be reworded to read differently to a reader of keys and still verify: `actor`
 mapped to nothing in its `@context` and the real one under `as:actor`, say.
 An activity taken on one is therefore handed on as JSON-LD processing reads
 it, normalised, even under `read_inbox_as_written`, and is refused if that
-reading names another actor or `id` than the copy as written. Its contexts
-have to be ones ojak ships, since none is fetched, and the signature's
-`creator` is held to `blocked` as a signature's key is. *ojak-sig*'s
+reading names another actor or `id` than the copy as written. The
+signature's `creator` is held to `blocked` as a signature's key is.
+
+A signature can only be checked over the contexts its signer named. By
+default those have to be ones ojak ships. Mastodon fetches any other
+(`JsonLdHelper#load_jsonld_context`), and an application that wants relayed
+activities taken as Mastodon takes them gives the federation a loader with
+`Builder::remote_contexts`. It is asked for each context the activity names,
+or a named context names in turn, that ojak does not ship, and returns the
+document; `ojak::contexts::fetch_cached` fetches one as Mastodon does, asking
+for `application/ld+json` and taking only a `200` of that type up to a
+megabyte through the guarded client, and keeps it in a key-value store for
+30 days. `contexts::Limits` bounds how many one activity may cause to be
+loaded and how long they may take together. Only this check loads contexts,
+for a creator that is not blocked, and the activity is then read over the
+same contexts, so that what it is taken to say is what was signed. *ojak-sig*'s
 `linked_data` makes and checks these signatures, byte for byte as Mastodon
 does. Whichever way a forwarded activity was established, the listener is
 told who passed it on (`Received::forwarder`), which is how an application

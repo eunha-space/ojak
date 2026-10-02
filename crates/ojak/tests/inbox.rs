@@ -1173,3 +1173,92 @@ async fn a_relayed_activity_read_as_written_is_read_as_signed() {
     assert_eq!(vouched[0]["actor"], author);
     assert_eq!(vouched[0]["object"]["content"], "signed by its author");
 }
+
+/// Passed on by a relay, an activity signed over a context ojak does not
+/// ship is taken on its signature when the application loads contexts, as
+/// Mastodon fetches them, and read over that context; without a loader it
+/// is not taken.
+#[tokio::test]
+async fn a_relayed_activity_is_checked_over_a_context_the_application_loads() {
+    const CONTEXT: &str = "https://contexts.example/ns";
+    let document = json!({"@context": {"mood": "https://contexts.example/ns#mood"}});
+    let author = serve_remote(Remote::default()).await;
+    let relay = serve_remote(Remote::default()).await;
+    let relay_key = format!("{relay}#main-key");
+    let store = App::default();
+
+    let create = |n: u32| {
+        let create = json!({
+            "@context": ["https://www.w3.org/ns/activitystreams", CONTEXT],
+            "id": format!("{author}/notes/{n}/activity"),
+            "type": "Create",
+            "actor": author,
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "object": {
+                "id": format!("{author}/notes/{n}"),
+                "type": "Note",
+                "attributedTo": author,
+                "content": "signed over another context",
+                "mood": "sunny",
+            },
+        });
+        let now = chrono::Utc::now().timestamp();
+        ojak::sig::linked_data::sign(
+            &ojak_jsonld::Registry::bundled().with(CONTEXT, document.clone()),
+            &create,
+            &format!("{author}#main-key"),
+            &PrivateKey::from_pem(PRIVATE_KEY).unwrap(),
+            now,
+            now + 60,
+        )
+        .unwrap()
+    };
+
+    // No loader: the signature cannot be checked, and the author's server
+    // does not serve the activity, so it is dropped.
+    let without = federation(|b| b);
+    let request = post("/ap/inbox", &relay_key, &create(1), &create(1));
+    assert_eq!(deliver(&without, &store, request).await, 202);
+    assert!(store.seen().is_empty());
+
+    let asked: Arc<Mutex<Vec<String>>> = Arc::default();
+    let kept = asked.clone();
+    let body = document.to_string();
+    let with = federation(move |b| {
+        b.remote_contexts(ojak::contexts::Limits::default(), move |_, iri: String| {
+            kept.lock().unwrap().push(iri.clone());
+            let body = body.clone();
+            async move {
+                if iri == CONTEXT {
+                    Ok(body)
+                } else {
+                    Err(format!("{iri} is not served"))
+                }
+            }
+        })
+    });
+    let request = post("/ap/inbox", &relay_key, &create(2), &create(2));
+    assert_eq!(deliver(&with, &store, request).await, 202);
+    let seen = store.seen();
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    assert_eq!(seen[0].sender, author);
+    assert_eq!(*asked.lock().unwrap(), [CONTEXT]);
+
+    // Changed on the way, it is still dropped.
+    let mut changed = create(3);
+    changed["object"]["mood"] = json!("stormy");
+    let request = post("/ap/inbox", &relay_key, &changed, &changed);
+    assert_eq!(deliver(&with, &store, request).await, 202);
+    assert_eq!(store.seen().len(), 1);
+
+    // Naming one the loader cannot load, it is dropped too.
+    let mut elsewhere = create(4);
+    elsewhere["@context"] = json!([
+        "https://www.w3.org/ns/activitystreams",
+        CONTEXT,
+        "https://contexts.example/gone"
+    ]);
+    let request = post("/ap/inbox", &relay_key, &elsewhere, &elsewhere);
+    assert_eq!(deliver(&with, &store, request).await, 202);
+    assert_eq!(store.seen().len(), 1);
+}

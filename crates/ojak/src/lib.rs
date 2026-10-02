@@ -5,7 +5,9 @@
 //! outgoing request goes through ([`client`]), signatures and proofs
 //! ([`sig`]), delivery of activities through a queue the application
 //! provides ([`deliverer`]), fetching documents from other servers
-//! ([`fetch`]), the key-value store Ojak keeps its caches in ([`kv`]),
+//! ([`fetch`]), the JSON-LD contexts a Linked Data Signature is checked
+//! over when ojak does not ship them ([`contexts`]), the key-value store
+//! Ojak keeps its caches in ([`kv`]),
 //! serving actors, objects, collections, WebFinger and NodeInfo and
 //! receiving activities ([`federation`]), portable objects (FEP-ef61) at
 //! gateways ([`portable`]), and finding an actor by its handle
@@ -14,6 +16,7 @@
 extern crate alloc;
 
 pub mod client;
+pub mod contexts;
 pub mod deliverer;
 pub mod federation;
 pub mod fetch;

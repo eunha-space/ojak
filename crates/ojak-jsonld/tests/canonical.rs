@@ -73,3 +73,49 @@ fn blank_node_puzzles_are_bounded() {
         Err(ojak_jsonld::Error::CanonicalizationBudgetExceeded)
     );
 }
+
+/// What a document names that the registry does not hold is what has to be
+/// added before it can be canonicalised, and once it is, it can be.
+#[test]
+fn missing_contexts_are_named_and_can_be_added() {
+    let document = serde_json::json!({
+        "@context": [
+            "https://www.w3.org/ns/activitystreams",
+            "https://a.example/ns",
+            {"@vocab": "https://b.example/ns#"}
+        ],
+        "id": "https://a.example/notes/1",
+        "type": "Note",
+        "mood": "sunny",
+    });
+    let bundled = Registry::bundled();
+    assert_eq!(
+        rdf::unresolved_contexts(&bundled, &document, ojak_jsonld::Limits::default()),
+        Ok(vec!["https://a.example/ns".to_owned()])
+    );
+    assert_eq!(
+        rdf::canonize(&bundled, &document),
+        Err(ojak_jsonld::Error::UnresolvedContext(
+            "https://a.example/ns".into()
+        ))
+    );
+
+    let extended = bundled.clone().with(
+        "https://a.example/ns",
+        serde_json::json!({"@context": {"mood": "https://a.example/ns#mood"}}),
+    );
+    assert!(extended.knows("https://a.example/ns"));
+    assert!(
+        !bundled.knows("https://a.example/ns"),
+        "the original is unchanged"
+    );
+    assert_eq!(
+        rdf::unresolved_contexts(&extended, &document, ojak_jsonld::Limits::default()),
+        Ok(Vec::new())
+    );
+    let canonical = rdf::canonize(&extended, &document).unwrap();
+    assert!(
+        canonical.contains("<https://a.example/ns#mood> \"sunny\""),
+        "{canonical}"
+    );
+}

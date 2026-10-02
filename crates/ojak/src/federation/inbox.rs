@@ -313,8 +313,8 @@ async fn linked_data<D: Clone + Send + Sync + 'static>(
     document: &Value,
     actor: &str,
 ) -> Result<(Value, Url), String> {
-    let sender = signer::verify_linked_data(context, document, actor).await?;
-    let reading = read_linked_data(document)?;
+    let (sender, registry) = signer::verify_linked_data(context, document, actor).await?;
+    let reading = read_linked_data(document, registry.as_ref())?;
     if actor_of(&reading) != Some(actor) {
         return Err(format!("as JSON-LD reads it, it is not by {actor}"));
     }
@@ -331,13 +331,26 @@ async fn linked_data<D: Clone + Send + Sync + 'static>(
 /// differently to a reader of keys — `actor` mapped to nothing in its
 /// `@context`, the real actor under `as:actor` — and still verify. Mastodon
 /// compacts such an activity before reading it; ojak normalises it.
-fn read_linked_data(document: &Value) -> Result<Value, String> {
-    ojak_jsonld::normalize_with_cache(
-        &crate::fetch::REGISTRY,
-        document,
-        ojak_jsonld::Limits::default(),
-        &*crate::fetch::CONTEXTS,
-    )
+///
+/// `registry` holds the contexts loaded to check the signature, when any
+/// were: the activity is read over what it was signed over. Processed
+/// contexts are cached for ojak's own registry only, which is what the cache
+/// holds.
+fn read_linked_data(
+    document: &Value,
+    registry: Option<&ojak_jsonld::Registry>,
+) -> Result<Value, String> {
+    match registry {
+        Some(registry) => {
+            ojak_jsonld::normalize_with(registry, document, ojak_jsonld::Limits::default())
+        }
+        None => ojak_jsonld::normalize_with_cache(
+            &crate::fetch::REGISTRY,
+            document,
+            ojak_jsonld::Limits::default(),
+            &*crate::fetch::CONTEXTS,
+        ),
+    }
     .map(ojak_jsonld::Processed::into_document)
     .map_err(|error| error.to_string())
 }

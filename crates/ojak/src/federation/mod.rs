@@ -283,7 +283,19 @@ struct Inner<D> {
     gateway_inbox: Option<GatewayInboxFn<D>>,
     forward: Option<inbox::ForwardFn<D>>,
     read_as_written: bool,
+    remote_contexts: Option<RemoteContexts<D>>,
 }
+
+/// How contexts ojak does not ship are loaded to check a Linked Data
+/// Signature: [`Builder::remote_contexts`].
+pub(super) struct RemoteContexts<D> {
+    pub(super) limits: crate::contexts::Limits,
+    pub(super) load: LoadContextFn<D>,
+}
+
+/// A loader of the context an IRI names.
+type LoadContextFn<D> =
+    Arc<dyn Fn(Context<D>, String) -> BoxFuture<'static, Result<String, Error>> + Send + Sync>;
 
 impl<D> Inner<D> {
     /// The entry `path` is routed to, with its values: of every template it
@@ -354,6 +366,7 @@ pub struct Builder<D> {
     gateway_inbox: Option<GatewayInboxFn<D>>,
     forward: Option<inbox::ForwardFn<D>>,
     read_as_written: bool,
+    remote_contexts: Option<RemoteContexts<D>>,
     errors: Vec<String>,
 }
 
@@ -384,6 +397,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             gateway_inbox: None,
             forward: None,
             read_as_written: false,
+            remote_contexts: None,
             errors: Vec::new(),
         }
     }
@@ -1171,6 +1185,31 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         self
     }
 
+    /// Check a Linked Data Signature over contexts ojak does not ship, as
+    /// Mastodon does: `load` returns the context an IRI names, the body
+    /// [`crate::contexts::fetch`] returns, from the application's cache or
+    /// fetched with its client ([`crate::contexts::fetch_cached`] does both).
+    /// Without it, an activity naming such a context is not taken on its
+    /// signature, and is fetched from its origin instead.
+    ///
+    /// Only that check loads contexts, and only within `limits`; the
+    /// activity is then read over the same contexts, so that what it is
+    /// taken to say is what was signed.
+    #[must_use]
+    pub fn remote_contexts<F, Fut, E>(mut self, limits: crate::contexts::Limits, load: F) -> Self
+    where
+        F: Fn(Context<D>, String) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<String, E>> + Send + 'static,
+        E: Into<Error>,
+    {
+        let load = boxed(move |(context, iri)| load(context, iri));
+        self.remote_contexts = Some(RemoteContexts {
+            limits,
+            load: Arc::new(move |context, iri| load((context, iri))),
+        });
+        self
+    }
+
     /// See every activity whose sender could not be authenticated, which is
     /// where an application removes an actor whose Delete it could not
     /// verify because the actor, key and all, is gone.
@@ -1503,6 +1542,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     gateway_inbox: self.gateway_inbox,
                     forward: self.forward,
                     read_as_written: self.read_as_written,
+                    remote_contexts: self.remote_contexts,
                 }),
             }),
             _ => Err(BuildError(errors)),

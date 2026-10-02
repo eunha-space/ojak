@@ -14,9 +14,11 @@
 //!
 //! Two things make it stricter than a general processor, both deliberate:
 //!
-//!  -  A context ojak does not ship is an error here, not ActivityStreams. A
-//!     signer resolved it to something; without it, the dataset cannot be
-//!     rebuilt, and guessing would only make the signature fail later.
+//!  -  A context the registry does not hold is an error here, not
+//!     ActivityStreams. A signer resolved it to something; without it, the
+//!     dataset cannot be rebuilt, and guessing would only make the signature
+//!     fail later. A caller that fetches contexts asks
+//!     [`unresolved_contexts`] which ones to add first.
 //!  -  The work is bounded. Expansion is held to [`Limits`]; the blank-node
 //!     labelling, whose worst case is factorial in the number of blank nodes
 //!     that look alike, is held to a budget of its own and gives up with
@@ -103,6 +105,35 @@ pub fn expand_for_rdf(
         return Err(Error::UnresolvedContext(unresolved));
     }
     Ok(expanded)
+}
+
+/// Every context `document` names, directly or through a context it names,
+/// that `registry` does not hold: what a caller that fetches contexts has to
+/// fetch before [`canonize`] can succeed.
+///
+/// Each one missing is read as ActivityStreams for the rest of the pass, as
+/// [`crate::expand`] reads it, so that one pass finds every one the
+/// document names itself; a context one of those names in turn is found
+/// once that one has been added. Empty when nothing is missing.
+///
+/// # Errors
+///
+/// When the document cannot be expanded for some reason other than a
+/// missing context. An error met after a context was found missing is not
+/// reported, since the missing context may be its cause; the missing ones
+/// are.
+pub fn unresolved_contexts(
+    registry: &Registry,
+    document: &Value,
+    limits: Limits,
+) -> Result<Vec<String>, Error> {
+    let mut session = Session::new(registry, limits);
+    session.rdf = true;
+    let expanded = expand::expand_document(&ActiveContext::default(), document, &mut session);
+    if !session.unresolved.is_empty() {
+        return Ok(session.unresolved);
+    }
+    expanded.map(|_| Vec::new())
 }
 
 /// The canonical N-Quads of `document`: what an `RsaSignature2017` hashes.

@@ -171,7 +171,10 @@ extension vocabulary, such as the consent terms, is an IRI comparison.
 Normalisation resolves only the contexts *ojak-jsonld* bundles, fourteen of
 them, and fetches nothing: it runs on documents from anyone who can reach an
 inbox, and a loader that fetched what those documents name would let them
-make your server send requests.  A term from a context Ojak does not ship
+make your server send requests.  (Checking a Linked Data Signature, which
+can only be done over the contexts its signer named, is the one place an
+application may have them fetched; see [the inbox](./inbox.md).)  A term from
+a context Ojak does not ship
 keeps the sender's spelling, which no field of Ojak's types matches.
 `ojak_vocab::read_reporting` reports the contexts it could not resolve, so
 you can log a peer whose documents come back emptier than expected.

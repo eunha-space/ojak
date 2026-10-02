@@ -4,7 +4,14 @@
 //! resolution runs on inbound, attacker-controlled documents, before any
 //! signature has been checked, so a loader that fetches the IRIs those
 //! documents name is a request-forgery primitive reachable by anyone who can
-//! post to an inbox. Ojak resolves what it ships and nothing else.
+//! post to an inbox. This crate resolves what it ships and what its caller
+//! adds with [`Registry::with`], and nothing else.
+//!
+//! A caller that does fetch — `ojak::contexts`, which checks a Linked Data
+//! Signature over a context the signer named as Mastodon does — asks
+//! [`crate::rdf::unresolved_contexts`] what is missing, fetches it under its
+//! own rules, and adds it to a copy of the registry; the copy shares the
+//! bundled documents rather than parsing or cloning them again.
 //!
 //! See `contexts/README.md` for where each document came from and why.
 
@@ -12,6 +19,7 @@ use alloc::{
     borrow::ToOwned,
     collections::BTreeMap,
     string::{String, ToString},
+    sync::Arc,
     vec::Vec,
 };
 use serde_json::Value;
@@ -122,10 +130,15 @@ const BUNDLED: &[Bundled] = &[
 /// The contexts available to a processing run.
 ///
 /// Parsing the bundled documents costs a few hundred microseconds, so build one
-/// registry and keep it rather than building one per document.
+/// registry and keep it rather than building one per document. A clone
+/// shares those documents, so a clone given a few more with
+/// [`Registry::with`] costs only what was added.
 #[derive(Clone, Debug)]
 pub struct Registry {
-    documents: BTreeMap<String, Value>,
+    /// What the registry was built with, shared between its clones.
+    base: Arc<BTreeMap<String, Value>>,
+    /// What [`Registry::with`] added since, which takes precedence.
+    added: BTreeMap<String, Value>,
 }
 
 impl Default for Registry {
@@ -150,7 +163,10 @@ impl Registry {
                 documents.insert(iri.to_owned(), parsed.clone());
             }
         }
-        Self { documents }
+        Self {
+            base: Arc::new(documents),
+            added: BTreeMap::new(),
+        }
     }
 
     /// An empty registry, resolving nothing.
@@ -161,7 +177,8 @@ impl Registry {
     #[must_use]
     pub fn empty() -> Self {
         Self {
-            documents: BTreeMap::new(),
+            base: Arc::new(BTreeMap::new()),
+            added: BTreeMap::new(),
         }
     }
 
@@ -171,18 +188,35 @@ impl Registry {
     /// `@context` member — matching what the IRI would have served.
     #[must_use]
     pub fn with(mut self, iri: impl Into<String>, document: Value) -> Self {
-        self.documents.insert(iri.into(), document);
+        self.added.insert(iri.into(), document);
         self
+    }
+
+    /// Whether `iri` names a document this registry holds.
+    #[must_use]
+    pub fn knows(&self, iri: &str) -> bool {
+        self.added.contains_key(iri) || self.base.contains_key(iri)
     }
 
     /// The `@context` member of the document registered under `iri`.
     pub(crate) fn resolve(&self, iri: &str) -> Option<&Value> {
-        self.documents.get(iri).and_then(|doc| doc.get("@context"))
+        self.added
+            .get(iri)
+            .or_else(|| self.base.get(iri))
+            .and_then(|doc| doc.get("@context"))
     }
 
     /// Every IRI this registry answers to, including aliases.
     #[must_use]
     pub fn known_iris(&self) -> Vec<String> {
-        self.documents.keys().map(ToString::to_string).collect()
+        let mut iris: Vec<String> = self
+            .base
+            .keys()
+            .filter(|iri| !self.added.contains_key(*iri))
+            .chain(self.added.keys())
+            .map(ToString::to_string)
+            .collect();
+        iris.sort();
+        iris
     }
 }

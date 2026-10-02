@@ -330,11 +330,15 @@ async fn find_key<D: Clone + Send + Sync + 'static>(
 /// made it: the actor `actor`, when the signature verifies with a key `actor`
 /// publishes. Mastodon's `actor_from_verified_ld_signature`, for an activity
 /// passed on by a server other than its actor's.
+///
+/// With it comes the registry the signature was checked over when that is
+/// not ojak's own: one holding the contexts the application loaded for it
+/// ([`super::Builder::remote_contexts`]).
 pub(super) async fn verify_linked_data<D: Clone + Send + Sync + 'static>(
     context: &Context<D>,
     document: &Value,
     actor: &str,
-) -> Result<Url, String> {
+) -> Result<(Url, Option<ojak_jsonld::Registry>), String> {
     use crate::sig::linked_data::Signed;
 
     let settings = context
@@ -363,8 +367,20 @@ pub(super) async fn verify_linked_data<D: Clone + Send + Sync + 'static>(
             }
         }
     }
+    // Contexts ojak does not ship are loaded, as Mastodon's document loader
+    // fetches them, only for a creator on a server that is not blocked.
+    let registry = match &context.inner.federation.remote_contexts {
+        Some(remote) => {
+            crate::contexts::resolve(&crate::fetch::REGISTRY, document, remote.limits, |iri| {
+                (remote.load)(context.clone(), iri)
+            })
+            .await
+            .map_err(|error| error.to_string())?
+        }
+        None => None,
+    };
     let signed = Signed::read(
-        &crate::fetch::REGISTRY,
+        registry.as_ref().unwrap_or(&crate::fetch::REGISTRY),
         document,
         chrono::Utc::now().timestamp(),
     )
@@ -377,7 +393,7 @@ pub(super) async fn verify_linked_data<D: Clone + Send + Sync + 'static>(
     if signer.as_str() != actor {
         return Err(format!("signed by {signer}, not {actor}"));
     }
-    Ok(signer)
+    Ok((signer, registry))
 }
 
 /// Who an FEP-8b32 integrity proof on `document` says made it: the actor

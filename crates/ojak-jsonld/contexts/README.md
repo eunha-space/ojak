@@ -21,6 +21,18 @@ loader — three SSRF, one unbounded redirect chain, one ReDoS in the HTML
 `rel=alternate` scanner.  Ojak does not have that code, so it cannot have
 those bugs.
 
+There is one exception, and an application has to ask for it.  Mastodon
+checks a Linked Data Signature (`RsaSignature2017`) over whatever contexts its
+signer named, fetching the ones it does not preload, and a signature cannot be
+checked over a context nobody has.  An application that wants relayed
+activities verified as Mastodon verifies them gives *ojak*'s federation a
+loader (`Builder::remote_contexts`), and `ojak::contexts` then fetches what
+`rdf::unresolved_contexts` says is missing, under Mastodon's request rules and
+within bounds: a few contexts per document, a megabyte each, a deadline for the
+lot, private addresses refused by the guarded client, and each kept for 30
+days.  It is only for that check, and only for an activity that has to be taken
+on such a signature; reading a document never fetches.
+
 The cost is that an unknown extension term is dropped rather than understood.
 *ojak-vocab*'s `read_reporting` says which ones were.
 That is the right trade for a protocol core: a term ojak does not know is a

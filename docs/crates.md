@@ -24,7 +24,9 @@ in fails the check.
  -  *ojak-jsonld*: JSON-LD term expansion and compaction over bundled contexts,
     so that a document is read by what its keys stand for rather than how they
     are spelled; and the RDF a document means, in the canonical N-Quads of
-    URDNA2015, which is what a Linked Data Signature signs.
+    URDNA2015, which is what a Linked Data Signature signs.  It fetches
+    nothing; *ojak*'s `contexts` fetches, within bounds, the contexts an
+    application asks to have a Linked Data Signature checked over.
 
 
 Signatures

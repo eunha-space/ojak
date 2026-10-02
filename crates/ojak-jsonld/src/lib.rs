@@ -41,7 +41,10 @@
 //!
 //! It does turn a document into RDF and canonicalise it ([`rdf`]), because
 //! that is what a Linked Data Signature signs; see that module for how it is
-//! stricter than the reading path.
+//! stricter than the reading path. A caller checking such a signature over a
+//! context it fetched, as Mastodon does, adds the fetched document to a
+//! registry ([`Registry::with`]); the fetching itself, and its rules, are the
+//! caller's.
 //!
 //! What it does cover is the JSON-LD 1.1 needed by the contexts the fediverse
 //! actually serves: term and compact-IRI expansion, `@vocab`, `@base`,
@@ -139,7 +142,8 @@ pub enum Error {
     /// disclosed across several fediverse projects in 2025 with the
     /// recommendation that implementations reject all three; ojak does.
     RestructuringKeyword(String),
-    /// A context ojak does not ship, met where guessing is not good enough:
+    /// A context the registry does not hold — one ojak does not ship, and
+    /// the caller did not add — met where guessing is not good enough:
     /// turning a document into RDF ([`rdf`]), which a signature covers.
     UnresolvedContext(String),
     /// Something JSON-LD allows that ojak does not turn into RDF.
@@ -162,7 +166,7 @@ impl fmt::Display for Error {
             Self::RestructuringKeyword(keyword) => {
                 write!(f, "refusing graph-restructuring keyword: {keyword}")
             }
-            Self::UnresolvedContext(iri) => write!(f, "context not bundled: {iri}"),
+            Self::UnresolvedContext(iri) => write!(f, "context not resolved: {iri}"),
             Self::Unsupported(what) => write!(f, "not supported in RDF: {what}"),
             Self::CanonicalizationBudgetExceeded => {
                 f.write_str("canonicalizing the dataset takes too much work")
