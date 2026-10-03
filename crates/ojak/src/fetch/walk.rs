@@ -63,6 +63,8 @@ pub struct Walk<'a> {
     anchored: bool,
     /// Pages compared with the collection by host rather than by origin.
     by_host: bool,
+    /// Read as Mastodon's `JsonLdHelper#collection_items` reads.
+    mastodon: bool,
     /// The page to read next, if there is one.
     next: Option<Next>,
     /// Items read and not yet handed out by [`Walk::next`].
@@ -149,6 +151,7 @@ impl<'a> Walk<'a> {
             collection,
             anchored: false,
             by_host: false,
+            mastodon: false,
             next,
             items: VecDeque::new(),
             seen: HashSet::new(),
@@ -168,6 +171,31 @@ impl Walk<'_> {
     #[must_use]
     pub fn by_host(mut self) -> Self {
         self.by_host = true;
+        self
+    }
+
+    /// Read the collection exactly as Mastodon's
+    /// `JsonLdHelper#collection_items` does, for a server that has to agree
+    /// with Mastodon about what a collection holds:
+    ///
+    ///  -  pages are compared by host ([`Walk::by_host`]), and only a page
+    ///     fetched by its IRI is: a page embedded in the one before is taken
+    ///     as it is, and a page elsewhere ends the walk rather than failing
+    ///     it;
+    ///  -  pages are fetched as [`Fetcher::unverified_json`] fetches, and
+    ///     whatever JSON object comes back is a page, whatever its `id` and
+    ///     type;
+    ///  -  a collection whose `first` is present holds nothing of its own;
+    ///  -  a `Collection` or `CollectionPage` holds its `items`, an
+    ///     `OrderedCollection` or `OrderedCollectionPage` its `orderedItems`,
+    ///     and anything else nothing;
+    ///  -  a link is followed when it is present, as Rails' `present?` says:
+    ///     not null, and not an empty or blank string, object or array;
+    ///  -  pages seen before are read again: the limits are what end a loop.
+    #[must_use]
+    pub fn mastodon_compatible(mut self) -> Self {
+        self.by_host = true;
+        self.mastodon = true;
         self
     }
 
@@ -245,6 +273,9 @@ impl Walk<'_> {
     /// Read the next page, fetching it if it is not in hand, and find the
     /// one after it.
     async fn read_page(&mut self) -> Result<Option<Vec<Value>>, FetchError> {
+        if self.mastodon {
+            return self.read_page_as_mastodon().await;
+        }
         loop {
             let Some(next) = self.next.take() else {
                 return Ok(None);
@@ -298,6 +329,82 @@ impl Walk<'_> {
             self.read += page.len();
             return Ok(Some(page));
         }
+    }
+
+    /// [`Walk::read_page`] as [`Walk::mastodon_compatible`] says.
+    async fn read_page_as_mastodon(&mut self) -> Result<Option<Vec<Value>>, FetchError> {
+        let document = loop {
+            let Some(next) = self.next.take() else {
+                return Ok(None);
+            };
+            let (document, is_collection) = match next {
+                Next::InHand(document, "first") => (document, true),
+                Next::InHand(document, _) => (document, false),
+                Next::Collection(url) => match self.fetch_unverified(url.as_str()).await? {
+                    Some(document) => (document, true),
+                    None => return Ok(None),
+                },
+                Next::Page(iri) => match self.fetch_unverified(&iri).await? {
+                    Some(document) => (document, false),
+                    None => return Ok(None),
+                },
+            };
+            // The collection: its `first` page, or itself when it has none.
+            if is_collection
+                && let Some(first) = document.get("first").filter(|first| present(first))
+            {
+                self.next = Some(match first {
+                    Value::String(iri) => Next::Page(iri.clone()),
+                    page => Next::InHand(page.clone(), "next"),
+                });
+                continue;
+            }
+            break document;
+        };
+        let items = match document.get("type").and_then(Value::as_str) {
+            Some("Collection" | "CollectionPage") => document.get("items"),
+            Some("OrderedCollection" | "OrderedCollectionPage") => document.get("orderedItems"),
+            _ => None,
+        };
+        let page = match items {
+            Some(Value::Array(items)) => items.clone(),
+            Some(Value::Null) | None => Vec::new(),
+            Some(item) => vec![item.clone()],
+        };
+        self.next = document
+            .get("next")
+            .filter(|next| present(next))
+            .map(|next| match next {
+                Value::String(iri) => Next::Page(iri.clone()),
+                page => Next::InHand(page.clone(), "next"),
+            });
+        self.read += page.len();
+        Ok(Some(page))
+    }
+
+    /// Fetch a page as [`Walk::mastodon_compatible`] does: `None` when it is
+    /// not on the collection's host, when the walk may fetch no more, and
+    /// when what comes back is not a JSON object.
+    async fn fetch_unverified(&mut self, iri: &str) -> Result<Option<Value>, FetchError> {
+        if self
+            .collection
+            .as_deref()
+            .is_some_and(|collection| !crate::origin::same_host(collection, iri))
+        {
+            return Ok(None);
+        }
+        let Ok(url) = Url::parse(iri) else {
+            return Ok(None);
+        };
+        if self.pages >= self.limits.pages {
+            return Ok(None);
+        }
+        self.pages += 1;
+        Ok(self
+            .fetcher
+            .unverified_json(&url, self.key)
+            .await?
+            .filter(Value::is_object))
     }
 
     /// Fetch a page, or `None` when the walk may fetch no more.
@@ -386,5 +493,17 @@ fn items(page: &Value) -> Vec<Value> {
         Some(Value::Array(items)) => items.clone(),
         Some(Value::Null) | None => Vec::new(),
         Some(item) => vec![item.clone()],
+    }
+}
+
+/// Rails' `present?` for a JSON value: not null, and not a blank string or
+/// an empty object or array.
+fn present(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::String(s) => !s.trim().is_empty(),
+        Value::Object(o) => !o.is_empty(),
+        Value::Array(a) => !a.is_empty(),
+        _ => true,
     }
 }

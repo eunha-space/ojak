@@ -67,6 +67,25 @@ pub fn same_origin(a: &str, b: &str) -> bool {
     }
 }
 
+/// Whether `comparison` is an `http` or `https` URL on the same host as
+/// `base`, whatever their schemes and ports: Mastodon's
+/// `non_matching_uri_hosts?`, negated, which is how it decides that a
+/// collection page or a pinned post is on an account's server. Hosts are
+/// compared without regard to case.
+#[must_use]
+pub fn same_host(base: &str, comparison: &str) -> bool {
+    let host = |iri: &str| {
+        url::Url::parse(iri)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+    };
+    let web = comparison.starts_with("http://") || comparison.starts_with("https://");
+    match (web, host(base), host(comparison)) {
+        (true, Some(base), Some(comparison)) => base == comparison,
+        _ => false,
+    }
+}
+
 /// The origin of an `http` or `https` IRI, read as the `url` crate reads it,
 /// since that is how every request Ojak makes and every identifier it hands
 /// on is read. An IRI that is not well formed has none: WHATWG URL parsing

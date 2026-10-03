@@ -27,6 +27,13 @@ async fn document(
 ) -> (StatusCode, [(&'static str, &'static str); 1], String) {
     server.asked.lock().unwrap().push(path.clone());
     let base = server.base.lock().unwrap().clone();
+    if path.starts_with("unavailable") {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [("content-type", "text/plain")],
+            String::new(),
+        );
+    }
     match server.documents.lock().unwrap().get(&path) {
         Some(document) => (
             StatusCode::OK,
@@ -347,4 +354,81 @@ async fn by_host_a_page_on_another_port_of_the_host_is_followed() {
         .await
         .unwrap();
     assert_eq!(by_host, [json!("a")]);
+}
+
+#[tokio::test]
+async fn a_mastodon_compatible_walk_reads_as_mastodon_does() {
+    let (server, base) = serve(&[
+        (
+            "replies",
+            json!({
+                "@context": "https://www.w3.org/ns/activitystreams",
+                "id": "{base}/replies",
+                "type": "Collection",
+                // Ignored, since `first` is present.
+                "items": ["ignored"],
+                "first": "{base}/replies/1",
+            }),
+        ),
+        // Whatever its id and type say, a page is what was served.
+        (
+            "replies/1",
+            json!({
+                "id": "https://elsewhere.example/page",
+                "type": "CollectionPage",
+                "items": ["a"],
+                "orderedItems": ["not read"],
+                "next": {
+                    "id": "https://elsewhere.example/embedded",
+                    "type": "OrderedCollectionPage",
+                    "orderedItems": ["b"],
+                    "next": "{base}/replies/3",
+                },
+            }),
+        ),
+        (
+            "replies/3",
+            json!({"type": "Page", "items": ["c"], "next": "https://elsewhere.example/4"}),
+        ),
+    ])
+    .await;
+    let fetcher = fetcher();
+    let note = format!("{base}/notes/1");
+    let collection = json!(format!("{base}/replies"));
+    let mut walk = fetcher
+        .walk_embedded(&collection, &note, None, WalkLimits::default())
+        .mastodon_compatible();
+    assert_eq!(walk.next_page().await.unwrap(), Some(vec![json!("a")]));
+    assert_eq!(walk.next_page().await.unwrap(), Some(vec![json!("b")]));
+    // A page of no type Mastodon reads holds nothing.
+    assert_eq!(walk.next_page().await.unwrap(), Some(vec![]));
+    // A page on another host ends the walk.
+    assert_eq!(walk.next_page().await.unwrap(), None);
+    assert_eq!(server.asked.lock().unwrap().len(), 3);
+
+    // A failure the server answers with is the caller's to judge.
+    let unavailable = json!(format!("{base}/unavailable"));
+    let walked = fetcher
+        .walk_embedded(&unavailable, &note, None, WalkLimits::default())
+        .mastodon_compatible()
+        .next_page()
+        .await;
+    assert!(matches!(walked, Err(FetchError::Status(503))), "{walked:?}");
+}
+
+#[test]
+fn hosts_are_compared_as_mastodon_compares_them() {
+    use ojak::origin::same_host;
+    assert!(same_host(
+        "https://a.example/users/x",
+        "http://A.example:8443/notes/1"
+    ));
+    assert!(!same_host(
+        "https://a.example/users/x",
+        "https://b.example/notes/1"
+    ));
+    assert!(!same_host(
+        "https://a.example/users/x",
+        "ftp://a.example/notes/1"
+    ));
 }

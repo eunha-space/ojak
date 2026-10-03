@@ -432,6 +432,43 @@ impl Fetcher {
         })
     }
 
+    /// Fetch the JSON at `url` without establishing it, as Mastodon's
+    /// `fetch_resource_without_id_validation` does: asked for as
+    /// ActivityPub, and taken only from a `200` served as ActivityPub. What
+    /// it says about itself is not checked, so it is only as trustworthy as
+    /// the server it came from, whatever its `id` says: a caller that
+    /// trusts it for anything more checks that itself.
+    ///
+    /// `None` for a `2xx` other than `200`, for another content type, and
+    /// for a body that is not JSON.
+    ///
+    /// # Errors
+    ///
+    /// As [`Fetcher::get`], and [`FetchError::Status`] for a status other
+    /// than success, so that the caller can tell a temporary failure from a
+    /// permanent one.
+    pub async fn unverified_json(
+        &self,
+        url: &Url,
+        key: Option<&SenderKey>,
+    ) -> Result<Option<Value>, FetchError> {
+        let response = self
+            .get(url, "application/activity+json, application/ld+json", key)
+            .await?;
+        if !(200..300).contains(&response.status) {
+            return Err(FetchError::Status(response.status));
+        }
+        let content_type = response
+            .headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        if response.status != 200 || !is_activity_content_type(content_type) {
+            return Ok(None);
+        }
+        Ok(serde_json::from_slice(&response.body).ok())
+    }
+
     /// [`Fetcher::document`], and when the document's `id` is on another
     /// origin, fetch that `id` instead, once: what comes back is trusted only
     /// if the owner of the `id` serves it.

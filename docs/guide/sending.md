@@ -184,6 +184,17 @@ embedder's origin, for the collection and each of its pages, whatever the
 collection's `id` says.  `Walk::by_host` compares pages by host rather than
 by origin, taking another scheme or port of the same host, as Mastodon does.
 
+`Walk::mastodon_compatible` reads a collection exactly as Mastodon's
+`JsonLdHelper#collection_items` does, for a server that has to agree with
+Mastodon about what one holds: by host; with pages fetched by
+`Fetcher::unverified_json`, which takes any JSON object a `200` serves as
+ActivityPub without checking its `id`; embedded pages taken as they are; the
+items a page's type says (`items` or `orderedItems`); a collection with a
+`first` page holding nothing of its own; and a page on another host ending
+the walk rather than failing it.  A status other than success comes back as
+`FetchError::Status`, for the caller to tell a temporary failure from a
+permanent one.  `ojak::origin::same_host` is the host comparison.
+
 
 Finding out what a server runs
 ------------------------------
