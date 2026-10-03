@@ -280,7 +280,8 @@ Signed fetches are configured once:
 
 with the fetcher, a key-value store, how long a key is kept, and the key Ojak
 signs its own key fetches with, for peers in secure mode. `.fetcher_for`
-picks a fetcher per tenant, `.known_key` offers keys the application already
+picks a fetcher per tenant, `.kv_for` a key-value store per tenant,
+`.known_key` offers keys the application already
 holds before any are fetched, and `.key_fetched` sees each actor document a
 key was fetched from.
 

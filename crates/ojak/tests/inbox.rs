@@ -44,6 +44,8 @@ struct Store {
     /// Listener calls to fail before succeeding.
     failures: AtomicUsize,
     forwarded: Mutex<Vec<Forward>>,
+    /// The key-value store `kv_for` picks for this one.
+    kv: Arc<MemoryKvStore>,
 }
 
 type App = Arc<Store>;
@@ -424,6 +426,36 @@ async fn an_embedded_object_from_elsewhere_arrives_as_a_reference() {
     let seen = store.seen();
     assert_eq!(seen[0].activity["object"], "https://elsewhere.test/notes/1");
     assert_eq!(seen[1].activity["object"]["content"], "bob's own");
+}
+
+/// With a store for each application's data, what one has seen is
+/// remembered in its own store, and is news to another.
+#[tokio::test]
+async fn each_tenant_remembers_what_it_has_seen_in_its_own_store() {
+    let bob = serve_remote(Remote::default()).await;
+    let key_id = format!("{bob}#main-key");
+    let federation = federation(|b| b.kv_for(|store: &App| store.kv.clone()));
+    let (first, second) = (App::default(), App::default());
+
+    let activity = follow(&bob, 1);
+    for store in [&first, &first, &second] {
+        assert_eq!(
+            deliver(
+                &federation,
+                store,
+                post("/ap/inbox", &key_id, &activity, &activity)
+            )
+            .await,
+            202
+        );
+    }
+    assert_eq!(first.seen().len(), 1, "the second delivery is a duplicate");
+    assert_eq!(
+        second.seen().len(),
+        1,
+        "another tenant's store knew nothing"
+    );
+    assert!(!first.kv.is_empty() && !second.kv.is_empty());
 }
 
 #[tokio::test]

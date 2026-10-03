@@ -1029,6 +1029,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
             key_ttl,
             key: boxed(key),
             fetcher_for: None,
+            kv_for: None,
             known_key: None,
             key_fetched: None,
         });
@@ -1046,6 +1047,22 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         match &mut self.signed_fetch {
             Some(settings) => settings.fetcher_for = Some(Arc::new(fetcher)),
             None => self.errors.push("fetcher_for before signed_fetch".into()),
+        }
+        self
+    }
+
+    /// The key-value store for a request's data, in place of the one given
+    /// to [`Builder::signed_fetch`]: an application serving several
+    /// instances keeps each one's cached keys and the activities it has seen
+    /// in that instance's own store, such as its own namespace of a shared
+    /// Redis. Call after `signed_fetch`.
+    #[must_use]
+    pub fn kv_for<K: KvStore>(mut self, kv: impl Fn(&D) -> Arc<K> + Send + Sync + 'static) -> Self {
+        match &mut self.signed_fetch {
+            Some(settings) => {
+                settings.kv_for = Some(Arc::new(move |data: &D| -> Arc<dyn DynKv> { kv(data) }));
+            }
+            None => self.errors.push("kv_for before signed_fetch".into()),
         }
         self
     }

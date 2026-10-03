@@ -633,7 +633,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         .map(|(id, digest)| ["ojak", "inbox", origin.as_str(), id, digest]);
     if let (Some(seen), Some(settings)) = (&seen, &inner.signed_fetch) {
         match settings
-            .kv
+            .kv(context.data())
             .insert(seen, Value::Bool(true), Some(SEEN_FOR))
             .await
         {
@@ -690,7 +690,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
             context.report(&error);
             // Not processed, so not seen: the sender's retry is processed.
             if let (Some(seen), Some(settings)) = (&seen, &inner.signed_fetch) {
-                let _ = settings.kv.delete(seen).await;
+                let _ = settings.kv(context.data()).delete(seen).await;
             }
             empty(StatusCode::INTERNAL_SERVER_ERROR)
         }
@@ -717,7 +717,7 @@ async fn forward<D: Clone + Send + Sync + 'static>(
     };
     let key = ["ojak", "forwarded", kind, origin, id];
     match settings
-        .kv
+        .kv(context.data())
         .insert(&key, Value::Bool(true), Some(FORWARDED_FOR))
         .await
     {

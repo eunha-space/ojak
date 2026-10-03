@@ -19,6 +19,7 @@ type KeyFn<D> =
     Arc<dyn Fn(Context<D>) -> BoxFuture<'static, Result<Option<SenderKey>, Error>> + Send + Sync>;
 
 pub(super) type FetcherFn<D> = Arc<dyn Fn(&D) -> Arc<Fetcher> + Send + Sync>;
+pub(super) type KvFn<D> = Arc<dyn Fn(&D) -> Arc<dyn DynKv> + Send + Sync>;
 pub(super) type KeyFetchedFn<D> =
     Arc<dyn Fn(Context<D>, Value) -> BoxFuture<'static, ()> + Send + Sync>;
 pub(super) type KnownKeyFn<D> = Arc<
@@ -31,6 +32,7 @@ pub(super) struct SignedFetch<D> {
     pub(super) key_ttl: Duration,
     pub(super) key: KeyFn<D>,
     pub(super) fetcher_for: Option<FetcherFn<D>>,
+    pub(super) kv_for: Option<KvFn<D>>,
     pub(super) known_key: Option<KnownKeyFn<D>>,
     pub(super) key_fetched: Option<KeyFetchedFn<D>>,
 }
@@ -41,6 +43,14 @@ impl<D> SignedFetch<D> {
         match &self.fetcher_for {
             Some(fetcher) => fetcher(data),
             None => self.fetcher.clone(),
+        }
+    }
+
+    /// The key-value store for a request's data.
+    pub(super) fn kv(&self, data: &D) -> Arc<dyn DynKv> {
+        match &self.kv_for {
+            Some(kv) => kv(data),
+            None => self.kv.clone(),
         }
     }
 }
@@ -278,8 +288,9 @@ async fn find_key<D: Clone + Send + Sync + 'static>(
         }
     }
 
+    let kv = settings.kv(context.data());
     let cache_key = ["ojak", "key", key_id];
-    match settings.kv.get(&cache_key).await {
+    match kv.get(&cache_key).await {
         Ok(Some(cached)) => {
             if let Some(published) = Published::from_json(&cached)
                 && check(&published.key)
@@ -306,8 +317,7 @@ async fn find_key<D: Clone + Send + Sync + 'static>(
         && settings.key_fetched.is_some()
         && published.document.is_some();
     if !kept_by_application
-        && let Err(error) = settings
-            .kv
+        && let Err(error) = kv
             .set(&cache_key, published.to_json(), Some(settings.key_ttl))
             .await
     {

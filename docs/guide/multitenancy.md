@@ -127,6 +127,12 @@ shared by the whole process on purpose.
     settings and keeps its own record of which signature scheme each host
     accepts.
 
+ -  *The key-value store, if you like.*  `.kv_for(|data| …)` picks the store
+    a request's cached keys and seen activities go to, so each tenant can
+    keep them in its own namespace of a shared Redis (*ojak-redis*), under
+    credentials that reach only that namespace.  Without it, the one store
+    given to `.signed_fetch` serves every tenant, as below.
+
  -  *Every callback.*  `blocked`, `known_key`, `key_fetched` and the rest
     receive the tenant's context, so one tenant can block a server that
     another follows.
@@ -137,10 +143,11 @@ schema and can be exported or moved one tenant at a time.
 
 ### Shared by the process
 
- -  *The key-value store.*  One store, given to `.signed_fetch`, serves every
-    tenant.  What it holds is a cache, so it can be shared, and bounded for
-    the whole process with `MemoryKvStore::with_capacity`.  Its entries are
-    namespaced so that sharing is safe:
+ -  *The key-value store, unless picked per tenant.*  One store, given to
+    `.signed_fetch`, serves every tenant.  What it holds is a cache, so it can
+    be shared, and bounded for the whole process with
+    `MemoryKvStore::with_capacity`.  Its entries are namespaced so that sharing
+    is safe:
      -  a remote public key is stored by its key ID, since it is the same
         whichever tenant asks;
      -  an activity already processed, and one already forwarded, are stored
