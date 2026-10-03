@@ -137,7 +137,7 @@ impl Client {
                 if attempt.previous().len() > redirect_config.max_redirects {
                     return attempt.error("too many redirects");
                 }
-                match check_url(attempt.url(), &redirect_config.allow_private) {
+                match validate_url(attempt.url(), &redirect_config.allow_private) {
                     Ok(()) => attempt.follow(),
                     Err(RequestError::Refused(why)) => attempt.error(Refused(why)),
                     Err(error) => attempt.error(error.to_string()),
@@ -173,7 +173,7 @@ impl Client {
     /// When the URL or an address is refused, the response is too large, or
     /// the request fails. A response with any status is `Ok`.
     pub async fn get(&self, url: &Url, headers: HeaderMap) -> Result<Response, RequestError> {
-        check_url(url, &self.config.allow_private)?;
+        validate_url(url, &self.config.allow_private)?;
         let response = self
             .get
             .get(url.clone())
@@ -194,7 +194,7 @@ impl Client {
         url: &Url,
         headers: HeaderMap,
     ) -> Result<Response, RequestError> {
-        check_url(url, &self.config.allow_private)?;
+        validate_url(url, &self.config.allow_private)?;
         let response = self
             .direct
             .get(url.clone())
@@ -216,7 +216,7 @@ impl Client {
         headers: HeaderMap,
         body: Vec<u8>,
     ) -> Result<Response, RequestError> {
-        check_url(url, &self.config.allow_private)?;
+        validate_url(url, &self.config.allow_private)?;
         let response = self
             .direct
             .post(url.clone())
@@ -226,6 +226,31 @@ impl Client {
             .await
             .map_err(classify)?;
         self.read(response).await
+    }
+
+    /// A request to `url`, following redirects, for the application to add
+    /// to, send and read itself: a GET of something that is not a document,
+    /// such as a link's preview or a media file, whose body may be large and
+    /// is better read as a stream than all at once.
+    ///
+    /// The request goes through the same guard as every other, `url` here
+    /// and each address and redirect when it is sent, with the client's
+    /// connect and overall timeouts, either of which the builder may
+    /// shorten. Nothing bounds the body but how the caller reads it:
+    /// [`ClientConfig::max_response_bytes`] applies only to what the client
+    /// reads in full. An error from sending it converts into a
+    /// [`RequestError`], a refusal included.
+    ///
+    /// # Errors
+    ///
+    /// When `url` is refused, as [`validate_url`].
+    pub fn request(
+        &self,
+        method: reqwest::Method,
+        url: &Url,
+    ) -> Result<reqwest::RequestBuilder, RequestError> {
+        validate_url(url, &self.config.allow_private)?;
+        Ok(self.get.request(method, url.clone()))
     }
 
     async fn read(&self, mut response: reqwest::Response) -> Result<Response, RequestError> {
@@ -252,6 +277,15 @@ impl Client {
             url,
             body,
         })
+    }
+}
+
+impl From<reqwest::Error> for RequestError {
+    /// A refusal from the resolver or a redirect comes back as
+    /// [`RequestError::Refused`]; anything else is
+    /// [`RequestError::Network`].
+    fn from(error: reqwest::Error) -> Self {
+        classify(error)
     }
 }
 
@@ -283,7 +317,18 @@ impl std::error::Error for Refused {}
 
 /// Check a URL before requesting it: its scheme, and its host when the host
 /// is a literal address, which DNS never sees.
-fn check_url(url: &Url, allow: &[IpNet]) -> Result<(), RequestError> {
+///
+/// Every request [`Client`] sends is checked with this first, and a name is
+/// checked on the addresses it resolves to when the connection is made; an
+/// application that sends a request some other way, or wants to refuse a URL
+/// before it gets that far, checks it here against the same `allow` list.
+///
+/// # Errors
+///
+/// [`RequestError::InvalidUrl`] when the URL is not `http` or `https` with a
+/// host, and [`RequestError::Refused`] when its host is an address neither
+/// public nor in `allow`.
+pub fn validate_url(url: &Url, allow: &[IpNet]) -> Result<(), RequestError> {
     if !matches!(url.scheme(), "http" | "https") {
         return Err(RequestError::InvalidUrl(url.to_string()));
     }
@@ -337,9 +382,14 @@ impl Resolve for GuardedResolver {
 
 /// Whether `address` is on the public internet.
 ///
-/// Everything the IANA special-purpose registries set aside is refused, and
-/// an IPv6 address that carries an IPv4 one — mapped, NAT64, 6to4 — is judged
-/// by the IPv4 address inside it, since that is where a packet to it ends up.
+/// Everything the IANA special-purpose registries set aside is refused, as
+/// Mastodon's `PrivateAddressCheck` refuses it. An IPv4-mapped IPv6 address
+/// is judged by the IPv4 address inside it, since that is where a packet to
+/// it ends up. The translation prefixes, NAT64 (`64:ff9b::/96`,
+/// `64:ff9b:1::/48`) and 6to4 (`2002::/16`), are refused whatever they
+/// carry, as Mastodon refuses them: a server behind NAT64 allows the prefix
+/// with [`ClientConfig::allow_private`], as a Mastodon server names it in
+/// `ALLOWED_PRIVATE_ADDRESSES`.
 #[must_use]
 pub fn is_public(address: IpAddr) -> bool {
     match address {
@@ -371,17 +421,6 @@ fn is_public_v6(address: Ipv6Addr) -> bool {
     if let Some(v4) = address.to_ipv4_mapped() {
         return is_public_v4(v4);
     }
-    // NAT64 (64:ff9b::/96) and 6to4 (2002::/16) lead to the IPv4 address they
-    // carry.
-    if segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
-        let [.., hi, lo] = segments;
-        return is_public_v4(Ipv4Addr::from((u32::from(hi) << 16) | u32::from(lo)));
-    }
-    if segments[0] == 0x2002 {
-        return is_public_v4(Ipv4Addr::from(
-            (u32::from(segments[1]) << 16) | u32::from(segments[2]),
-        ));
-    }
     !(address.is_unspecified()
         || address.is_loopback()
         || segments[0] & 0xfe00 == 0xfc00 // unique local
@@ -391,6 +430,10 @@ fn is_public_v6(address: Ipv6Addr) -> bool {
         || (segments[0] == 0x2001 && segments[1] == 0x0db8) // documentation
         || (segments[0] == 0x2001 && segments[1] < 0x0200) // Teredo, benchmarking, ORCHID
         || segments[..4] == [0x0100, 0, 0, 0] // discard-only
+        || segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] // NAT64
+        || segments[..3] == [0x64, 0xff9b, 1] // local-use NAT64
+        || segments[0] == 0x2002 // 6to4
+        || segments[0] & 0xfff0 == 0x3ff0 // documentation
         || segments[..6] == [0, 0, 0, 0, 0, 0]) // IPv4-compatible, deprecated
 }
 
@@ -452,10 +495,26 @@ mod tests {
         assert!(!public("::ffff:127.0.0.1"));
         assert!(!public("::ffff:10.0.0.1"));
         assert!(public("::ffff:1.1.1.1"));
-        assert!(!public("64:ff9b::a9fe:a9fe")); // NAT64 of 169.254.169.254
-        assert!(public("64:ff9b::101:101")); // NAT64 of 1.1.1.1
-        assert!(!public("2002:7f00:1::1")); // 6to4 of 127.0.0.1
         assert!(!public("::127.0.0.1")); // IPv4-compatible
+    }
+
+    /// Mastodon refuses the translation prefixes whatever they carry, and a
+    /// server behind NAT64 allows the prefix by name.
+    #[test]
+    fn translation_prefixes_are_refused_whatever_they_carry() {
+        for address in [
+            "64:ff9b::a9fe:a9fe", // NAT64 of 169.254.169.254
+            "64:ff9b::101:101",   // NAT64 of 1.1.1.1
+            "64:ff9b:1::101:101", // local-use NAT64
+            "2002:7f00:1::1",     // 6to4 of 127.0.0.1
+            "2002:101:101::1",    // 6to4 of 1.1.1.1
+            "3fff::1",            // documentation
+        ] {
+            assert!(!public(address), "{address}");
+        }
+        let allow: Vec<IpNet> = vec!["64:ff9b::/96".parse().expect("network")];
+        let url = Url::parse("http://[64:ff9b::101:101]/").expect("url");
+        assert!(validate_url(&url, &allow).is_ok());
     }
 
     #[test]
@@ -468,23 +527,23 @@ mod tests {
         ] {
             let url = Url::parse(url).expect("url");
             assert!(
-                matches!(check_url(&url, &allow), Err(RequestError::Refused(_))),
+                matches!(validate_url(&url, &allow), Err(RequestError::Refused(_))),
                 "{url}"
             );
         }
         assert!(matches!(
-            check_url(&Url::parse("file:///etc/passwd").expect("url"), &allow),
+            validate_url(&Url::parse("file:///etc/passwd").expect("url"), &allow),
             Err(RequestError::InvalidUrl(_))
         ));
-        assert!(check_url(&Url::parse("https://example.com/").expect("url"), &allow).is_ok());
+        assert!(validate_url(&Url::parse("https://example.com/").expect("url"), &allow).is_ok());
     }
 
     #[test]
     fn an_allowed_network_is_reachable() {
         let allow: Vec<IpNet> = vec!["127.0.0.0/8".parse().expect("network")];
         let url = Url::parse("http://127.0.0.1:8080/inbox").expect("url");
-        assert!(check_url(&url, &allow).is_ok());
+        assert!(validate_url(&url, &allow).is_ok());
         let url = Url::parse("http://10.0.0.1/inbox").expect("url");
-        assert!(check_url(&url, &allow).is_err());
+        assert!(validate_url(&url, &allow).is_err());
     }
 }

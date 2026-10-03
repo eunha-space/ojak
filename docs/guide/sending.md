@@ -106,8 +106,17 @@ pooled HTTP client, `ojak::client::Client`, which:
     three, and never follows a POST's;
  -  bounds response size, at 1 MiB, and time.
 
-For development against servers on your own network, allow that network with
-`ClientConfig::allow_private`.
+The ranges it refuses are those Mastodon's `PrivateAddressCheck` refuses,
+the NAT64 and 6to4 prefixes included whatever address they carry.  For
+development against servers on your own network, or a server reaching the
+internet through NAT64, allow that network with `ClientConfig::allow_private`,
+as a Mastodon server names it in `ALLOWED_PRIVATE_ADDRESSES`.
+
+What is not a document, such as a link's preview page or a media file, an
+application can fetch through the same guard and read itself, as a stream if
+it is large: `Client::request` returns a `reqwest::RequestBuilder` whose URL,
+addresses and redirects are all checked.  `ojak::client::validate_url` checks a
+URL against the same rules without sending anything.
 
 
 Fetching documents

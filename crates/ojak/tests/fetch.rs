@@ -464,3 +464,40 @@ async fn a_handle_is_found_through_webfinger_and_looked_up() {
     let error = fetcher().webfinger_at(&unknown).await.unwrap_err();
     assert_eq!(error.status(), Some(404));
 }
+
+/// A request the application sends and reads itself follows redirects
+/// through the same guard: to an allowed network, and not past it.
+#[tokio::test]
+async fn a_request_read_by_the_application_is_guarded() {
+    let base = serve(Server::default()).await;
+    let client = fetcher().client().clone();
+
+    let response = client
+        .request(reqwest::Method::GET, &base.join("@bob").unwrap())
+        .unwrap()
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.url().path(), "/users/bob");
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["type"], "Person");
+
+    let error = client
+        .request(reqwest::Method::GET, &base.join("private").unwrap())
+        .unwrap()
+        .send()
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(RequestError::from(error), RequestError::Refused(_)),
+        "a redirect to a network not allowed is refused"
+    );
+
+    let refused = Client::new(ClientConfig::default())
+        .unwrap()
+        .request(reqwest::Method::GET, &base.join("users/bob").unwrap());
+    assert!(
+        matches!(refused, Err(RequestError::Refused(_))),
+        "a literal private address is refused before anything is sent"
+    );
+}
