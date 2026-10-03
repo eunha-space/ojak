@@ -8,7 +8,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use ojak::client::{Client, ClientConfig, RequestError};
 use ojak::contexts::{self, Error};
-use ojak::kv::MemoryKvStore;
+use ojak::kv::{KvError, KvStore, MemoryKvStore};
 use serde_json::json;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -124,16 +124,65 @@ async fn a_fetched_context_is_kept_and_a_refused_one_is_not() {
     let ttl = Duration::from_secs(60);
 
     for _ in 0..2 {
-        contexts::fetch_cached(&kv, &client, &format!("{base}/ns"), ttl)
+        contexts::fetch_cached(&kv, &client, &format!("{base}/ns"), ttl, |_| {})
             .await
             .unwrap();
     }
     assert_eq!(server.requests.load(Ordering::SeqCst), 1);
 
     for _ in 0..2 {
-        contexts::fetch_cached(&kv, &client, &format!("{base}/json"), ttl)
+        contexts::fetch_cached(&kv, &client, &format!("{base}/json"), ttl, |_| {})
             .await
             .unwrap_err();
     }
     assert_eq!(server.requests.load(Ordering::SeqCst), 3);
+}
+
+/// A store that fails every read and write.
+struct Broken;
+
+impl KvStore for Broken {
+    async fn get(&self, _: &[&str]) -> Result<Option<serde_json::Value>, KvError> {
+        Err(KvError("down".into()))
+    }
+    async fn set(
+        &self,
+        _: &[&str],
+        _: serde_json::Value,
+        _: Option<Duration>,
+    ) -> Result<(), KvError> {
+        Err(KvError("down".into()))
+    }
+    async fn insert(
+        &self,
+        _: &[&str],
+        _: serde_json::Value,
+        _: Option<Duration>,
+    ) -> Result<bool, KvError> {
+        Err(KvError("down".into()))
+    }
+    async fn delete(&self, _: &[&str]) -> Result<(), KvError> {
+        Err(KvError("down".into()))
+    }
+}
+
+/// A store that cannot be reached is a miss, as `Rails.cache` takes a Redis
+/// it cannot reach: the context is fetched, and the failures are reported.
+#[tokio::test]
+async fn a_failing_store_is_a_miss() {
+    let server = Server::default();
+    let base = serve(server.clone()).await;
+    let mut failures = Vec::new();
+    let body = contexts::fetch_cached(
+        &Broken,
+        &client(true),
+        &format!("{base}/ns"),
+        Duration::from_secs(60),
+        |error| failures.push(error),
+    )
+    .await
+    .unwrap();
+    assert!(body.contains("@context"));
+    assert_eq!(failures.len(), 2, "the read and the write");
+    assert_eq!(server.requests.load(Ordering::SeqCst), 1);
 }

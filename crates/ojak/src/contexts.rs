@@ -83,7 +83,8 @@ pub enum Error {
     NotAContext(String),
     /// The application's loader failed.
     Load(String, String),
-    /// The key-value store failed.
+    /// The key-value store failed. [`fetch_cached`] reports a failing store
+    /// to its caller rather than failing with this.
     Kv(KvError),
     /// The document named more contexts to load than [`Limits::max_remote`].
     TooMany(usize),
@@ -170,23 +171,31 @@ pub async fn fetch(client: &Client, iri: &str) -> Result<String, Error> {
 /// under `["jsonld", "context", iri]`, as `Rails.cache` keeps it under
 /// `jsonld:context:<iri>`. Only a context that was taken is kept.
 ///
+/// The store is a cache, and a failing one is treated as `Rails.cache`
+/// treats a Redis it cannot reach: a read that fails is a miss, and a write
+/// that fails still returns what was fetched. `on_store_error` is told of
+/// each failure, for the application to log.
+///
 /// # Errors
 ///
-/// As [`fetch`], or when the store fails.
+/// As [`fetch`].
 pub async fn fetch_cached<K: KvStore>(
     kv: &K,
     client: &Client,
     iri: &str,
     ttl: Duration,
+    mut on_store_error: impl FnMut(KvError),
 ) -> Result<String, Error> {
     let key = ["jsonld", "context", iri];
-    if let Some(Value::String(body)) = kv.get(&key).await.map_err(Error::Kv)? {
-        return Ok(body);
+    match kv.get(&key).await {
+        Ok(Some(Value::String(body))) => return Ok(body),
+        Ok(_) => {}
+        Err(error) => on_store_error(error),
     }
     let body = fetch(client, iri).await?;
-    kv.set(&key, Value::String(body.clone()), Some(ttl))
-        .await
-        .map_err(Error::Kv)?;
+    if let Err(error) = kv.set(&key, Value::String(body.clone()), Some(ttl)).await {
+        on_store_error(error);
+    }
     Ok(body)
 }
 
