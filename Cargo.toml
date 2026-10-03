@@ -4,6 +4,7 @@ members = [
   "crates/ojak-axum",
   "crates/ojak-jsonld",
   "crates/ojak-postgres",
+  "crates/ojak-redis",
   "crates/ojak-sig",
   "crates/ojak-vocab",
   "crates/ojak-vocab-gen",

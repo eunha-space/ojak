@@ -68,6 +68,10 @@ Integrations
 
  -  *ojak-postgres*: PostgreSQL backends for the queue and the key-value store.
 
+ -  *ojak-redis*: A Redis backend for the key-value store, its keys under a
+    prefix the application gives, so that several instances can share one
+    Redis each under an ACL of its own.
+
 [axum]: https://github.com/tokio-rs/axum
 
 

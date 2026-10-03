@@ -44,6 +44,9 @@ Both are traits with backends you pick rather than write:
  -  `PostgresQueue` and `PostgresKvStore`, in *ojak-postgres*, each in a table
     of its own, created by `initialize()` or by a migration you write from
     `schema()`.
+ -  `RedisKvStore`, in *ojak-redis*, whose keys are their segments joined by
+    `:` after a prefix you give, with Redis's own expiry, so that every process
+    using the Redis shares one record of what has been seen.
 
 Every backend passes one set of conformance checks,
 `ojak::testing::check_queue` and `check_kv`, so they agree on the parts that

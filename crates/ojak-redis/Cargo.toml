@@ -1,0 +1,19 @@
+[package]
+name = "ojak-redis"
+description = "A Redis key-value backend for ojak"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ojak = { path = "../ojak" }
+redis = { version = "0.27", default-features = false, features = ["aio", "tokio-comp"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+ojak = { path = "../ojak", features = ["testing"] }
+redis = { version = "0.27", default-features = false, features = ["aio", "tokio-comp", "connection-manager"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true
