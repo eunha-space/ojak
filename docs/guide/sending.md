@@ -192,3 +192,18 @@ its `self` links name.  Each comes with its type when the link gives one, as
 Lemmy's does for a name that is both a user and a community.  The host
 answers only for itself, so look the actor up afterwards to establish it like
 any other.
+
+`Fetcher::resolve` goes as far as Mastodon's `ResolveAccountService` does
+before it fetches the actor: the answer has to have a `subject` and an
+ActivityPub `self` link, and when the `subject` names another handle, that
+handle is asked about once and has to name itself.  It returns the canonical
+handle and the actor it names.  A `410 Gone` comes back as an error with that
+status, which says the handle is gone from its host.  `Fetcher::confirm` also
+requires the actor named to be the one you expected, as Mastodon checks an
+actor's handle before believing it; `webfinger::split_acct` reads a [FEP-2c59]
+`webfinger` property as Mastodon does.  `resolve_with` and `confirm_with` do
+the same with a lookup of your own.  An onion service is asked over `http`,
+and `Fetcher::with_plain_http_webfinger` asks every host so, for tests whose
+servers cannot serve `https`.
+
+[FEP-2c59]: https://codeberg.org/fediverse/fep/src/branch/main/fep/2c59/fep-2c59.md

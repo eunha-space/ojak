@@ -208,6 +208,8 @@ pub struct Fetcher {
     /// The scheme each host last accepted.
     schemes: Mutex<HashMap<String, Scheme>>,
     resolver: Option<Arc<dyn DidResolver>>,
+    /// Whether WebFinger is asked over plain `http`.
+    plain_http_webfinger: bool,
 }
 
 impl fmt::Debug for Fetcher {
@@ -228,7 +230,22 @@ impl Fetcher {
             first_scheme,
             schemes: Mutex::new(HashMap::new()),
             resolver: None,
+            plain_http_webfinger: false,
         }
+    }
+
+    /// Ask every WebFinger query over plain `http` rather than `https`, for
+    /// tests whose servers cannot serve `https`. Off unless turned on.
+    #[must_use]
+    pub fn with_plain_http_webfinger(mut self, plain: bool) -> Self {
+        self.plain_http_webfinger = plain;
+        self
+    }
+
+    /// Whether WebFinger is asked over plain `http`.
+    #[must_use]
+    pub fn plain_http_webfinger(&self) -> bool {
+        self.plain_http_webfinger
     }
 
     /// Resolve DID methods other than `did:key` with `resolver`, when

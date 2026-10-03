@@ -11,6 +11,7 @@ use crate::fetch::{FetchError, Fetcher};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde_json::Value;
 use std::fmt;
+use std::future::Future;
 use url::Url;
 
 /// What a WebFinger query asks for.
@@ -89,7 +90,8 @@ impl Address {
         format!("acct:{}@{}", self.user, self.host)
     }
 
-    /// The URL of the host's WebFinger query for this address, over `https`.
+    /// The URL of the host's WebFinger query for this address, over `https`,
+    /// or over `http` for an onion service, as Mastodon asks one.
     ///
     /// # Panics
     ///
@@ -106,12 +108,34 @@ impl Address {
             .remove(b'@');
         let acct = self.acct();
         let resource = utf8_percent_encode(&acct, QUERY_VALUE);
+        let onion = self
+            .host
+            .split(':')
+            .next()
+            .is_some_and(|name| name.ends_with(".onion"));
+        let scheme = if onion { "http" } else { "https" };
         Url::parse(&format!(
-            "https://{}/.well-known/webfinger?resource={resource}",
+            "{scheme}://{}/.well-known/webfinger?resource={resource}",
             self.host
         ))
         .expect("a checked host makes a URL")
     }
+}
+
+/// An `acct:` URI or a bare handle split at its `@`s as Ruby's
+/// `split('@')` splits it, keeping the first two parts: what Mastodon's
+/// `ProcessAccountService#split_acct` reads an actor's [FEP-2c59]
+/// `webfinger` property as. A part that is missing is empty.
+///
+/// [FEP-2c59]: https://codeberg.org/fediverse/fep/src/branch/main/fep/2c59/fep-2c59.md
+#[must_use]
+pub fn split_acct(acct: &str) -> (String, String) {
+    let acct = acct.strip_prefix("acct:").unwrap_or(acct);
+    let mut parts = acct.split('@');
+    (
+        parts.next().unwrap_or_default().to_owned(),
+        parts.next().unwrap_or_default().to_owned(),
+    )
 }
 
 impl fmt::Display for Address {
@@ -231,6 +255,188 @@ impl Found {
     }
 }
 
+/// A handle resolved through WebFinger: the handle its host gave as the
+/// `subject`, and the actor the answer's first ActivityPub `self` link names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Resolved {
+    /// The canonical handle, as the host spells it.
+    pub address: Address,
+    /// The actor it names.
+    pub actor: Url,
+    /// The whole answer the actor was read from.
+    pub found: Found,
+}
+
+/// Why a handle could not be resolved.
+#[derive(Debug)]
+pub enum ResolveError {
+    /// A host could not be asked, or did not answer with a JRD. A `410
+    /// Gone` is here, with its status: the handle is gone from its host.
+    Fetch(FetchError),
+    /// The answer for `asked` has no `subject`.
+    NoSubject { asked: String },
+    /// The answer for `asked` names no ActivityPub actor.
+    NoActor { asked: String },
+    /// The `subject` of the answer for `asked` is not a handle.
+    BadSubject { asked: String, subject: String },
+    /// The handle the answer for `asked` gave as canonical names yet
+    /// another one, `stopped_at`.
+    TooManyRedirects { asked: String, stopped_at: String },
+    /// The handle, resolved, names another actor than the one it was
+    /// expected to.
+    NotLoopingBack { handle: String, actor: String },
+}
+
+impl ResolveError {
+    /// The status a host answered with, if it answered with one other than
+    /// success; a `410` says the handle is gone.
+    #[must_use]
+    pub fn status(&self) -> Option<u16> {
+        match self {
+            Self::Fetch(error) => error.status(),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for ResolveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Fetch(error) => error.fmt(f),
+            Self::NoSubject { asked } => write!(f, "Missing subject in response for {asked}"),
+            Self::NoActor { asked } => write!(f, "Missing self link in response for {asked}"),
+            Self::BadSubject { asked, subject } => write!(
+                f,
+                "Webfinger response for {asked} has a subject that is not a handle: {subject}"
+            ),
+            Self::TooManyRedirects { asked, stopped_at } => write!(
+                f,
+                "Too many webfinger redirects for URI {asked} (stopped at {stopped_at})"
+            ),
+            Self::NotLoopingBack { handle, actor } => write!(
+                f,
+                "Webfinger response for {handle} does not loop back to {actor}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ResolveError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Fetch(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<FetchError> for ResolveError {
+    fn from(error: FetchError) -> Self {
+        Self::Fetch(error)
+    }
+}
+
+/// Resolve `address` through WebFinger as Mastodon's `ResolveAccountService`
+/// does, asking each host with `lookup`: an answer has to have a `subject`
+/// and an ActivityPub `self` link. When the `subject` is the handle asked
+/// about, compared without regard to case, that is the answer; when it is
+/// another, that handle is asked about in turn, once, and its answer has to
+/// name itself. An application that builds the query URL itself — over
+/// plain `http` for an onion service, say — passes a `lookup` that calls
+/// [`Fetcher::webfinger_at`]; [`Fetcher::resolve`] asks with
+/// [`Fetcher::webfinger`].
+///
+/// The actor is only what the host claims: look it up afterwards to
+/// establish it like any other.
+///
+/// # Errors
+///
+/// When a host cannot be asked or its answer is missing either part, the
+/// `subject` is not a handle, or a redirect leads to yet another handle.
+pub async fn resolve_with<F, Fut>(
+    address: &Address,
+    mut lookup: F,
+) -> Result<Resolved, ResolveError>
+where
+    F: FnMut(&Address) -> Fut,
+    Fut: Future<Output = Result<Found, FetchError>>,
+{
+    let same = |a: &Address, b: &Address| {
+        a.user.eq_ignore_ascii_case(&b.user) && a.host.eq_ignore_ascii_case(&b.host)
+    };
+    let first = read_answer(address, lookup(address).await?)?;
+    if same(&first.address, address) {
+        return Ok(first);
+    }
+    // The handle does not match, so it may have been redirected.
+    let canonical = first.address;
+    let second = read_answer(&canonical, lookup(&canonical).await?)?;
+    if !same(&second.address, &canonical) {
+        return Err(ResolveError::TooManyRedirects {
+            asked: address.to_string(),
+            stopped_at: second.address.to_string(),
+        });
+    }
+    Ok(second)
+}
+
+/// Confirm that `address` names `actor`, as Mastodon's
+/// `ProcessAccountService#check_webfinger!` does before it believes an
+/// actor's handle: [`resolve_with`], and the actor the canonical handle's
+/// answer names has to be `actor`. Returns what it resolved to, whose
+/// `address` is the handle to show.
+///
+/// # Errors
+///
+/// As [`resolve_with`], and when the handle names another actor.
+pub async fn confirm_with<F, Fut>(
+    address: &Address,
+    actor: &str,
+    lookup: F,
+) -> Result<Resolved, ResolveError>
+where
+    F: FnMut(&Address) -> Fut,
+    Fut: Future<Output = Result<Found, FetchError>>,
+{
+    let resolved = resolve_with(address, lookup).await?;
+    if resolved.actor.as_str() != actor {
+        return Err(ResolveError::NotLoopingBack {
+            handle: resolved.address.to_string(),
+            actor: actor.to_owned(),
+        });
+    }
+    Ok(resolved)
+}
+
+/// `Webfinger::Response`'s checks of the answer for `asked`, and the handle
+/// its `subject` names, which is an `acct:` URI or a bare `user@host`.
+fn read_answer(asked: &Address, found: Found) -> Result<Resolved, ResolveError> {
+    let asked = asked.acct();
+    let subject = found
+        .subject
+        .clone()
+        .filter(|subject| !subject.trim().is_empty())
+        .ok_or_else(|| ResolveError::NoSubject {
+            asked: asked.clone(),
+        })?;
+    let actor = found
+        .actors
+        .first()
+        .map(|named| named.id.clone())
+        .ok_or_else(|| ResolveError::NoActor {
+            asked: asked.clone(),
+        })?;
+    let address = Some(subject.trim())
+        .filter(|subject| !subject.starts_with('@'))
+        .and_then(Address::parse)
+        .ok_or(ResolveError::BadSubject { asked, subject })?;
+    Ok(Resolved {
+        address,
+        actor,
+        found,
+    })
+}
+
 impl Fetcher {
     /// Ask `address`'s host what it says of it.
     ///
@@ -238,7 +444,41 @@ impl Fetcher {
     ///
     /// As [`Fetcher::webfinger_at`].
     pub async fn webfinger(&self, address: &Address) -> Result<Found, FetchError> {
-        self.webfinger_at(&address.webfinger_url()).await
+        let mut url = address.webfinger_url();
+        if self.plain_http_webfinger() {
+            // A scheme change between two special schemes always succeeds.
+            let _ = url.set_scheme("http");
+        }
+        self.webfinger_at(&url).await
+    }
+
+    /// Confirm that `address` names `actor`, as [`confirm_with`] does,
+    /// asking each host with [`Fetcher::webfinger`].
+    ///
+    /// # Errors
+    ///
+    /// As [`confirm_with`].
+    pub async fn confirm(&self, address: &Address, actor: &str) -> Result<Resolved, ResolveError> {
+        confirm_with(address, actor, |address| {
+            let address = address.clone();
+            async move { self.webfinger(&address).await }
+        })
+        .await
+    }
+
+    /// Resolve `address` to the handle its host says is canonical and the
+    /// actor that names, as [`resolve_with`] does, asking each host with
+    /// [`Fetcher::webfinger`].
+    ///
+    /// # Errors
+    ///
+    /// As [`resolve_with`].
+    pub async fn resolve(&self, address: &Address) -> Result<Resolved, ResolveError> {
+        resolve_with(address, |address| {
+            let address = address.clone();
+            async move { self.webfinger(&address).await }
+        })
+        .await
     }
 
     /// Ask the WebFinger query `url` what it says, unsigned, as WebFinger
@@ -367,6 +607,186 @@ mod tests {
             Found::from_jrd(&json!({"subject": "acct:x@y"}))
                 .actors
                 .is_empty()
+        );
+    }
+
+    /// Answers by handle, as hosts would give them.
+    async fn resolve_from(
+        asked: &str,
+        answers: &[(&str, Value)],
+    ) -> Result<Resolved, ResolveError> {
+        let answers: std::collections::HashMap<String, Found> = answers
+            .iter()
+            .map(|(handle, jrd)| ((*handle).to_owned(), Found::from_jrd(jrd)))
+            .collect();
+        resolve_with(&Address::parse(asked).unwrap(), |address| {
+            let found = answers
+                .get(&address.to_string())
+                .cloned()
+                .ok_or(FetchError::Status(404));
+            async move { found }
+        })
+        .await
+    }
+
+    fn jrd(subject: &str, actor: &str) -> Value {
+        json!({
+            "subject": subject,
+            "links": [{"rel": "self", "type": "application/activity+json", "href": actor}],
+        })
+    }
+
+    #[tokio::test]
+    async fn a_handle_resolves_to_the_actor_its_host_names() {
+        let resolved = resolve_from(
+            "alice@social.example",
+            &[(
+                "alice@social.example",
+                jrd(
+                    "acct:Alice@social.example",
+                    "https://social.example/users/alice",
+                ),
+            )],
+        )
+        .await
+        .unwrap();
+        assert_eq!(resolved.address.user(), "Alice", "as the host spells it");
+        assert_eq!(
+            resolved.actor.as_str(),
+            "https://social.example/users/alice"
+        );
+    }
+
+    #[tokio::test]
+    async fn one_redirect_is_followed_and_has_to_name_itself() {
+        let redirected = jrd("acct:alice@social.example", "https://example.com/ignored");
+        let resolved = resolve_from(
+            "alice@example.com",
+            &[
+                ("alice@example.com", redirected.clone()),
+                (
+                    "alice@social.example",
+                    jrd(
+                        "acct:alice@social.example",
+                        "https://social.example/users/alice",
+                    ),
+                ),
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(resolved.address.to_string(), "alice@social.example");
+        assert_eq!(
+            resolved.actor.as_str(),
+            "https://social.example/users/alice"
+        );
+
+        let error = resolve_from(
+            "alice@example.com",
+            &[
+                ("alice@example.com", redirected),
+                (
+                    "alice@social.example",
+                    jrd("acct:alice@third.example", "https://third.example/alice"),
+                ),
+            ],
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(error, ResolveError::TooManyRedirects { .. }),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_answer_missing_a_part_or_gone_is_an_error() {
+        let error = resolve_from(
+            "alice@social.example",
+            &[("alice@social.example", json!({"links": []}))],
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, ResolveError::NoSubject { .. }));
+        let error = resolve_from(
+            "alice@social.example",
+            &[(
+                "alice@social.example",
+                json!({"subject": "acct:alice@social.example"}),
+            )],
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, ResolveError::NoActor { .. }));
+        let error = resolve_from(
+            "alice@social.example",
+            &[(
+                "alice@social.example",
+                jrd("acct:a@b@social.example", "https://social.example/a"),
+            )],
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, ResolveError::BadSubject { .. }));
+        let error = resolve_from("alice@social.example", &[]).await.unwrap_err();
+        assert_eq!(error.status(), Some(404));
+    }
+
+    #[test]
+    fn an_onion_service_is_asked_over_http() {
+        let url = Address::parse("alice@abcdef.onion")
+            .unwrap()
+            .webfinger_url();
+        assert_eq!(url.scheme(), "http");
+        let url = Address::parse("alice@social.example")
+            .unwrap()
+            .webfinger_url();
+        assert_eq!(url.scheme(), "https");
+    }
+
+    #[test]
+    fn an_acct_is_split_like_ruby_splits_it() {
+        assert_eq!(
+            split_acct("acct:alice@example.com"),
+            ("alice".into(), "example.com".into())
+        );
+        assert_eq!(split_acct("alice"), ("alice".into(), String::new()));
+        assert_eq!(
+            split_acct("a@b@c"),
+            ("a".into(), "b".into()),
+            "only the first two parts count"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_confirmed_handle_has_to_name_the_actor() {
+        let answers = [(
+            "alice@social.example",
+            jrd(
+                "acct:alice@social.example",
+                "https://social.example/users/alice",
+            ),
+        )];
+        let lookup = |address: &Address| {
+            let found = answers
+                .iter()
+                .find(|(handle, _)| *handle == address.to_string())
+                .map(|(_, jrd)| Found::from_jrd(jrd))
+                .ok_or(FetchError::Status(404));
+            async move { found }
+        };
+        let address = Address::parse("alice@social.example").unwrap();
+        assert!(
+            confirm_with(&address, "https://social.example/users/alice", lookup)
+                .await
+                .is_ok()
+        );
+        let error = confirm_with(&address, "https://social.example/users/mallory", lookup)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, ResolveError::NotLoopingBack { .. }),
+            "{error}"
         );
     }
 }
