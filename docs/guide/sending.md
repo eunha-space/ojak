@@ -59,14 +59,17 @@ Delivery:
     on a 401 to a deleted or suspended account's delivery;
  -  holds back deliveries to a destination that keeps failing.  After ten
     failures in a row, its circuit breaker opens, and deliveries to it are
-    retried without being sent until a minute has passed since the last
-    failure; then they are let through, and one that succeeds closes it.  A
-    held delivery counts as an attempt, as Mastodon counts it.  The breaker
+    retried without being sent until a minute has passed; then one delivery
+    at a time is let through as a probe while the rest are held, as
+    Mastodon's Stoplights do.  A probe that succeeds closes the breaker, and
+    one that fails opens it for another minute.  A held delivery counts as
+    an attempt, as Mastodon counts it.  The breaker
     is kept for each host, or for each inbox, as Mastodon keeps it, in
     memory unless `breaker_store` gives the deliverer a `BreakerStore` of
     your own, such as one in Redis that every process shares, as Mastodon's
-    Stoplights are; `DelivererConfig::breaker` sets it, and `None` turns it
-    off;
+    Stoplights are, which answers `admit` for each delivery and takes the
+    probe back with its outcome in `record`; `DelivererConfig::breaker` sets
+    it, and `None` turns it off;
  -  reports every attempt, delivered, failed or held, to `on_attempt`, for an
     application that keeps its own account of which servers answer, as
     Mastodon's delivery failure tracker does;

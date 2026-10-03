@@ -133,24 +133,35 @@ pub enum AttemptOutcome {
 }
 
 /// Holding back deliveries to a destination that keeps failing, rather than
-/// sending each one to fail in turn.
+/// sending each one to fail in turn, as a [Stoplight] with its default
+/// strategies does.
 ///
-/// After `threshold` failures in a row a destination's breaker opens, and
-/// deliveries to it are held — retried as failures, without a request —
-/// until `cool_off` has passed since its last failure. Then they are let
-/// through: one that succeeds closes it, one that fails holds the rest for
-/// another `cool_off`. A failure is what may pass: a 5xx, 408, 429, or no
-/// answer. An answer that will not change is the server working, and closes
-/// it.
+/// After `threshold` failures in a row a destination's breaker opens (red),
+/// and deliveries to it are held — retried as failures, without a request —
+/// until `cool_off` has passed since the failure that opened it. Then it is
+/// half-open (yellow): one delivery at a time is let through as a probe,
+/// and the others are held while it is under way. A probe that succeeds
+/// closes the breaker; one that fails opens it for another `cool_off`. A
+/// probe that never reports back stops being one after `cool_off`, and the
+/// next delivery probes instead.
+///
+/// A failure is what may pass: a 5xx, 408, 429, or no answer. An answer that
+/// will not change is the server working. A success while the breaker is
+/// closed starts its count of failures again; one that was sent before the
+/// breaker opened and answers after does not close it, as only a probe does.
 ///
 /// It is kept in memory, for each deliverer, unless the application gives
 /// the deliverer a [`BreakerStore`] of its own: deliverers in several
-/// processes sharing one store count their failures together.
+/// processes sharing one store count their failures together, and let one
+/// probe through between them.
+///
+/// [Stoplight]: https://github.com/bolshakov/stoplight
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CircuitBreaker {
     /// Failures in a row that open it.
     pub threshold: u32,
-    /// How long it stays open after the last failure.
+    /// How long it stays open before a probe is let through, and how long a
+    /// probe is waited for.
     pub cool_off: Duration,
     /// What one breaker is kept for.
     pub scope: BreakerScope,
@@ -176,11 +187,43 @@ impl Default for CircuitBreaker {
     }
 }
 
-/// A destination's failures in a row, and when the last was.
-#[derive(Clone, Copy, Debug)]
-struct Breaker {
-    failures: u32,
-    last: Instant,
+/// Whether a delivery may be sent, as a [`BreakerStore`] answers.
+#[derive(Debug)]
+pub enum Admission {
+    /// The breaker is closed: send it.
+    Pass,
+    /// The breaker is half-open, and this delivery is its probe: send it,
+    /// and give the probe back with its outcome.
+    Probe(Probe),
+    /// The breaker is open, or half-open with a probe under way: hold the
+    /// delivery, for about this long.
+    Held(Duration),
+}
+
+/// The right to probe a half-open breaker, which only one delivery holds at
+/// a time. What a store keeps in it — a lock it releases when it is dropped,
+/// say — is the store's own.
+pub struct Probe(Box<dyn std::any::Any + Send + Sync>);
+
+impl Probe {
+    /// A probe holding `guard`, which is dropped once its outcome is
+    /// recorded.
+    #[must_use]
+    pub fn new(guard: impl std::any::Any + Send + Sync) -> Self {
+        Self(Box::new(guard))
+    }
+
+    /// What the store kept in it.
+    #[must_use]
+    pub fn guard(&self) -> &(dyn std::any::Any + Send + Sync) {
+        &*self.0
+    }
+}
+
+impl std::fmt::Debug for Probe {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Probe")
+    }
 }
 
 /// A future a [`BreakerStore`] answers with.
@@ -190,47 +233,134 @@ pub type BreakerFuture<'a, T> = std::pin::Pin<Box<dyn Future<Output = T> + Send 
 /// application gives it a store of its own, such as one in Redis that the
 /// deliverers of every process share, as Mastodon keeps its Stoplights.
 pub trait BreakerStore: Send + Sync + 'static {
-    /// How long deliveries to `key` are held, if its breaker is open.
-    fn held<'a>(
+    /// Whether a delivery to `key` may be sent, as [`CircuitBreaker`] says.
+    /// Letting one through as a probe takes the probe, so that no other
+    /// delivery is let through until it is given back.
+    fn admit<'a>(
         &'a self,
         breaker: &'a CircuitBreaker,
         key: &'a str,
-    ) -> BreakerFuture<'a, Option<Duration>>;
+    ) -> BreakerFuture<'a, Admission>;
 
-    /// Count a failure against `key`, or, when it did not fail, close its
-    /// breaker.
+    /// Record how a delivery to `key` that was let through went: as a
+    /// probe, when `probe` is the one [`BreakerStore::admit`] took for it,
+    /// which closes the breaker or opens it again, and is given back after.
     fn record<'a>(
         &'a self,
         breaker: &'a CircuitBreaker,
         key: &'a str,
         failed: bool,
+        probe: Option<Probe>,
     ) -> BreakerFuture<'a, ()>;
+}
+
+/// A destination's breaker, in memory.
+#[derive(Clone, Copy, Debug)]
+struct Breaker {
+    /// Failures in a row while closed.
+    failures: u32,
+    /// When it opened and until when, while it is open or half-open.
+    open_until: Option<Instant>,
+    /// The probe under way, and when it stops being waited for.
+    probe: Option<(u64, Instant)>,
+    /// When it last changed, to forget breakers nothing uses.
+    last: Instant,
 }
 
 /// Breakers in memory, each deliverer its own: the default.
 #[derive(Default)]
 pub struct MemoryBreakers {
     breakers: Mutex<HashMap<String, Breaker>>,
+    probes: std::sync::atomic::AtomicU64,
+}
+
+impl MemoryBreakers {
+    fn admit_now(&self, breaker: &CircuitBreaker, key: &str) -> Admission {
+        let mut breakers = self.breakers.lock().expect("breaker lock");
+        let Some(state) = breakers.get_mut(key) else {
+            return Admission::Pass;
+        };
+        let now = Instant::now();
+        let Some(open_until) = state.open_until else {
+            return Admission::Pass;
+        };
+        if now < open_until {
+            return Admission::Held(open_until - now);
+        }
+        if let Some((_, until)) = state.probe
+            && now < until
+        {
+            return Admission::Held(until - now);
+        }
+        let id = self
+            .probes
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        state.probe = Some((id, now + breaker.cool_off));
+        // Entering recovery starts the count of failures again.
+        state.failures = 0;
+        state.last = now;
+        Admission::Probe(Probe::new(id))
+    }
+
+    fn record_now(&self, breaker: &CircuitBreaker, key: &str, failed: bool, probe: Option<&Probe>) {
+        let mut breakers = self.breakers.lock().expect("breaker lock");
+        let now = Instant::now();
+        // Destinations nothing has happened to for a while are forgotten, so
+        // that the map holds what is failing now.
+        if breakers.len() >= 4096 {
+            let forget = (breaker.cool_off * 2).max(Duration::from_secs(600));
+            breakers.retain(|_, state| state.last.elapsed() < forget);
+        }
+        if let Some(probe) = probe {
+            let Some(state) = breakers.get_mut(key) else {
+                return;
+            };
+            if failed {
+                state.open_until = Some(now + breaker.cool_off);
+            } else {
+                state.open_until = None;
+            }
+            state.last = now;
+            let id = probe.guard().downcast_ref::<u64>().copied();
+            if state.probe.map(|(held, _)| held) == id {
+                state.probe = None;
+            }
+            if state.open_until.is_none() && state.failures == 0 {
+                breakers.remove(key);
+            }
+            return;
+        }
+        if !failed {
+            if let Some(state) = breakers.get_mut(key) {
+                state.failures = 0;
+                state.last = now;
+                if state.open_until.is_none() {
+                    breakers.remove(key);
+                }
+            }
+            return;
+        }
+        let state = breakers.entry(key.to_owned()).or_insert(Breaker {
+            failures: 0,
+            open_until: None,
+            probe: None,
+            last: now,
+        });
+        state.failures = state.failures.saturating_add(1);
+        state.last = now;
+        if state.failures >= breaker.threshold.max(1) {
+            state.open_until = Some(now + breaker.cool_off);
+        }
+    }
 }
 
 impl BreakerStore for MemoryBreakers {
-    fn held<'a>(
+    fn admit<'a>(
         &'a self,
         breaker: &'a CircuitBreaker,
         key: &'a str,
-    ) -> BreakerFuture<'a, Option<Duration>> {
-        let held = (|| {
-            let breakers = self.breakers.lock().expect("breaker lock");
-            let state = breakers.get(key)?;
-            if state.failures < breaker.threshold.max(1) {
-                return None;
-            }
-            breaker
-                .cool_off
-                .checked_sub(state.last.elapsed())
-                .filter(|left| !left.is_zero())
-        })();
-        Box::pin(std::future::ready(held))
+    ) -> BreakerFuture<'a, Admission> {
+        Box::pin(std::future::ready(self.admit_now(breaker, key)))
     }
 
     fn record<'a>(
@@ -238,24 +368,9 @@ impl BreakerStore for MemoryBreakers {
         breaker: &'a CircuitBreaker,
         key: &'a str,
         failed: bool,
+        probe: Option<Probe>,
     ) -> BreakerFuture<'a, ()> {
-        let mut breakers = self.breakers.lock().expect("breaker lock");
-        if !failed {
-            breakers.remove(key);
-            return Box::pin(std::future::ready(()));
-        }
-        // Destinations that failed once and were not tried again since are
-        // forgotten, so that the map holds what is failing now.
-        if breakers.len() >= 4096 {
-            let forget = breaker.cool_off.max(Duration::from_secs(600));
-            breakers.retain(|_, state| state.last.elapsed() < forget);
-        }
-        let state = breakers.entry(key.to_owned()).or_insert(Breaker {
-            failures: 0,
-            last: Instant::now(),
-        });
-        state.failures = state.failures.saturating_add(1);
-        state.last = Instant::now();
+        self.record_now(breaker, key, failed, probe.as_ref());
         Box::pin(std::future::ready(()))
     }
 }
@@ -1020,10 +1135,15 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             };
             (breaker, key)
         });
-        if let Some((breaker, key)) = &breaker
-            && let Some(retry_after) = self.breakers.held(breaker, key).await
-        {
-            return Err(DeliveryError::Held { retry_after });
+        let mut probe = None;
+        if let Some((breaker, key)) = &breaker {
+            match self.breakers.admit(breaker, key).await {
+                Admission::Pass => {}
+                Admission::Probe(taken) => probe = Some(taken),
+                Admission::Held(retry_after) => {
+                    return Err(DeliveryError::Held { retry_after });
+                }
+            }
         }
         let permit = self.host_semaphore(&host).acquire_owned().await;
         let shared_permit = match &self.config.shared_limit {
@@ -1045,7 +1165,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                 Ok(_) => false,
                 Err(error) => !self.ends(sender, error).await,
             };
-            self.breakers.record(breaker, key, failed).await;
+            self.breakers.record(breaker, key, failed, probe).await;
         }
         let accepted = result?;
         self.schemes
@@ -1166,6 +1286,101 @@ mod tests {
         for _ in 0..100 {
             let slept = jitter(base);
             assert!(slept <= base && slept >= base * 3 / 4, "{slept:?}");
+        }
+    }
+
+    mod breakers {
+        use super::super::{Admission, BreakerScope, CircuitBreaker, MemoryBreakers};
+        use std::time::Duration;
+
+        const BREAKER: CircuitBreaker = CircuitBreaker {
+            threshold: 2,
+            cool_off: Duration::from_millis(50),
+            scope: BreakerScope::Inbox,
+        };
+
+        fn open(breakers: &MemoryBreakers) {
+            breakers.record_now(&BREAKER, "inbox", true, None);
+            breakers.record_now(&BREAKER, "inbox", true, None);
+        }
+
+        #[test]
+        fn a_success_while_closed_starts_the_count_again() {
+            let breakers = MemoryBreakers::default();
+            breakers.record_now(&BREAKER, "inbox", true, None);
+            breakers.record_now(&BREAKER, "inbox", false, None);
+            breakers.record_now(&BREAKER, "inbox", true, None);
+            assert!(matches!(
+                breakers.admit_now(&BREAKER, "inbox"),
+                Admission::Pass
+            ));
+            breakers.record_now(&BREAKER, "inbox", true, None);
+            assert!(matches!(
+                breakers.admit_now(&BREAKER, "inbox"),
+                Admission::Held(_)
+            ));
+        }
+
+        #[test]
+        fn a_success_sent_before_it_opened_does_not_close_it() {
+            let breakers = MemoryBreakers::default();
+            open(&breakers);
+            breakers.record_now(&BREAKER, "inbox", false, None);
+            assert!(matches!(
+                breakers.admit_now(&BREAKER, "inbox"),
+                Admission::Held(_)
+            ));
+        }
+
+        #[test]
+        fn after_the_cool_off_one_probe_at_a_time_is_let_through() {
+            let breakers = MemoryBreakers::default();
+            open(&breakers);
+            std::thread::sleep(BREAKER.cool_off);
+            let Admission::Probe(probe) = breakers.admit_now(&BREAKER, "inbox") else {
+                panic!("the first delivery after the cool-off probes");
+            };
+            assert!(
+                matches!(breakers.admit_now(&BREAKER, "inbox"), Admission::Held(_)),
+                "the others are held while the probe is under way"
+            );
+            // A failed probe opens it for another cool-off.
+            breakers.record_now(&BREAKER, "inbox", true, Some(&probe));
+            assert!(matches!(
+                breakers.admit_now(&BREAKER, "inbox"),
+                Admission::Held(_)
+            ));
+            std::thread::sleep(BREAKER.cool_off);
+            let Admission::Probe(probe) = breakers.admit_now(&BREAKER, "inbox") else {
+                panic!("probed again after another cool-off");
+            };
+            // A successful one closes it.
+            breakers.record_now(&BREAKER, "inbox", false, Some(&probe));
+            assert!(matches!(
+                breakers.admit_now(&BREAKER, "inbox"),
+                Admission::Pass
+            ));
+            breakers.record_now(&BREAKER, "inbox", true, None);
+            assert!(
+                matches!(breakers.admit_now(&BREAKER, "inbox"), Admission::Pass),
+                "closed, it counts its failures from nought"
+            );
+        }
+
+        #[test]
+        fn a_probe_that_never_reports_back_is_given_up_after_the_cool_off() {
+            let breakers = MemoryBreakers::default();
+            open(&breakers);
+            std::thread::sleep(BREAKER.cool_off);
+            assert!(matches!(
+                breakers.admit_now(&BREAKER, "inbox"),
+                Admission::Probe(_)
+            ));
+            std::thread::sleep(BREAKER.cool_off);
+            assert!(matches!(
+                breakers.admit_now(&BREAKER, "inbox"),
+                Admission::Probe(_)
+            ));
         }
     }
 }

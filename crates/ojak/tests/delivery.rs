@@ -1033,18 +1033,18 @@ async fn the_application_hears_of_each_delivery_that_settles() {
 /// deliveries.
 #[tokio::test]
 async fn deliverers_sharing_a_breaker_store_count_failures_together() {
-    use ojak::deliverer::{BreakerFuture, BreakerStore, MemoryBreakers};
+    use ojak::deliverer::{Admission, BreakerFuture, BreakerStore, MemoryBreakers, Probe};
 
     #[derive(Clone, Default)]
     struct Shared(Arc<MemoryBreakers>);
 
     impl BreakerStore for Shared {
-        fn held<'a>(
+        fn admit<'a>(
             &'a self,
             breaker: &'a CircuitBreaker,
             key: &'a str,
-        ) -> BreakerFuture<'a, Option<Duration>> {
-            self.0.held(breaker, key)
+        ) -> BreakerFuture<'a, Admission> {
+            self.0.admit(breaker, key)
         }
 
         fn record<'a>(
@@ -1052,8 +1052,9 @@ async fn deliverers_sharing_a_breaker_store_count_failures_together() {
             breaker: &'a CircuitBreaker,
             key: &'a str,
             failed: bool,
+            probe: Option<Probe>,
         ) -> BreakerFuture<'a, ()> {
-            self.0.record(breaker, key, failed)
+            self.0.record(breaker, key, failed, probe)
         }
     }
 
