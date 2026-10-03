@@ -23,9 +23,18 @@
 //! whose proof holds; [`Fetcher::lookup`] sends a portable URL there.
 //!
 //! [`Fetcher::walk`] goes through a collection's items, a page at a time.
+//!
+//! A web page that is not itself a document may name the document it shows
+//! in an alternate link: [`link_header_alternate`] and [`html_alternate`]
+//! find it, for an application resolving a URL someone pasted, as Mastodon's
+//! `FetchResourceService` does.
 
+mod alternate;
 mod walk;
 
+#[cfg(feature = "html")]
+pub use alternate::html_alternate;
+pub use alternate::{ACTIVITY_LINK_TYPES, WebLink, link_header_alternate, parse_link_header};
 pub use walk::{Walk, WalkLimits};
 
 use crate::client::{Client, RequestError, Response};

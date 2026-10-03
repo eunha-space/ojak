@@ -19,12 +19,18 @@ ipnet = "2"
 percent-encoding = "2"
 rand_core = { version = "0.6", features = ["getrandom"] }
 reqwest.workspace = true
+# Reads the page a URL serves for the link to its ActivityPub object.
+scraper = { version = "0.23", optional = true }
 serde_json.workspace = true
 sha2.workspace = true
 tokio = { version = "1", features = ["io-util", "net", "sync", "time", "macros"] }
 url.workspace = true
 
 [features]
+default = ["html"]
+# Finding the ActivityPub object a web page links to
+# (`fetch::html_alternate`).
+html = ["dep:scraper"]
 # The checks every queue backend has to pass, for backends' own tests, and
 # another server to federate with in an application's tests.
 testing = []

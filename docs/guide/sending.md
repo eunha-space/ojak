@@ -144,6 +144,14 @@ vocabulary type, establish what they fetch the same way the inbox does:
 
 A fetched document comes back with the URL it was finally served from.
 
+A URL someone pastes is more often a web page than a document.  A server
+that serves its pages and its objects at different paths names the object
+from the page with a `rel="alternate"` link of an ActivityStreams type, and
+`ojak::fetch::link_header_alternate` finds it in a response's `Link` header,
+and `html_alternate` in the page itself, as Mastodon's
+`FetchResourceService` looks for it.  The page is read with an HTML parser
+behind the `html` feature, which is on by default.
+
 `Fetcher::walk` goes through a collection's items, an outbox or a
 followers collection, fetching its pages as their items are wanted:
 
