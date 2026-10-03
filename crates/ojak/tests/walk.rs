@@ -198,3 +198,153 @@ async fn what_is_not_a_collection_is_not_walked() {
         Err(FetchError::Invalid(_))
     ));
 }
+
+#[tokio::test]
+async fn a_collection_is_walked_a_page_at_a_time() {
+    let (server, base) = serve(&[
+        (
+            "outbox",
+            json!({
+                "@context": "https://www.w3.org/ns/activitystreams",
+                "id": "{base}/outbox",
+                "type": "OrderedCollection",
+                "first": "{base}/outbox/page/1",
+            }),
+        ),
+        ("outbox/page/1", page(1, &["a", "b", "c"], Some(2))),
+        ("outbox/page/2", page(2, &["d"], Some(3))),
+        ("outbox/page/3", page(3, &["e"], None)),
+    ])
+    .await;
+    let url = Url::parse(&format!("{base}/outbox")).unwrap();
+
+    // The item limit ends the walk at the end of the page that reaches it.
+    let fetcher = fetcher();
+    let mut walk = fetcher.walk(
+        &url,
+        None,
+        WalkLimits {
+            pages: 100,
+            items: 2,
+        },
+    );
+    assert_eq!(
+        walk.next_page().await.unwrap(),
+        Some(vec![json!("a"), json!("b"), json!("c")])
+    );
+    assert_eq!(walk.pages_fetched(), 2);
+    assert_eq!(walk.next_page().await.unwrap(), None);
+    assert_eq!(server.asked.lock().unwrap().len(), 2);
+
+    // A page's items are handed out whole, after any `next` left unread.
+    let mut walk = fetcher.walk(&url, None, WalkLimits::default());
+    assert_eq!(walk.next().await.unwrap(), Some(json!("a")));
+    assert_eq!(
+        walk.next_page().await.unwrap(),
+        Some(vec![json!("b"), json!("c")])
+    );
+    assert_eq!(walk.next_page().await.unwrap(), Some(vec![json!("d")]));
+    assert_eq!(walk.next_page().await.unwrap(), Some(vec![json!("e")]));
+    assert_eq!(walk.next_page().await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn a_collection_without_pages_is_one_page_even_when_empty() {
+    let (_, base) = serve(&[(
+        "empty",
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": "{base}/empty",
+            "type": "Collection",
+            "totalItems": 0,
+        }),
+    )])
+    .await;
+    let url = Url::parse(&format!("{base}/empty")).unwrap();
+    let fetcher = fetcher();
+    let mut walk = fetcher.walk(&url, None, WalkLimits::default());
+    assert_eq!(walk.next_page().await.unwrap(), Some(vec![]));
+    assert_eq!(walk.next_page().await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn an_embedded_collection_is_read_in_hand_and_kept_to_its_embedder() {
+    let (server, base) = serve(&[(
+        "notes/1/replies/2",
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": "{base}/notes/1/replies/2",
+            "type": "CollectionPage",
+            "items": ["{base}/notes/3"],
+        }),
+    )])
+    .await;
+    let note = format!("{base}/notes/1");
+    let replies = json!({
+        "id": format!("{base}/notes/1/replies"),
+        "type": "Collection",
+        "first": {
+            "type": "CollectionPage",
+            "items": [format!("{base}/notes/2")],
+            "next": format!("{base}/notes/1/replies/2"),
+        },
+    });
+    let fetcher = fetcher();
+    let mut walk = fetcher.walk_embedded(&replies, &note, None, WalkLimits::default());
+    assert_eq!(
+        walk.next_page().await.unwrap(),
+        Some(vec![json!(format!("{base}/notes/2"))])
+    );
+    assert!(
+        server.asked.lock().unwrap().is_empty(),
+        "the first page came embedded"
+    );
+    assert_eq!(
+        walk.next_page().await.unwrap(),
+        Some(vec![json!(format!("{base}/notes/3"))])
+    );
+    assert_eq!(walk.next_page().await.unwrap(), None);
+
+    // Neither the collection nor its pages are fetched from elsewhere.
+    let elsewhere = json!("https://elsewhere.example/notes/1/replies");
+    let walked = fetcher
+        .walk_embedded(&elsewhere, &note, None, WalkLimits::default())
+        .collect()
+        .await;
+    assert!(matches!(walked, Err(FetchError::Invalid(_))), "{walked:?}");
+    let pointing_elsewhere = json!({
+        "type": "Collection",
+        "first": "https://elsewhere.example/notes/1/replies/1",
+    });
+    let walked = fetcher
+        .walk_embedded(&pointing_elsewhere, &note, None, WalkLimits::default())
+        .collect()
+        .await;
+    assert!(matches!(walked, Err(FetchError::Invalid(_))), "{walked:?}");
+    assert_eq!(server.asked.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn by_host_a_page_on_another_port_of_the_host_is_followed() {
+    let (_, base) = serve(&[("outbox/page/1", page(1, &["a"], None))]).await;
+    let port = Url::parse(&base).unwrap().port().unwrap();
+    // The embedder names the same host on another port.
+    let embedder = format!("http://127.0.0.1:{}/notes/1", port.wrapping_add(1));
+    let collection = json!({
+        "type": "OrderedCollection",
+        "first": format!("{base}/outbox/page/1"),
+    });
+    let fetcher = fetcher();
+    let by_origin = fetcher
+        .walk_embedded(&collection, &embedder, None, WalkLimits::default())
+        .collect()
+        .await;
+    assert!(matches!(by_origin, Err(FetchError::Invalid(_))));
+    let by_host = fetcher
+        .walk_embedded(&collection, &embedder, None, WalkLimits::default())
+        .by_host()
+        .collect()
+        .await
+        .unwrap();
+    assert_eq!(by_host, [json!("a")]);
+}

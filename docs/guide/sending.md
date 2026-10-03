@@ -172,6 +172,18 @@ unless given.  An item is as the page gives it, an IRI or an embedded object,
 and an embedded object on another origin than the collection is that
 server's claim, to be fetched from its own `id` before it is trusted.
 
+`Walk::next_page` hands the items out a page at a time instead, for limits
+counted in pages; the item limit then ends the walk at the end of the page
+that reaches it.  A collection with a `first` page is not a page of its own
+unless it holds items too, and one without is its only page, even when empty.
+
+`Fetcher::walk_embedded` starts from a collection as another object embeds
+it, as a post embeds its `replies` with their first page: an IRI, or the
+collection itself, read without a request.  The walk keeps to the
+embedder's origin, for the collection and each of its pages, whatever the
+collection's `id` says.  `Walk::by_host` compares pages by host rather than
+by origin, taking another scheme or port of the same host, as Mastodon does.
+
 
 Finding out what a server runs
 ------------------------------
