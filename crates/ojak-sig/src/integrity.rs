@@ -65,10 +65,105 @@ impl Cryptosuite {
 }
 
 /// A public key resolved from a proof's `verificationMethod`.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PublicKey {
     Ed25519(Box<[u8; 32]>),
     /// An ML-DSA-44 key, as the 1312 bytes FIPS 204 encodes it in.
     MlDsa44(Box<[u8]>),
+}
+
+/// The DER of an Ed25519 `SubjectPublicKeyInfo` before its 32 key bytes
+/// (RFC 8410): the algorithm identifier `1.3.101.112` and the bit string's
+/// header.
+const ED25519_SPKI_PREFIX: [u8; 12] = [
+    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+];
+
+/// The DER of an ML-DSA-44 `SubjectPublicKeyInfo` before its 1312 key bytes
+/// (`id-ml-dsa-44`, as X.509 carries it): the algorithm identifier
+/// `2.16.840.1.101.3.4.3.17` and the bit string's header.
+const MLDSA44_SPKI_PREFIX: [u8; 22] = [
+    0x30, 0x82, 0x05, 0x32, 0x30, 0x0b, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03,
+    0x11, 0x03, 0x82, 0x05, 0x21, 0x00,
+];
+
+/// How long an ML-DSA-44 public key is.
+const MLDSA44_PUBLIC_KEY_BYTES: usize = 1312;
+
+impl PublicKey {
+    /// The key as a DER `SubjectPublicKeyInfo`.
+    ///
+    /// # Errors
+    /// Returns an error if an ML-DSA-44 key is not 1312 bytes long.
+    pub fn to_spki_der(&self) -> Result<Vec<u8>, Error> {
+        match self {
+            Self::Ed25519(key) => Ok([ED25519_SPKI_PREFIX.as_slice(), key.as_slice()].concat()),
+            Self::MlDsa44(key) if key.len() == MLDSA44_PUBLIC_KEY_BYTES => {
+                Ok([MLDSA44_SPKI_PREFIX.as_slice(), key].concat())
+            }
+            Self::MlDsa44(key) => Err(Error::Key(format!(
+                "an ML-DSA-44 key of {} bytes",
+                key.len()
+            ))),
+        }
+    }
+
+    /// The key as an SPKI PEM, as OpenSSL's `public_to_pem` writes it: a
+    /// `PUBLIC KEY` block, base64 in lines of 64, each ending in LF. This is
+    /// what Mastodon stores a remote actor's Multikey as, and a FASP's key.
+    ///
+    /// # Errors
+    /// As [`PublicKey::to_spki_der`].
+    pub fn to_spki_pem(&self) -> Result<String, Error> {
+        use base64::Engine as _;
+
+        let encoded = base64::engine::general_purpose::STANDARD.encode(self.to_spki_der()?);
+        let mut pem = String::from("-----BEGIN PUBLIC KEY-----\n");
+        for line in encoded.as_bytes().chunks(64) {
+            pem.push_str(core::str::from_utf8(line).unwrap_or_default());
+            pem.push('\n');
+        }
+        pem.push_str("-----END PUBLIC KEY-----\n");
+        Ok(pem)
+    }
+
+    /// The Ed25519 or ML-DSA-44 key of a DER `SubjectPublicKeyInfo`.
+    ///
+    /// # Errors
+    /// Returns an error if `der` is not an SPKI of either.
+    pub fn from_spki_der(der: &[u8]) -> Result<Self, Error> {
+        if let Some(key) = der.strip_prefix(&ED25519_SPKI_PREFIX) {
+            return Ok(Self::Ed25519(Box::new(ed25519_bytes(key)?)));
+        }
+        if let Some(key) = der.strip_prefix(&MLDSA44_SPKI_PREFIX)
+            && key.len() == MLDSA44_PUBLIC_KEY_BYTES
+        {
+            return Ok(Self::MlDsa44(key.to_vec().into_boxed_slice()));
+        }
+        Err(Error::Key(
+            "not an Ed25519 or ML-DSA-44 public key in SPKI".into(),
+        ))
+    }
+
+    /// The Ed25519 or ML-DSA-44 key of an SPKI PEM: the base64 between its
+    /// armour lines, however it is wrapped.
+    ///
+    /// # Errors
+    /// Returns an error if `pem` is not base64 armour around an SPKI of
+    /// either.
+    pub fn from_spki_pem(pem: &str) -> Result<Self, Error> {
+        use base64::Engine as _;
+
+        let body: String = pem
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("-----"))
+            .collect();
+        let der = base64::engine::general_purpose::STANDARD
+            .decode(body.as_bytes())
+            .map_err(|_| Error::Key("the public key is not base64".into()))?;
+        Self::from_spki_der(&der)
+    }
 }
 
 /// Find a usable assertion-method integrity proof on `document`, if present,
@@ -507,6 +602,48 @@ fn decode_multibase(value: &str) -> Result<Vec<u8>, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// RFC 8410 §10.1's example public key.
+    #[test]
+    fn reads_and_writes_the_rfc_8410_public_key() {
+        let pem = "-----BEGIN PUBLIC KEY-----\n\
+                   MCowBQYDK2VwAyEAGb9ECWmEzf6FQbrBZ9w7lshQhqowtrbLDFw4rXAxZuE=\n\
+                   -----END PUBLIC KEY-----\n";
+        let key = PublicKey::from_spki_pem(pem).unwrap();
+        let PublicKey::Ed25519(raw) = &key else {
+            panic!("{key:?}");
+        };
+        assert_eq!(raw[..4], [0x19, 0xbf, 0x44, 0x09]);
+        assert_eq!(key.to_spki_pem().unwrap(), pem);
+    }
+
+    /// An ML-DSA-44 key is wrapped in lines of 64, as OpenSSL writes it, and
+    /// read back however it is wrapped.
+    #[test]
+    fn an_ml_dsa_44_key_round_trips_through_pem() {
+        let key = PublicKey::MlDsa44(vec![7; 1312].into_boxed_slice());
+        let pem = key.to_spki_pem().unwrap();
+        assert!(pem.starts_with("-----BEGIN PUBLIC KEY-----\nMIIFMjALBglghkgBZQMEAxEDggUhAA"));
+        assert!(pem.lines().all(|line| line.len() <= 64));
+        assert_eq!(PublicKey::from_spki_pem(&pem).unwrap(), key);
+        let unwrapped: String = pem.lines().collect::<Vec<_>>().join("");
+        let unwrapped = unwrapped
+            .replace("-----BEGIN PUBLIC KEY-----", "-----BEGIN PUBLIC KEY-----\n")
+            .replace("-----END", "\n-----END");
+        assert_eq!(PublicKey::from_spki_pem(&unwrapped).unwrap(), key);
+        assert!(
+            PublicKey::MlDsa44(vec![7; 10].into_boxed_slice())
+                .to_spki_pem()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn what_is_not_an_ed25519_or_ml_dsa_44_key_is_refused() {
+        let rsa = include_str!("../../ojak/tests/fixtures/rfc9421_test_key_rsa_public.pem");
+        assert!(PublicKey::from_spki_pem(rsa).is_err());
+        assert!(PublicKey::from_spki_pem("not base64!").is_err());
+    }
 
     /// When the tests read and sign proofs: after the W3C vectors were
     /// made, and before the far expiry `ignores_an_expired_proof` sets.
