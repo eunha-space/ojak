@@ -188,7 +188,9 @@ Finding an actor by its handle
 
 `Fetcher::webfinger` reads a handle, such as `@alice@social.example`, as an
 `Address`, asks the host's WebFinger endpoint for it, and returns the actors
-its `self` links name.  Each comes with its type when the link gives one, as
+its `self` links name.  A host whose endpoint answers 404 is asked again where
+its host-meta document's `lrdd` template says, once, as Mastodon asks; only a
+200 is an answer.  Each comes with its type when the link gives one, as
 Lemmy's does for a name that is both a user and a community.  The host
 answers only for itself, so look the actor up afterwards to establish it like
 any other.
@@ -200,7 +202,8 @@ handle is asked about once and has to name itself.  It returns the canonical
 handle and the actor it names.  A `410 Gone` comes back as an error with that
 status, which says the handle is gone from its host.  `Fetcher::confirm` also
 requires the actor named to be the one you expected, as Mastodon checks an
-actor's handle before believing it; `webfinger::split_acct` reads a [FEP-2c59]
+actor's handle before believing it, and reads a `subject` by its first two
+parts, as Mastodon does there; `webfinger::split_acct` reads a [FEP-2c59]
 `webfinger` property as Mastodon does.  `resolve_with` and `confirm_with` do
 the same with a lookup of your own.  An onion service is asked over `http`,
 and `Fetcher::with_plain_http_webfinger` asks every host so, for tests whose

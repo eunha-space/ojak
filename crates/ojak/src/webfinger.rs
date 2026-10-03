@@ -17,6 +17,9 @@ use url::Url;
 /// What a WebFinger query asks for.
 pub const JRD_ACCEPT: &str = "application/jrd+json, application/json";
 
+/// What a host-meta query asks for.
+pub const XRD_ACCEPT: &str = "application/xrd+xml, application/xml, text/xml";
+
 /// A handle: a user at a host.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Address {
@@ -108,18 +111,65 @@ impl Address {
             .remove(b'@');
         let acct = self.acct();
         let resource = utf8_percent_encode(&acct, QUERY_VALUE);
-        let onion = self
-            .host
-            .split(':')
-            .next()
-            .is_some_and(|name| name.ends_with(".onion"));
-        let scheme = if onion { "http" } else { "https" };
+        let scheme = if self.is_onion() { "http" } else { "https" };
         Url::parse(&format!(
             "{scheme}://{}/.well-known/webfinger?resource={resource}",
             self.host
         ))
         .expect("a checked host makes a URL")
     }
+}
+
+impl Address {
+    /// The URL of the host's host-meta document (RFC 6415), over `https`,
+    /// or over `http` for an onion service, as Mastodon asks it.
+    ///
+    /// # Panics
+    ///
+    /// Never: the host has been checked to be one.
+    #[must_use]
+    pub fn host_meta_url(&self) -> Url {
+        let scheme = if self.is_onion() { "http" } else { "https" };
+        Url::parse(&format!("{scheme}://{}/.well-known/host-meta", self.host))
+            .expect("a checked host makes a URL")
+    }
+
+    fn is_onion(&self) -> bool {
+        self.host
+            .split(':')
+            .next()
+            .is_some_and(|name| name.ends_with(".onion"))
+    }
+}
+
+/// The WebFinger query template a host-meta document (an XRD) gives in its
+/// `lrdd` link, as Mastodon's `Webfinger#url_from_template` reads it: the
+/// first `Link` element, in the document's default namespace, whose `rel`
+/// is `lrdd`.
+///
+/// # Errors
+///
+/// When the document is not XML, has no default namespace, or has no such
+/// link with a `template`.
+pub fn lrdd_template(xrd: &str) -> Result<String, String> {
+    let document =
+        roxmltree::Document::parse(xrd).map_err(|error| format!("invalid XML: {error}"))?;
+    let namespace = document
+        .root_element()
+        .default_namespace()
+        .ok_or("invalid XML: no default namespace")?;
+    document
+        .descendants()
+        .find(|node| {
+            node.is_element()
+                && node.tag_name().name() == "Link"
+                && node.tag_name().namespace() == Some(namespace)
+                && node.attribute("rel") == Some("lrdd")
+        })
+        .ok_or("host-meta without link to Webfinger")?
+        .attribute("template")
+        .map(str::to_owned)
+        .ok_or_else(|| "host-meta link to Webfinger without a template".to_owned())
 }
 
 /// An `acct:` URI or a bare handle split at its `@`s as Ruby's
@@ -353,8 +403,28 @@ impl From<FetchError> for ResolveError {
 ///
 /// When a host cannot be asked or its answer is missing either part, the
 /// `subject` is not a handle, or a redirect leads to yet another handle.
-pub async fn resolve_with<F, Fut>(
+pub async fn resolve_with<F, Fut>(address: &Address, lookup: F) -> Result<Resolved, ResolveError>
+where
+    F: FnMut(&Address) -> Fut,
+    Fut: Future<Output = Result<Found, FetchError>>,
+{
+    resolve_reading(address, Reading::Strict, lookup).await
+}
+
+/// How a `subject` is read as a handle.
+#[derive(Clone, Copy)]
+enum Reading {
+    /// `ResolveAccountService#split_acct`: split at its `@`s, it has to have
+    /// exactly two parts.
+    Strict,
+    /// `ProcessAccountService#split_acct`: the first two of its parts,
+    /// whatever follows them, as [`split_acct`] reads it.
+    FirstTwoParts,
+}
+
+async fn resolve_reading<F, Fut>(
     address: &Address,
+    reading: Reading,
     mut lookup: F,
 ) -> Result<Resolved, ResolveError>
 where
@@ -364,13 +434,13 @@ where
     let same = |a: &Address, b: &Address| {
         a.user.eq_ignore_ascii_case(&b.user) && a.host.eq_ignore_ascii_case(&b.host)
     };
-    let first = read_answer(address, lookup(address).await?)?;
+    let first = read_answer(address, lookup(address).await?, reading)?;
     if same(&first.address, address) {
         return Ok(first);
     }
     // The handle does not match, so it may have been redirected.
     let canonical = first.address;
-    let second = read_answer(&canonical, lookup(&canonical).await?)?;
+    let second = read_answer(&canonical, lookup(&canonical).await?, reading)?;
     if !same(&second.address, &canonical) {
         return Err(ResolveError::TooManyRedirects {
             asked: address.to_string(),
@@ -386,6 +456,11 @@ where
 /// answer names has to be `actor`. Returns what it resolved to, whose
 /// `address` is the handle to show.
 ///
+/// A `subject` is read as `check_webfinger!` reads it, by its first two
+/// parts split at `@`, so `acct:alice@social.example@elsewhere` is
+/// `alice@social.example`; [`resolve_with`] refuses it, as
+/// `ResolveAccountService` does.
+///
 /// # Errors
 ///
 /// As [`resolve_with`], and when the handle names another actor.
@@ -398,7 +473,7 @@ where
     F: FnMut(&Address) -> Fut,
     Fut: Future<Output = Result<Found, FetchError>>,
 {
-    let resolved = resolve_with(address, lookup).await?;
+    let resolved = resolve_reading(address, Reading::FirstTwoParts, lookup).await?;
     if resolved.actor.as_str() != actor {
         return Err(ResolveError::NotLoopingBack {
             handle: resolved.address.to_string(),
@@ -410,7 +485,7 @@ where
 
 /// `Webfinger::Response`'s checks of the answer for `asked`, and the handle
 /// its `subject` names, which is an `acct:` URI or a bare `user@host`.
-fn read_answer(asked: &Address, found: Found) -> Result<Resolved, ResolveError> {
+fn read_answer(asked: &Address, found: Found, reading: Reading) -> Result<Resolved, ResolveError> {
     let asked = asked.acct();
     let subject = found
         .subject
@@ -426,10 +501,18 @@ fn read_answer(asked: &Address, found: Found) -> Result<Resolved, ResolveError> 
         .ok_or_else(|| ResolveError::NoActor {
             asked: asked.clone(),
         })?;
-    let address = Some(subject.trim())
-        .filter(|subject| !subject.starts_with('@'))
-        .and_then(Address::parse)
-        .ok_or(ResolveError::BadSubject { asked, subject })?;
+    let address = match reading {
+        Reading::Strict => Some(subject.trim())
+            .filter(|subject| !subject.starts_with('@'))
+            .and_then(Address::parse),
+        Reading::FirstTwoParts => {
+            let (user, host) = split_acct(subject.trim());
+            Some(())
+                .filter(|()| !user.is_empty() && !host.is_empty())
+                .and_then(|()| Address::parse(&format!("{user}@{host}")))
+        }
+    }
+    .ok_or(ResolveError::BadSubject { asked, subject })?;
     Ok(Resolved {
         address,
         actor,
@@ -438,18 +521,53 @@ fn read_answer(asked: &Address, found: Found) -> Result<Resolved, ResolveError> 
 }
 
 impl Fetcher {
-    /// Ask `address`'s host what it says of it.
+    /// Ask `address`'s host what it says of it, as Mastodon's `Webfinger`
+    /// does: at [`Address::webfinger_url`], and, when that answers `404`, at
+    /// the query the host's host-meta `lrdd` template names, whose own `404`
+    /// is not followed further.
     ///
     /// # Errors
     ///
-    /// As [`Fetcher::webfinger_at`].
+    /// As [`Fetcher::webfinger_at`], and when host-meta does not answer
+    /// `200` or names no query.
     pub async fn webfinger(&self, address: &Address) -> Result<Found, FetchError> {
-        let mut url = address.webfinger_url();
-        if self.plain_http_webfinger() {
-            // A scheme change between two special schemes always succeeds.
-            let _ = url.set_scheme("http");
+        let plain = |mut url: Url| {
+            if self.plain_http_webfinger() {
+                // A scheme change between two special schemes always succeeds.
+                let _ = url.set_scheme("http");
+            }
+            url
+        };
+        match self.webfinger_at(&plain(address.webfinger_url())).await {
+            // `Webfinger#body_from_host_meta`: a host that does not answer at
+            // the standard place may say where it does, once.
+            Err(FetchError::Status(404)) => {
+                let url = self
+                    .host_meta_query(address, plain(address.host_meta_url()))
+                    .await?;
+                self.webfinger_at(&url).await
+            }
+            answer => answer,
         }
-        self.webfinger_at(&url).await
+    }
+
+    /// The WebFinger query for `address` that the host-meta document at
+    /// `url` names. A failure is [`FetchError::Invalid`], never a status, so
+    /// that a host-meta `410` is not taken for the handle being gone.
+    async fn host_meta_query(&self, address: &Address, url: Url) -> Result<Url, FetchError> {
+        let acct = address.acct();
+        let response = self.get(&url, XRD_ACCEPT, None).await?;
+        if response.status != 200 {
+            return Err(FetchError::Invalid(format!(
+                "Request for {acct} returned HTTP {}",
+                response.status
+            )));
+        }
+        let xrd = String::from_utf8_lossy(&response.body);
+        let template = lrdd_template(&xrd)
+            .map_err(|error| FetchError::Invalid(format!("{error} for {acct}")))?;
+        Url::parse(&template.replace("{uri}", &acct))
+            .map_err(|error| FetchError::Invalid(format!("Invalid URI for {acct}: {error}")))
     }
 
     /// Confirm that `address` names `actor`, as [`confirm_with`] does,
@@ -486,11 +604,11 @@ impl Fetcher {
     ///
     /// # Errors
     ///
-    /// When the request fails or is refused, the answer is not a success,
-    /// or it is not a JSON object.
+    /// When the request fails or is refused, the answer is not a `200`, as
+    /// Mastodon requires, or it is not a JSON object.
     pub async fn webfinger_at(&self, url: &Url) -> Result<Found, FetchError> {
         let response = self.get(url, JRD_ACCEPT, None).await?;
-        if !(200..300).contains(&response.status) {
+        if response.status != 200 {
             return Err(FetchError::Status(response.status));
         }
         let jrd: Value = serde_json::from_slice(&response.body)
@@ -788,5 +906,57 @@ mod tests {
             matches!(error, ResolveError::NotLoopingBack { .. }),
             "{error}"
         );
+    }
+
+    #[test]
+    fn host_meta_names_the_query_in_its_lrdd_link() {
+        let xrd = r#"<?xml version="1.0"?>
+<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
+  <Link rel="other" template="https://x.example/no"/>
+  <Link rel="lrdd" type="application/xrd+xml" template="https://x.example/wf?resource={uri}"/>
+</XRD>"#;
+        assert_eq!(
+            lrdd_template(xrd).unwrap(),
+            "https://x.example/wf?resource={uri}"
+        );
+        assert!(
+            lrdd_template("<XRD><Link rel=\"lrdd\" template=\"t\"/></XRD>").is_err(),
+            "no default namespace"
+        );
+        assert!(lrdd_template("<XRD xmlns=\"urn:x\"/>").is_err());
+        assert!(lrdd_template("not xml").is_err());
+        assert_eq!(
+            Address::parse("alice@abcdef.onion")
+                .unwrap()
+                .host_meta_url()
+                .as_str(),
+            "http://abcdef.onion/.well-known/host-meta"
+        );
+    }
+
+    #[tokio::test]
+    async fn confirming_reads_a_subject_by_its_first_two_parts() {
+        let answers = [(
+            "alice@social.example",
+            jrd(
+                "acct:alice@social.example@elsewhere.example",
+                "https://social.example/users/alice",
+            ),
+        )];
+        let lookup = |address: &Address| {
+            let found = answers
+                .iter()
+                .find(|(handle, _)| *handle == address.to_string())
+                .map(|(_, jrd)| Found::from_jrd(jrd))
+                .ok_or(FetchError::Status(404));
+            async move { found }
+        };
+        let address = Address::parse("alice@social.example").unwrap();
+        let confirmed = confirm_with(&address, "https://social.example/users/alice", lookup)
+            .await
+            .unwrap();
+        assert_eq!(confirmed.address.to_string(), "alice@social.example");
+        let error = resolve_with(&address, lookup).await.unwrap_err();
+        assert!(matches!(error, ResolveError::BadSubject { .. }), "{error}");
     }
 }

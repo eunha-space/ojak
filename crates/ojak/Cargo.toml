@@ -19,6 +19,8 @@ ipnet = "2"
 percent-encoding = "2"
 rand_core = { version = "0.6", features = ["getrandom"] }
 reqwest.workspace = true
+# host-meta, the XRD a host that does not answer WebFinger points to it with.
+roxmltree = "0.20"
 # Reads the page a URL serves for the link to its ActivityPub object.
 scraper = { version = "0.23", optional = true }
 serde_json.workspace = true

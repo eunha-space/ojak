@@ -188,6 +188,30 @@ async fn handle(
         )
             .into_response(),
         "gone" => StatusCode::GONE.into_response(),
+        // A host that answers WebFinger only where its host-meta says.
+        ".well-known/host-meta" => (
+            [("content-type", "application/xrd+xml")],
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
+  <Link rel="lrdd" template="http://{host}/lrdd?resource={{uri}}"/>
+</XRD>"#
+            ),
+        )
+            .into_response(),
+        "lrdd" if uri.query() == Some(&*format!("resource=acct:alice@{host}")) => (
+            [("content-type", "application/jrd+json")],
+            json!({
+                "subject": format!("acct:alice@{host}"),
+                "links": [{
+                    "rel": "self",
+                    "type": "application/activity+json",
+                    "href": format!("http://{host}/users/alice"),
+                }],
+            })
+            .to_string(),
+        )
+            .into_response(),
         _ => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -500,4 +524,22 @@ async fn a_request_read_by_the_application_is_guarded() {
         matches!(refused, Err(RequestError::Refused(_))),
         "a literal private address is refused before anything is sent"
     );
+}
+
+/// A host whose WebFinger endpoint answers 404 is asked where its host-meta
+/// `lrdd` template says, once, as Mastodon asks.
+#[tokio::test]
+async fn webfinger_falls_back_to_the_host_meta_template() {
+    let base = serve(Server::default()).await;
+    let host = base.host_str().unwrap().to_owned() + ":" + &base.port().unwrap().to_string();
+    let fetcher = fetcher().with_plain_http_webfinger(true);
+
+    let alice = ojak::webfinger::Address::parse(&format!("alice@{host}")).unwrap();
+    let found = fetcher.webfinger(&alice).await.unwrap();
+    assert_eq!(found.subject, Some(format!("acct:alice@{host}")));
+
+    // The template's own 404 is not followed further.
+    let carol = ojak::webfinger::Address::parse(&format!("carol@{host}")).unwrap();
+    let error = fetcher.webfinger(&carol).await.unwrap_err();
+    assert_eq!(error.status(), Some(404));
 }
