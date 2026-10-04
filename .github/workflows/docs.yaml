@@ -21,6 +21,9 @@ jobs:
       with:
         # VitePress reads each page's last-updated time from Git history.
         fetch-depth: 0
+    - uses: jdx/mise-action@v4
+      with:
+        install_args: rust
     - uses: actions/setup-node@v7
       with:
         node-version: 24

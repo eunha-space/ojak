@@ -16,6 +16,7 @@ export default defineConfig({
       { text: "Tutorial", link: "/tutorial" },
       { text: "Guide", link: "/guide/" },
       { text: "Crates", link: "/crates" },
+      { text: "API reference", link: "https://ojak.dev/api/ojak/index.html", target: "_self" },
       { text: "Showcase", link: "/showcase" },
     ],
     sidebar: [

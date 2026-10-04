@@ -7,6 +7,32 @@ Ojak is a Cargo workspace.  Each crate lives under *crates/* in the
 [repository]: https://github.com/eunha-space/ojak
 
 
+API reference
+-------------
+
+The API reference is generated from the `main` branch and describes the
+unreleased development API.
+
+ -  [ojak]
+ -  [ojak-axum]
+ -  [ojak-postgres]
+ -  [ojak-redis]
+ -  [ojak-sig]
+ -  [ojak-jsonld]
+ -  [ojak-vocab]
+
+To build and preview the guide and API reference together, run
+`mise run docs:build`, then `npm --prefix docs run preview`.
+
+[ojak]: https://ojak.dev/api/ojak/index.html
+[ojak-axum]: https://ojak.dev/api/ojak_axum/index.html
+[ojak-postgres]: https://ojak.dev/api/ojak_postgres/index.html
+[ojak-redis]: https://ojak.dev/api/ojak_redis/index.html
+[ojak-sig]: https://ojak.dev/api/ojak_sig/index.html
+[ojak-jsonld]: https://ojak.dev/api/ojak_jsonld/index.html
+[ojak-vocab]: https://ojak.dev/api/ojak_vocab/index.html
+
+
 The vocabulary
 --------------
 
