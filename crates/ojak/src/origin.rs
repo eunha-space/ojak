@@ -86,6 +86,109 @@ pub fn same_host(base: &str, comparison: &str) -> bool {
     }
 }
 
+/// Whether `a` and `b` have the same authority, as a rule that only cares
+/// which server vouches for an identifier compares them: the same DID for
+/// portable identifiers, and for `http` and `https` ones the same host,
+/// whatever their schemes and ports, compared without regard to case. A
+/// portable identifier never has the authority of a web one, and an
+/// identifier that is neither has none.
+#[must_use]
+pub fn same_authority(a: &str, b: &str) -> bool {
+    match (Origin::of(a), Origin::of(b)) {
+        (Some(Origin::Did(a)), Some(Origin::Did(b))) => a == b,
+        (Some(Origin::Did(_)), _) | (_, Some(Origin::Did(_))) => false,
+        _ => is_web(a) && same_host(a, b),
+    }
+}
+
+/// Whether `iri` is an `http` or `https` URL, by its scheme, without regard
+/// to case.
+fn is_web(iri: &str) -> bool {
+    iri.split_once(':').is_some_and(|(scheme, _)| {
+        scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+    })
+}
+
+/// The host of the URL `iri`, without its port, in the form hosts are
+/// compared in: lower case, an internationalised name in its ASCII form, an
+/// IPv6 address in brackets. `None` when `iri` is not a URL or has no host.
+/// This is the host Mastodon's `Addressable::URI.parse(url).normalized_host`
+/// reads, by which it tracks deliveries and matches domain blocks.
+#[must_use]
+pub fn host_of(iri: &str) -> Option<String> {
+    let url = url::Url::parse(iri).ok()?;
+    url.host_str()
+        .filter(|host| !host.is_empty())
+        .map(str::to_ascii_lowercase)
+}
+
+/// What [`normalize_host`] does with a port.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Port {
+    /// Keep it as it was written, `:443` included: Mastodon's
+    /// `TagManager#normalize_domain`, by which an account on a server at a
+    /// port is told from one on the same host without.
+    Keep,
+    /// Leave it out.
+    Drop,
+}
+
+/// A host as written by hand — a domain typed into a form, or taken from a
+/// handle — in the form hosts are compared in: lower case, percent-encoding
+/// decoded, an internationalised name in its ASCII form (IDNA), and a single
+/// trailing dot left off, as `Addressable::URI#normalized_host` has it. The
+/// port is kept or left out as `port` says. `None` when it is empty or is
+/// not a host, such as one with a space, `/` or `@` in it.
+#[must_use]
+pub fn normalize_host(authority: &str, port: Port) -> Option<String> {
+    let (host, written_port) = split_port(authority);
+    if host.is_empty() {
+        return None;
+    }
+    let mut host = url::Host::parse(host).ok()?.to_string();
+    if host.ends_with('.') && !host.ends_with("..") {
+        host.pop();
+    }
+    Some(match (port, written_port) {
+        (Port::Keep, Some(written)) => alloc::format!("{host}:{written}"),
+        _ => host,
+    })
+}
+
+/// `authority` split into its host and the port written after it, if any.
+fn split_port(authority: &str) -> (&str, Option<&str>) {
+    if authority.starts_with('[') {
+        return match authority.find(']') {
+            Some(end) => {
+                let (host, rest) = authority.split_at(end + 1);
+                (host, rest.strip_prefix(':'))
+            }
+            None => (authority, None),
+        };
+    }
+    match authority.rsplit_once(':') {
+        Some((host, port)) if port.bytes().all(|byte| byte.is_ascii_digit()) => (host, Some(port)),
+        _ => (authority, None),
+    }
+}
+
+/// Whether `host` is `parent` or one of its subdomains, without regard to
+/// case: `a.example.com` and `example.com` are within `example.com`, and
+/// `notexample.com` is not. This is how a block on a domain covers its
+/// subdomains, as Mastodon's `DomainBlock.rule_for` matches every suffix of
+/// a host. An empty parent has nothing within it.
+#[must_use]
+pub fn host_within(host: &str, parent: &str) -> bool {
+    if parent.is_empty()
+        || host.len() < parent.len()
+        || !host.is_char_boundary(host.len() - parent.len())
+    {
+        return false;
+    }
+    let (rest, suffix) = host.split_at(host.len() - parent.len());
+    suffix.eq_ignore_ascii_case(parent) && (rest.is_empty() || rest.ends_with('.'))
+}
+
 /// The origin of an `http` or `https` IRI, read as the `url` crate reads it,
 /// since that is how every request Ojak makes and every identifier it hands
 /// on is read. An IRI that is not well formed has none: WHATWG URL parsing
@@ -137,6 +240,77 @@ mod tests {
             host: host.into(),
             port,
         })
+    }
+
+    #[test]
+    fn same_authority_is_the_did_or_the_host() {
+        assert!(same_authority(
+            "https://A.example/users/a",
+            "http://a.example:8443/x"
+        ));
+        assert!(!same_authority("https://a.example/", "https://b.example/"));
+        assert!(!same_authority("ftp://a.example/", "https://a.example/"));
+        assert!(!same_authority("https://a.example/", "ftp://a.example/"));
+        assert!(same_authority(
+            "ap://did:key:z6MkAbc/users/alice",
+            "did:key:z6MkAbc#z6MkAbc"
+        ));
+        assert!(!same_authority(
+            "ap://did:key:z6MkAbc/users/alice",
+            "https://a.example/"
+        ));
+        assert!(!same_authority(
+            "https://gateway.example/users/bob",
+            "https://gateway.example/.well-known/apgateway/did:key:z6MkAbc/users/alice"
+        ));
+    }
+
+    #[test]
+    fn host_of_is_the_normalized_host_without_a_port() {
+        assert_eq!(
+            host_of("https://Bücher.Example:8443/inbox").as_deref(),
+            Some("xn--bcher-kva.example")
+        );
+        assert_eq!(host_of("https://[::1]/").as_deref(), Some("[::1]"));
+        assert_eq!(host_of("not a url"), None);
+        assert_eq!(host_of("mailto:a@b.example"), None);
+    }
+
+    #[test]
+    fn normalize_host_is_addressables_normalized_host() {
+        let keep = |host| normalize_host(host, Port::Keep);
+        assert_eq!(keep("Example.COM").as_deref(), Some("example.com"));
+        assert_eq!(
+            keep("bücher.example").as_deref(),
+            Some("xn--bcher-kva.example")
+        );
+        assert_eq!(keep("127.0.0.1:3000").as_deref(), Some("127.0.0.1:3000"));
+        assert_eq!(keep("a.example:443").as_deref(), Some("a.example:443"));
+        assert_eq!(
+            normalize_host("a.example:443", Port::Drop).as_deref(),
+            Some("a.example")
+        );
+        assert_eq!(
+            keep("[2001:DB8::1]:8443").as_deref(),
+            Some("[2001:db8::1]:8443")
+        );
+        assert_eq!(keep("a.example.").as_deref(), Some("a.example"));
+        assert_eq!(keep("a%2Eexample").as_deref(), Some("a.example"));
+        for invalid in ["", "a b.example", "a/b", "a@b.example", ":443"] {
+            assert_eq!(keep(invalid), None, "{invalid:?}");
+        }
+    }
+
+    #[test]
+    fn host_within_is_the_host_or_a_subdomain() {
+        assert!(host_within("example.com", "example.com"));
+        assert!(host_within("a.example.com", "example.com"));
+        assert!(host_within("deep.sub.EXAMPLE.com", "Example.COM"));
+        assert!(!host_within("notexample.com", "example.com"));
+        assert!(!host_within("example.com.attacker.test", "example.com"));
+        assert!(!host_within("example.org", "example.com"));
+        assert!(!host_within("example.com", ""));
+        assert!(!host_within("", "example.com"));
     }
 
     #[test]
