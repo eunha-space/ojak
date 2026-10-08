@@ -399,6 +399,45 @@ pub fn generate_ed25519_seed(rng: &mut impl CryptoRngCore) -> [u8; 32] {
     ed25519_dalek::SigningKey::generate(rng).to_bytes()
 }
 
+/// The Data Integrity context that defines `proof`, version 1: what a
+/// document is to carry before a proof is attached to it, for a JSON-LD
+/// reader to find the proof at all.
+pub const DATA_INTEGRITY_CONTEXT: &str = "https://w3id.org/security/data-integrity/v1";
+
+/// `document` with [`DATA_INTEGRITY_CONTEXT`] in its `@context`, however that
+/// is shaped — added to an array, made an array with a single context, or
+/// set when there is none — and as it was if it is there already. `None`
+/// when `document` is not an object.
+///
+/// A proof signs `@context` with the rest, so this comes before
+/// [`sign_object_integrity_proof`], not after.
+#[must_use]
+pub fn with_data_integrity_context(mut document: Value) -> Option<Value> {
+    let object = document.as_object_mut()?;
+    match object.get_mut("@context") {
+        Some(Value::Array(entries)) => {
+            if !entries
+                .iter()
+                .any(|entry| entry.as_str() == Some(DATA_INTEGRITY_CONTEXT))
+            {
+                entries.push(Value::from(DATA_INTEGRITY_CONTEXT));
+            }
+        }
+        Some(Value::String(context)) if context == DATA_INTEGRITY_CONTEXT => {}
+        Some(existing) => {
+            let existing = existing.take();
+            object.insert(
+                "@context".to_string(),
+                Value::Array(vec![existing, Value::from(DATA_INTEGRITY_CONTEXT)]),
+            );
+        }
+        None => {
+            object.insert("@context".to_string(), Value::from(DATA_INTEGRITY_CONTEXT));
+        }
+    }
+    Some(document)
+}
+
 /// Attach an `eddsa-jcs-2022` integrity proof to `document`.
 ///
 /// The inverse of [`verify_object_integrity_proof`], and deliberately written
@@ -602,6 +641,30 @@ fn decode_multibase(value: &str) -> Result<Vec<u8>, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_data_integrity_context_is_added_however_context_is_shaped() {
+        use serde_json::json;
+        let as_ = "https://www.w3.org/ns/activitystreams";
+        assert_eq!(
+            with_data_integrity_context(json!({"@context": as_})).unwrap()["@context"],
+            json!([as_, DATA_INTEGRITY_CONTEXT])
+        );
+        assert_eq!(
+            with_data_integrity_context(json!({"@context": [as_, {"a": "b"}]})).unwrap()["@context"],
+            json!([as_, {"a": "b"}, DATA_INTEGRITY_CONTEXT])
+        );
+        let already = json!({"@context": [as_, DATA_INTEGRITY_CONTEXT]});
+        assert_eq!(
+            with_data_integrity_context(already.clone()).unwrap(),
+            already
+        );
+        assert_eq!(
+            with_data_integrity_context(json!({})).unwrap()["@context"],
+            json!(DATA_INTEGRITY_CONTEXT)
+        );
+        assert_eq!(with_data_integrity_context(json!("x")), None);
+    }
 
     /// RFC 8410 §10.1's example public key.
     #[test]

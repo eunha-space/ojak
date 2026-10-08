@@ -367,6 +367,102 @@ pub fn expires_at(signature_input: &str) -> Option<i64> {
     Input::parse(signature_input).ok()?.integer("expires")
 }
 
+/// Sign a response over `@status` and `content-digest`, as Linzer signs one
+/// (`Linzer.sign!(response, key:, components: %w(@status content-digest))`)
+/// and the Fediverse Auxiliary Service Provider protocol has both sides sign
+/// theirs.
+///
+/// `content_digest` is the response's `Content-Digest` as it is sent
+/// ([`content_digest`] of its body). The signature names its key only when
+/// given `key_id`: a response answers a request, and its key may be one both
+/// sides already know.
+///
+/// # Errors
+/// Returns an error if the key cannot be parsed or the signature cannot be made.
+pub fn sign_response(
+    status: u16,
+    content_digest: &str,
+    key_id: Option<&str>,
+    key: &SigningKey<'_>,
+    now: i64,
+) -> Result<SignedHeaders, Error> {
+    let components = vec![
+        ("@status".to_string(), status.to_string()),
+        ("content-digest".to_string(), content_digest.to_string()),
+    ];
+    let mut params = format!("(\"@status\" \"content-digest\");created={now}");
+    if let Some(key_id) = key_id {
+        params.push_str(&format!(";keyid=\"{key_id}\""));
+    }
+    let base = signature_base(&components, &params);
+    let signature = key.sign(base.as_bytes())?;
+    Ok(SignedHeaders {
+        signature_input: format!("{LABEL}={params}"),
+        signature: format!("{LABEL}=:{signature}:"),
+        content_digest: Some(content_digest.to_string()),
+    })
+}
+
+/// Verify an [RFC 9421] signature on a response, given its status, the
+/// `Signature-Input` and `Signature` field values, and its header fields.
+///
+/// The derived component a response can be rebuilt from is `@status`; a
+/// covered header field, `content-digest` among them, is taken from
+/// `headers` as [`verify_request`] takes one. Whether `Content-Digest`
+/// describes the body, and whether the signature has expired
+/// ([`expires_at`]) or is too old ([`created_at`]), are the caller's to
+/// check: the policy is the protocol's.
+///
+/// [RFC 9421]: https://www.rfc-editor.org/rfc/rfc9421.html
+///
+/// # Errors
+/// When the signature cannot be read, covers what cannot be rebuilt or was
+/// not sent, states an algorithm the key is not, or does not verify.
+pub fn verify_response(
+    status: u16,
+    signature_input: &str,
+    signature: &str,
+    headers: &[(&str, &str)],
+    key: &VerifyingKey<'_>,
+) -> Result<(), Error> {
+    let input = Input::parse(signature_input)?;
+    let sig_b64 = BASE64.encode(signature_bytes(signature, &input.label)?);
+    if let Some(alg) = input.string("alg") {
+        let stated = Algorithm::from_str(&alg)
+            .ok_or_else(|| Error::Unsupported(format!("algorithm {alg:?}")))?;
+        if stated != key.algorithm() {
+            return Err(Error::WrongKey(format!(
+                "signature claims {} but the key is {}",
+                stated.as_str(),
+                key.algorithm().as_str()
+            )));
+        }
+    }
+    let mut components = Vec::with_capacity(input.covered.len());
+    for name in &input.covered {
+        let value = match name.as_str() {
+            "@status" => status.to_string(),
+            derived if derived.starts_with('@') => {
+                return Err(Error::Unsupported(format!("component {derived:?}")));
+            }
+            field => {
+                let values: Vec<&str> = headers
+                    .iter()
+                    .filter(|(name, _)| name.eq_ignore_ascii_case(field))
+                    .map(|(_, value)| value.trim())
+                    .collect();
+                if values.is_empty() {
+                    return Err(Error::Missing(field.to_owned()));
+                }
+                values.join(", ")
+            }
+        };
+        components.push((name.clone(), value));
+    }
+    let base = signature_base(&components, &input.params);
+    key.verify(base.as_bytes(), &sig_b64)
+}
+
 /// The signature a `Signature-Input` describes, read as the structured-field
 /// dictionary it is (RFC 8941). A message may carry several signatures, as
 /// when a proxy adds its own beside the sender's; the first is the one read,
@@ -1010,5 +1106,94 @@ mod tests {
             content_digest(b""),
             "sha-256=:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=:"
         );
+    }
+
+    #[test]
+    fn verifies_the_responses_it_signs() {
+        let digest = content_digest(b"{}");
+        let signed = sign_response(
+            201,
+            &digest,
+            None,
+            &SigningKey::Ed25519(&TEST_KEY_ED25519_SEED),
+            1_700_000_000,
+        )
+        .unwrap();
+        assert_eq!(
+            signed.signature_input,
+            "sig1=(\"@status\" \"content-digest\");created=1700000000"
+        );
+        let key = VerifyingKey::Ed25519(&TEST_KEY_ED25519_PUBLIC);
+        let headers = [("Content-Digest", digest.as_str())];
+        verify_response(
+            201,
+            &signed.signature_input,
+            &signed.signature,
+            &headers,
+            &key,
+        )
+        .unwrap();
+        assert!(
+            verify_response(
+                200,
+                &signed.signature_input,
+                &signed.signature,
+                &headers,
+                &key
+            )
+            .is_err()
+        );
+        let other = content_digest(b"[]");
+        assert!(
+            verify_response(
+                201,
+                &signed.signature_input,
+                &signed.signature,
+                &[("content-digest", other.as_str())],
+                &key,
+            )
+            .is_err()
+        );
+        assert!(matches!(
+            verify_response(201, &signed.signature_input, &signed.signature, &[], &key),
+            Err(Error::Missing(_))
+        ));
+
+        let named = sign_response(
+            200,
+            &digest,
+            Some("https://a.example/key"),
+            &SigningKey::Ed25519(&TEST_KEY_ED25519_SEED),
+            1_700_000_000,
+        )
+        .unwrap();
+        assert_eq!(
+            key_id(&named.signature_input).as_deref(),
+            Some("https://a.example/key")
+        );
+        verify_response(
+            200,
+            &named.signature_input,
+            &named.signature,
+            &headers,
+            &key,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_response_signature_covers_only_what_a_response_has() {
+        let input = "sig1=(\"@method\" \"@status\");created=1";
+        let signature = "sig1=:AAAA:";
+        assert!(matches!(
+            verify_response(
+                200,
+                input,
+                signature,
+                &[],
+                &VerifyingKey::Ed25519(&TEST_KEY_ED25519_PUBLIC)
+            ),
+            Err(Error::Unsupported(_))
+        ));
     }
 }
