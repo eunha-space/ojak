@@ -151,3 +151,17 @@ pub fn write<T: ToJson>(value: &T) -> Value {
     }
     document
 }
+
+/// Write a vocabulary value as a document under `context` rather than
+/// Ojak's: the plain ActivityStreams context, say, which is what Mastodon
+/// writes its activities under. `@context` comes first, wherever a map that
+/// keeps its keys in order writes them.
+#[must_use]
+pub fn write_with_context<T: ToJson>(value: &T, context: Value) -> Value {
+    let mut document = serde_json::Map::new();
+    document.insert("@context".into(), context);
+    if let Value::Object(members) = value.to_json() {
+        document.extend(members);
+    }
+    Value::Object(document)
+}

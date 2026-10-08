@@ -22,19 +22,28 @@ use serde::{Deserialize, Serialize};
 
 pub mod generated;
 pub mod json;
+pub mod json_ld_helper;
 pub mod loss;
 pub mod meaning;
 mod read;
 
 pub use generated::*;
 pub use loss::Loss;
-pub use read::{Read, ReadError, Registry, read, read_reporting, write};
+pub use read::{Read, ReadError, Registry, read, read_reporting, write, write_with_context};
 
 /// The canonical Activity Streams JSON-LD context URL.
 pub const ACTIVITYSTREAMS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
 
 /// The special collection addressing every actor (public posts).
 pub const ACTIVITYSTREAMS_PUBLIC: &str = "https://www.w3.org/ns/activitystreams#Public";
+
+/// Whether `iri` names the public collection, in any of the spellings
+/// compaction leaves it in: in full, as `as:Public`, or as `Public`.
+/// Mastodon's `ActivityPub::TagManager#public_collection?`.
+#[must_use]
+pub fn is_public_collection(iri: &str) -> bool {
+    matches!(iri, ACTIVITYSTREAMS_PUBLIC | "as:Public" | "Public")
+}
 
 /// An absolute ActivityPub/ActivityStreams identifier.
 pub type Iri = IriString;
