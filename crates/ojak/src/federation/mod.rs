@@ -1128,7 +1128,9 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     }
 
     /// Receive activities at `template`, the inbox of the actors of `kind`,
-    /// whose one expression is the actor's identifier.
+    /// whose one expression is the actor's identifier; or, for an actor
+    /// whose own template has no expression, such as an instance actor at
+    /// `/actor`, with none.
     #[must_use]
     pub fn inbox(mut self, kind: &str, template: &str) -> Self {
         self.inboxes.push((kind.to_owned(), template.to_owned()));
@@ -1451,16 +1453,25 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         for (kind, template) in std::mem::take(&mut self.inboxes) {
             match Template::parse(&template) {
                 Ok(template) => {
-                    if template.names().count() != 1 {
-                        errors.push(format!(
-                            "inbox {}: has to name its actor in one expression",
-                            template.as_str()
-                        ));
-                    }
-                    if !self.entries.iter().any(|entry| {
+                    // One expression, or none for an actor whose template
+                    // has none, such as an instance actor at `/actor` with
+                    // its inbox at `/actor/inbox`.
+                    match self.entries.iter().find(|entry| {
                         entry.kind == kind && matches!(entry.dispatcher, Dispatcher::Actor(_))
                     }) {
-                        errors.push(format!("inbox for {kind:?}, which is no actor kind"));
+                        Some(actor) => {
+                            let expected = actor.template.names().count().min(1);
+                            if template.names().count() != expected {
+                                errors.push(format!(
+                                    "inbox {}: has to name its actor in as many expressions \
+                                     as its actor's template does",
+                                    template.as_str()
+                                ));
+                            }
+                        }
+                        None => {
+                            errors.push(format!("inbox for {kind:?}, which is no actor kind"));
+                        }
                     }
                     inboxes.push((kind, template));
                 }

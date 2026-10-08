@@ -971,6 +971,7 @@ async fn inboxes_have_uris_and_uris_need_no_data() {
     let with_inboxes = with_signed_fetch(
         builder()
             .inbox("person", "/ap/users/{user_id}/inbox")
+            .inbox("instance", "/actor/inbox")
             .shared_inbox("/ap/inbox"),
     );
 
@@ -987,6 +988,20 @@ async fn inboxes_have_uris_and_uris_need_no_data() {
     assert_eq!(
         uris.shared_inbox_uri().unwrap().as_str(),
         "https://oeee.test/ap/inbox"
+    );
+    assert_eq!(
+        uris.inbox_uri("instance", "").unwrap().as_str(),
+        "https://oeee.test/actor/inbox",
+        "an actor with no expression has an inbox with none"
+    );
+    assert!(with_inboxes.is_inbox("/actor/inbox"), "and it is an inbox");
+    assert!(
+        Federation::<App>::builder()
+            .actor("person", "/ap/users/{user_id}", person)
+            .inbox("person", "/ap/users/inbox")
+            .build()
+            .is_err(),
+        "an actor with an identifier has an inbox that names it"
     );
     assert!(
         uris.inbox_uri("group", "cafe").is_err(),
