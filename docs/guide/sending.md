@@ -9,7 +9,10 @@ Delivering activities
 ---------------------
 
 A `Deliverer` sends activities through a queue, signed with keys your
-application supplies through `SenderKeys`:
+application supplies through `SenderKeys`.  A key that is costly to load,
+from a database and decrypted, can be kept for a while once loaded by
+wrapping your `SenderKeys` in `CachingSenderKeys`, so that a post fanned out
+to thousands of inboxes loads its key once:
 
 ~~~~ rust
 let deliverer = Deliverer::new(queue, sender_keys, client, DelivererConfig::default())
@@ -68,11 +71,17 @@ Delivery:
     memory unless `breaker_store` gives the deliverer a `BreakerStore` of
     your own, such as one in Redis that every process shares, as Mastodon's
     Stoplights are, which answers `admit` for each delivery and takes the
-    probe back with its outcome in `record`; `DelivererConfig::breaker` sets
+    probe back with its outcome in `record`; *ojak-redis*'s `RedisBreakers`
+    is one, keyed as Stoplight keys them.  `DelivererConfig::breaker` sets
     it, and `None` turns it off;
  -  reports every attempt, delivered, failed or held, to `on_attempt`, for an
-    application that keeps its own account of which servers answer, as
-    Mastodon's delivery failure tracker does;
+    application that keeps its own account of which servers answer.
+    `deliverer::availability` is Mastodon's account of them, its delivery
+    failure tracker, over an `AvailabilityStore` of your own: failures on
+    seven different days mark a host unavailable, a delivery that goes
+    through clears them, and an answer that will not change counts for
+    nothing.  `Availability::record` takes each attempt, and
+    `Availability::is_unavailable` is what `skip_if` asks;
  -  awaits `on_settled` for each delivery that is done with — delivered,
     refused for good, or skipped — before it leaves the queue, with its
     batch's tag, for what is to follow a delivery having gone through;
@@ -93,7 +102,10 @@ The loop, `run_until(stop)`, finishes what is in flight once `stop`
 completes, so a server shutting down does not drop deliveries mid-send.
 
 To attach an integrity proof to an activity, sign it with your
-`ProofSigner` before sending.
+`ProofSigner` before sending.  The proof signs the document's `@context`,
+which has to define `proof` for a JSON-LD reader to find it:
+`ojak::sig::integrity::with_data_integrity_context` adds the Data Integrity
+context first, however `@context` is shaped.
 
 
 The guarded client

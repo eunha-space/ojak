@@ -45,7 +45,9 @@ in fails the check.
     extensions the fediverse uses, generated from Fedify's vocabulary schemas
     and Ojak's own additions, with reading and writing through *ojak-jsonld*.
     `ojak_vocab::meaning` says what a post or reaction means where the
-    fediverse says it several ways.
+    fediverse says it several ways, and `ojak_vocab::json_ld_helper` reads
+    a document as it arrived, as Mastodon's `JsonLdHelper` does: `type` as
+    a string or an array, a value or its `id`, a `url`'s `href`.
 
  -  *ojak-jsonld*: JSON-LD term expansion and compaction over bundled contexts,
     so that a document is read by what its keys stand for rather than how they
@@ -59,7 +61,8 @@ Signatures
 ----------
 
  -  *ojak-sig*: HTTP Signatures (draft-cavage, and RFC 9421 with RSA or
-    Ed25519) and the policy the inbox holds them to, FEP-8b32 Object
+    Ed25519, on requests and on responses) and the policy the inbox holds
+    them to, FEP-8b32 Object
     Integrity Proofs (`eddsa-jcs-2022`, and `mldsa44-jcs-2024` to verify),
     Linked Data Signatures (`RsaSignature2017`, as Mastodon makes them),
     and `did:key`.  It does no I/O and needs no async runtime: the caller
@@ -82,7 +85,9 @@ The framework
         through the guarded HTTP client.
      -  `ojak::sig`: *ojak-sig*, re-exported.
      -  `ojak::origin` and `ojak::portable`: the same-origin rule, over hosts
-        and DIDs, and portable objects (FEP-ef61).
+        and DIDs, hosts in the form they are compared in (`normalize_host`,
+        `host_of`, and `host_within` for a domain and its subdomains), and
+        portable objects (FEP-ef61).
      -  `ojak::kv` and `ojak::queue`: the key-value store and the queue, as
         traits with in-memory implementations.
 
@@ -96,7 +101,8 @@ Integrations
 
  -  *ojak-redis*: A Redis backend for the key-value store, its keys under a
     prefix the application gives, so that several instances can share one
-    Redis each under an ACL of its own.
+    Redis each under an ACL of its own, and for the deliverer's circuit
+    breakers, kept as Stoplight keeps Mastodon's (`RedisBreakers`).
 
 [axum]: https://github.com/tokio-rs/axum
 
