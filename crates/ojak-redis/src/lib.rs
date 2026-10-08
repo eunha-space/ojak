@@ -20,6 +20,14 @@
 //! an expired entry is gone without anything sweeping it. The commands sent
 //! are `GET`, `SET` (with `PX` and `NX`) and `DEL`, which is all a Redis user
 //! for this store needs to be granted.
+//!
+//! The deliverer's circuit breakers can be kept here too, with
+//! [`RedisBreakers`], under the same kind of prefix, so that every process
+//! delivering for an application counts the same failures.
+
+mod breakers;
+
+pub use breakers::{ProbeRelease, RedisBreakers};
 
 use ojak::kv::{KvError, KvStore};
 use redis::aio::ConnectionLike;
