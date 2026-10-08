@@ -3,11 +3,16 @@
 //! The application writes one page function, and optionally a counter and
 //! the cursors of the first and last pages; Ojak writes the
 //! `OrderedCollection` at the template's URI and the `OrderedCollectionPage`s
-//! at the same URI with `?cursor=`.
+//! at the same URI with `?cursor=`, or the `Collection` and its
+//! `CollectionPage`s when it is [unordered](Collection::unordered).
+//!
+//! A collection whose URIs Ojak does not write, such as one paged by a query
+//! of the application's own, is a document the application builds, as a
+//! [`CollectionDocument`], and serves as an object.
 
 use super::{BoxFuture, Context, Error, activity, boxed, empty};
 use http::StatusCode;
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::future::Future;
 use std::sync::Arc;
 use url::Url;
@@ -45,6 +50,7 @@ type FirstFn<D> = Arc<
 >;
 type UriFn<D> =
     Arc<dyn Fn(Context<D>, String) -> BoxFuture<'static, Result<Option<Url>, Error>> + Send + Sync>;
+type ContextFn = Arc<dyn Fn(&[Value]) -> Value + Send + Sync>;
 type LastFn<D> = Arc<
     dyn Fn(Context<D>, String) -> BoxFuture<'static, Result<Option<String>, Error>> + Send + Sync,
 >;
@@ -56,6 +62,8 @@ pub struct Collection<D> {
     first: Option<FirstFn<D>>,
     last: Option<LastFn<D>>,
     uri: Option<UriFn<D>>,
+    ordered: bool,
+    context: Option<ContextFn>,
 }
 
 impl<D> Clone for Collection<D> {
@@ -66,6 +74,8 @@ impl<D> Clone for Collection<D> {
             first: self.first.clone(),
             last: self.last.clone(),
             uri: self.uri.clone(),
+            ordered: self.ordered,
+            context: self.context.clone(),
         }
     }
 }
@@ -90,7 +100,50 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
             first: None,
             last: None,
             uri: None,
+            ordered: true,
+            context: None,
         }
+    }
+
+    /// Serve it as a `Collection`, whose pages are `CollectionPage`s and
+    /// whose members are `items`, rather than ordered: for a collection
+    /// whose order means nothing, such as an account's featured hashtags or
+    /// who liked a post.
+    #[must_use]
+    pub fn unordered(mut self) -> Self {
+        self.ordered = false;
+        self
+    }
+
+    /// The `@context` of the collection and its pages, from the members a
+    /// document has (none, for a collection that only links its pages):
+    /// for an application whose context says what its members use, as
+    /// Mastodon's names `Hashtag` only for a collection of hashtags that
+    /// has any. Without it, a document gets [`default_context`].
+    ///
+    /// [`default_context`]: super::default_context
+    #[must_use]
+    pub fn context(mut self, context: impl Fn(&[Value]) -> Value + Send + Sync + 'static) -> Self {
+        self.context = Some(Arc::new(context));
+        self
+    }
+
+    /// `document` with the `@context` the collection gives it, if it gives
+    /// one, before its other members.
+    fn with_context(&self, document: &CollectionDocument) -> Value {
+        let value = document.to_value();
+        let Some(context) = &self.context else {
+            return value;
+        };
+        let mut with_context = serde_json::Map::new();
+        with_context.insert(
+            "@context".into(),
+            context(document.items.as_deref().unwrap_or_default()),
+        );
+        if let Value::Object(members) = value {
+            with_context.extend(members);
+        }
+        Value::Object(with_context)
     }
 
     /// How many items the collection has, for `totalItems`.
@@ -185,19 +238,16 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
             else {
                 return Ok(empty(StatusCode::NOT_FOUND));
             };
-            let mut document = json!({
-                "id": page_uri(&uri, &cursor).as_str(),
-                "type": "OrderedCollectionPage",
-                "partOf": uri.as_str(),
-                "orderedItems": page.items,
-            });
-            if let Some(next) = page.next {
-                document["next"] = page_uri(&uri, &next).as_str().into();
-            }
-            if let Some(prev) = page.prev {
-                document["prev"] = page_uri(&uri, &prev).as_str().into();
-            }
-            return Ok(activity(StatusCode::OK, document));
+            let document = CollectionDocument {
+                id: Some(page_uri(&uri, &cursor)),
+                ordered: self.ordered,
+                part_of: Some(uri.clone()),
+                next: page.next.map(|next| page_uri(&uri, &next)),
+                prev: page.prev.map(|prev| page_uri(&uri, &prev)),
+                items: Some(page.items),
+                ..CollectionDocument::default()
+            };
+            return Ok(activity(StatusCode::OK, self.with_context(&document)));
         }
 
         let Some(first) = &self.first else {
@@ -209,35 +259,134 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
                 None => None,
             }
             .unwrap_or(page.items.len() as u64);
-            return Ok(activity(
-                StatusCode::OK,
-                json!({
-                    "id": uri.as_str(),
-                    "type": "OrderedCollection",
-                    "totalItems": total,
-                    "orderedItems": page.items,
-                }),
-            ));
+            let document = CollectionDocument {
+                id: Some(uri),
+                ordered: self.ordered,
+                total_items: Some(total),
+                items: Some(page.items),
+                ..CollectionDocument::default()
+            };
+            return Ok(activity(StatusCode::OK, self.with_context(&document)));
         };
 
         let Some(start) = first(context.clone(), identifier.clone()).await? else {
             return Ok(empty(StatusCode::NOT_FOUND));
         };
-        let mut document = json!({"id": uri.as_str(), "type": "OrderedCollection"});
-        if let Some(count) = &self.count
-            && let Some(total) = count(context.clone(), identifier.clone()).await?
-        {
-            document["totalItems"] = total.into();
+        let mut document = CollectionDocument {
+            ordered: self.ordered,
+            ..CollectionDocument::default()
+        };
+        if let Some(count) = &self.count {
+            document.total_items = count(context.clone(), identifier.clone()).await?;
         }
         if let First::At(cursor) = start {
-            document["first"] = page_uri(&uri, &cursor).as_str().into();
+            document.first = Some(page_uri(&uri, &cursor).as_str().into());
             if let Some(last) = &self.last
                 && let Some(cursor) = last(context.clone(), identifier).await?
             {
-                document["last"] = page_uri(&uri, &cursor).as_str().into();
+                document.last = Some(page_uri(&uri, &cursor).as_str().into());
             }
         }
-        Ok(activity(StatusCode::OK, document))
+        document.id = Some(uri);
+        Ok(activity(StatusCode::OK, self.with_context(&document)))
+    }
+}
+
+/// An ActivityStreams collection or collection page, written as a document:
+/// what Ojak serves a [`Collection`] as, for an application that serves one
+/// itself, such as a collection paged by a query of its own or embedded in
+/// another object.
+///
+/// It is a page when it is part of a collection ([`part_of`]) or says it is
+/// ([`page`]), and ordered or not as [`ordered`] says. Its members are
+/// written whenever there are [`items`], even none; a collection that only
+/// counts its members, or only links its pages, has `None`.
+///
+/// [`part_of`]: CollectionDocument::part_of
+/// [`page`]: CollectionDocument::page
+/// [`ordered`]: CollectionDocument::ordered
+/// [`items`]: CollectionDocument::items
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CollectionDocument {
+    /// Its `id`. An embedded page may have none.
+    pub id: Option<Url>,
+    /// An `OrderedCollection` or `OrderedCollectionPage`, whose members are
+    /// `orderedItems`, rather than a `Collection` or `CollectionPage`, whose
+    /// members are `items`.
+    pub ordered: bool,
+    /// A page, even with no [`part_of`](CollectionDocument::part_of).
+    pub page: bool,
+    /// Its `totalItems`.
+    pub total_items: Option<u64>,
+    /// Its `next` page.
+    pub next: Option<Url>,
+    /// Its `prev` page.
+    pub prev: Option<Url>,
+    /// The collection it is a page of.
+    pub part_of: Option<Url>,
+    /// Its `first` page: a URI, or the page embedded.
+    pub first: Option<Value>,
+    /// Its `last` page: a URI, or the page embedded.
+    pub last: Option<Value>,
+    /// Its members, in order: IRIs as strings, or embedded objects.
+    pub items: Option<Vec<Value>>,
+}
+
+impl CollectionDocument {
+    /// Whether it is a page rather than a collection.
+    #[must_use]
+    pub fn is_page(&self) -> bool {
+        self.page || self.part_of.is_some()
+    }
+
+    /// Its `type`.
+    #[must_use]
+    pub fn type_name(&self) -> &'static str {
+        match (self.ordered, self.is_page()) {
+            (true, true) => "OrderedCollectionPage",
+            (true, false) => "OrderedCollection",
+            (false, true) => "CollectionPage",
+            (false, false) => "Collection",
+        }
+    }
+
+    /// The document, without an `@context`: `id`, `type`, `totalItems`,
+    /// `next`, `prev`, `partOf`, `first`, `last` and the members, in that
+    /// order, each only when there is one.
+    #[must_use]
+    pub fn to_value(&self) -> Value {
+        let mut document = serde_json::Map::new();
+        if let Some(id) = &self.id {
+            document.insert("id".into(), id.as_str().into());
+        }
+        document.insert("type".into(), self.type_name().into());
+        if let Some(total) = self.total_items {
+            document.insert("totalItems".into(), total.into());
+        }
+        if let Some(next) = &self.next {
+            document.insert("next".into(), next.as_str().into());
+        }
+        if let Some(prev) = &self.prev {
+            document.insert("prev".into(), prev.as_str().into());
+        }
+        if let Some(part_of) = &self.part_of {
+            document.insert("partOf".into(), part_of.as_str().into());
+        }
+        if let Some(first) = &self.first {
+            document.insert("first".into(), first.clone());
+        }
+        if let Some(last) = &self.last {
+            document.insert("last".into(), last.clone());
+        }
+        if let Some(items) = &self.items {
+            let key = if self.ordered {
+                "orderedItems"
+            } else {
+                "items"
+            };
+            document.insert(key.into(), Value::Array(items.clone()));
+        }
+        Value::Object(document)
     }
 }
 

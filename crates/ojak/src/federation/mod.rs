@@ -18,7 +18,7 @@ mod signer;
 mod webfinger;
 
 pub use crate::template::Values;
-pub use collection::{Collection, First, Page};
+pub use collection::{Collection, CollectionDocument, First, Page};
 pub use inbox::{
     CollectionRef, Forward, ForwardTo, GatewayInbox, InboxWorker, InboxWorkerConfig,
     MAX_BODY as MAX_INBOX_BODY, Received,
@@ -1967,6 +1967,27 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
             Dispatcher::Actor(load) => load(self.clone(), actor.identifier.clone()).await,
             _ => Ok(Found::NotFound),
         }
+    }
+
+    /// The query of the request, if there is a request and it has one: for a
+    /// dispatcher that reads parameters of its own, such as how a collection
+    /// it writes itself is paged.
+    #[must_use]
+    pub fn query(&self) -> Option<&str> {
+        let request = self.inner.request.as_ref()?;
+        request
+            .path_and_query
+            .split_once('?')
+            .map(|(_, query)| query)
+    }
+
+    /// The value of the query parameter `name`, decoded, if the request has
+    /// it: the first, when it has it more than once.
+    #[must_use]
+    pub fn query_value(&self, name: &str) -> Option<String> {
+        url::form_urlencoded::parse(self.query()?.as_bytes())
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.into_owned())
     }
 
     /// The URL the request was for, in the canonical origin.

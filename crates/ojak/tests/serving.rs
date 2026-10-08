@@ -7,8 +7,8 @@ use axum::routing;
 use chrono::{TimeZone, Utc};
 use ojak::client::{Client, ClientConfig};
 use ojak::federation::{
-    Access, ActorRef, Collection, Context, Federation, First, Found, Handled, NodeInfo, Page,
-    PublicKey, Route, Signing, Software, with_keys,
+    Access, ActorRef, Collection, CollectionDocument, Context, Federation, First, Found, Handled,
+    NodeInfo, Page, PublicKey, Route, Signing, Software, with_keys,
 };
 use ojak::fetch::Fetcher;
 use ojak::kv::MemoryKvStore;
@@ -169,6 +169,63 @@ fn featured() -> Collection<App> {
     )
 }
 
+/// The hashtags alice features, in no order that means anything.
+fn tags() -> Collection<App> {
+    Collection::new(|_, id: String, _cursor: Option<String>| async move {
+        Ok::<_, String>((id == "1").then(|| Page {
+            items: vec![json!({"type": "Hashtag", "name": "#cats"})],
+            ..Page::default()
+        }))
+    })
+    .unordered()
+    .context(|items| {
+        if items.is_empty() {
+            json!("https://www.w3.org/ns/activitystreams")
+        } else {
+            json!(["https://www.w3.org/ns/activitystreams", {"Hashtag": "as:Hashtag"}])
+        }
+    })
+}
+
+/// A note's replies, paged by a query of the application's own rather than
+/// Ojak's cursor: `?page=true&min_id=`.
+async fn replies(ctx: Context<App>, values: Values) -> Result<Found<Value>, String> {
+    let note = ctx
+        .object_uri("note", &[("post_id", &values["post_id"])])
+        .unwrap();
+    let uri = Url::parse(&format!("{note}/replies")).unwrap();
+    let min_id: usize = ctx
+        .query_value("min_id")
+        .and_then(|id| id.parse().ok())
+        .unwrap_or(0);
+    let mut next = uri.clone();
+    next.query_pairs_mut()
+        .append_pair("min_id", &(min_id + 1).to_string())
+        .append_pair("page", "true");
+    let page = CollectionDocument {
+        part_of: Some(uri.clone()),
+        next: Some(next),
+        items: Some(vec![json!(format!(
+            "https://remote.test/notes/{}",
+            min_id + 1
+        ))]),
+        ..CollectionDocument::default()
+    };
+    if ctx.query_value("page").as_deref() == Some("true") {
+        let mut page = page;
+        page.id = Some(Url::parse(&format!("{uri}?{}", ctx.query().unwrap())).unwrap());
+        return Ok(Found::Found(page.to_value()));
+    }
+    Ok(Found::Found(
+        CollectionDocument {
+            id: Some(uri),
+            first: Some(page.to_value()),
+            ..CollectionDocument::default()
+        }
+        .to_value(),
+    ))
+}
+
 fn builder() -> ojak::federation::Builder<App> {
     Federation::builder()
         .origin_with(|host, _| match host {
@@ -181,6 +238,8 @@ fn builder() -> ojak::federation::Builder<App> {
         .object("note", "/ap/posts/{post_id}", note)
         .collection("followers", "/ap/users/{user_id}/followers", followers())
         .collection("featured", "/ap/users/{user_id}/featured", featured())
+        .collection("tags", "/ap/users/{user_id}/tags", tags())
+        .object("replies", "/ap/posts/{post_id}/replies", replies)
         .collection(
             "featured_by_handle",
             "/users/{handle}/featured",
@@ -417,6 +476,77 @@ async fn an_unpaged_collection_is_one_document() {
     assert_eq!(
         featured["orderedItems"],
         json!(["https://oeee.test/ap/posts/10"])
+    );
+}
+
+#[tokio::test]
+async fn an_unordered_collection_has_items() {
+    let tags = get(&federation(), "/ap/users/1/tags").await.json();
+    assert_eq!(
+        tags,
+        json!({
+            "@context": ["https://www.w3.org/ns/activitystreams", {"Hashtag": "as:Hashtag"}],
+            "id": "https://oeee.test/ap/users/1/tags",
+            "type": "Collection",
+            "totalItems": 1,
+            "items": [{"type": "Hashtag", "name": "#cats"}],
+        })
+    );
+}
+
+#[tokio::test]
+async fn a_dispatcher_pages_a_collection_by_its_own_query() {
+    let federation = federation();
+    let collection = get(&federation, "/ap/posts/10/replies").await.json();
+    assert_eq!(collection["type"], "Collection");
+    assert_eq!(collection["id"], "https://oeee.test/ap/posts/10/replies");
+    assert_eq!(
+        collection["first"],
+        json!({
+            "type": "CollectionPage",
+            "next": "https://oeee.test/ap/posts/10/replies?min_id=1&page=true",
+            "partOf": "https://oeee.test/ap/posts/10/replies",
+            "items": ["https://remote.test/notes/1"],
+        })
+    );
+    let page = get(&federation, "/ap/posts/10/replies?min_id=1&page=true")
+        .await
+        .json();
+    assert_eq!(
+        page["id"],
+        "https://oeee.test/ap/posts/10/replies?min_id=1&page=true"
+    );
+    assert_eq!(page["items"], json!(["https://remote.test/notes/2"]));
+    assert_eq!(
+        page["next"],
+        "https://oeee.test/ap/posts/10/replies?min_id=2&page=true"
+    );
+}
+
+#[test]
+fn a_collection_document_is_written_as_activity_streams_says() {
+    let page = CollectionDocument {
+        ordered: true,
+        page: true,
+        items: Some(Vec::new()),
+        ..CollectionDocument::default()
+    };
+    assert_eq!(
+        page.to_value(),
+        json!({"type": "OrderedCollectionPage", "orderedItems": []})
+    );
+    let counted = CollectionDocument {
+        id: Some(Url::parse("https://oeee.test/ap/posts/10/likes").unwrap()),
+        total_items: Some(3),
+        ..CollectionDocument::default()
+    };
+    assert_eq!(
+        counted.to_value(),
+        json!({
+            "id": "https://oeee.test/ap/posts/10/likes",
+            "type": "Collection",
+            "totalItems": 3,
+        })
     );
 }
 

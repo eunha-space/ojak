@@ -252,6 +252,24 @@ Peers follow the `first` and `next` links they are given, so an application
 moving from Mastodon's `?page=true&max_id=` to `?cursor=` breaks none of
 them.
 
+`Collection::unordered` serves a collection whose order means nothing, such
+as an account's featured hashtags, as a `Collection` whose pages are
+`CollectionPage`s and whose members are `items`. `Collection::context` gives
+its documents an `@context` of the application's, from the members each one
+has, in place of the default: Mastodon's names `Hashtag` only for a
+collection of hashtags that has any.
+
+A collection whose links Ojak cannot write is an object the application
+serves itself: one whose template names more than its owner, such as a
+post's replies at `/users/{username}/statuses/{id}/replies`, or one already
+linked from documents with a query of its own, such as Mastodon's
+`?page=true&min_id=`. Its dispatcher reads that query with
+`ctx.query_value("min_id")` (or the whole of it with `ctx.query()`), and
+writes the collection, and the page it may embed as `first`, as a
+`CollectionDocument`: its `id`, whether it is ordered and whether it is a
+page, its `totalItems`, `next`, `prev`, `partOf`, `first`, `last` and
+members, written as ActivityStreams names them and only when there are any.
+
 
 Authorized fetch is a question the dispatcher asks
 --------------------------------------------------
