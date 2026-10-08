@@ -16,8 +16,11 @@
 //! actor lists; [`Deliverer::send_portable`] queues it with them, and one
 //! attempt tries each in order until one accepts.
 
+pub mod availability;
+mod keys;
 mod post;
 
+pub use keys::CachingSenderKeys;
 pub use post::{DeliveryError, deliver, permanent_status};
 
 use crate::client::Client;
