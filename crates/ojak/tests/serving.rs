@@ -187,6 +187,61 @@ fn tags() -> Collection<App> {
     })
 }
 
+/// Alice's posts, newest first, two to a page, paged as Mastodon pages an
+/// outbox: `?page=true` and `?max_id=&page=true`.
+fn outbox() -> Collection<App> {
+    Collection::new(|_, _id: String, cursor: Option<String>| async move {
+        let below: u32 = cursor.unwrap_or_default().parse().unwrap_or(6);
+        let items: Vec<Value> = (1..below)
+            .rev()
+            .take(2)
+            .map(|n| json!(format!("https://oeee.test/ap/posts/{n}")))
+            .collect();
+        let next = (below > 3).then(|| (below - 2).to_string());
+        Ok::<_, String>(Some(Page {
+            items,
+            next,
+            prev: None,
+        }))
+    })
+    .first_cursor(|_, _| async { Ok::<_, String>(Some(First::At(String::new()))) })
+    .page_query(
+        |cursor| {
+            if cursor.is_empty() {
+                "page=true".to_owned()
+            } else {
+                format!("max_id={cursor}&page=true")
+            }
+        },
+        |query| {
+            let pairs: Vec<(String, String)> = url::form_urlencoded::parse(query.as_bytes())
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
+            let value = |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| k == name)
+                    .map(|(_, v)| v.clone())
+            };
+            (value("page").as_deref() == Some("true")).then(|| value("max_id").unwrap_or_default())
+        },
+    )
+}
+
+/// A document that says how it may be cached, by whether it was asked for
+/// with a signature.
+async fn cached(ctx: Context<App>, _: Values) -> Result<Found<Value>, String> {
+    ctx.set_response_header("vary", Some("Signature"));
+    if ctx.request_header("signature").is_some() {
+        ctx.set_response_header("cache-control", Some("private, no-store"));
+    } else {
+        ctx.set_response_header("cache-control", Some("max-age=180, public"));
+    }
+    Ok(Found::Found(
+        json!({"id": "https://oeee.test/ap/cached", "type": "Note"}),
+    ))
+}
+
 /// A note's replies, paged by a query of the application's own rather than
 /// Ojak's cursor: `?page=true&min_id=`.
 async fn replies(ctx: Context<App>, values: Values) -> Result<Found<Value>, String> {
@@ -240,6 +295,8 @@ fn builder() -> ojak::federation::Builder<App> {
         .collection("featured", "/ap/users/{user_id}/featured", featured())
         .collection("tags", "/ap/users/{user_id}/tags", tags())
         .object("replies", "/ap/posts/{post_id}/replies", replies)
+        .object("cached", "/ap/cached", cached)
+        .collection("posts", "/ap/users/{user_id}/posts", outbox())
         .collection(
             "featured_by_handle",
             "/users/{handle}/featured",
@@ -521,6 +578,58 @@ async fn a_dispatcher_pages_a_collection_by_its_own_query() {
         page["next"],
         "https://oeee.test/ap/posts/10/replies?min_id=2&page=true"
     );
+}
+
+#[tokio::test]
+async fn a_collection_is_paged_by_the_query_it_is_given() {
+    let federation = federation();
+    let outbox = get(&federation, "/ap/users/1/posts").await.json();
+    assert_eq!(
+        outbox["first"],
+        "https://oeee.test/ap/users/1/posts?page=true"
+    );
+    let first = get(&federation, "/ap/users/1/posts?page=true").await.json();
+    assert_eq!(first["id"], "https://oeee.test/ap/users/1/posts?page=true");
+    assert_eq!(
+        first["orderedItems"],
+        json!([
+            "https://oeee.test/ap/posts/5",
+            "https://oeee.test/ap/posts/4"
+        ])
+    );
+    assert_eq!(
+        first["next"],
+        "https://oeee.test/ap/users/1/posts?max_id=4&page=true"
+    );
+    let next = get(&federation, "/ap/users/1/posts?max_id=4&page=true")
+        .await
+        .json();
+    assert_eq!(
+        next["orderedItems"],
+        json!([
+            "https://oeee.test/ap/posts/3",
+            "https://oeee.test/ap/posts/2"
+        ])
+    );
+    let cursor = get(&federation, "/ap/users/1/posts?cursor=4").await.json();
+    assert_eq!(
+        cursor["type"], "OrderedCollection",
+        "a cursor it does not read asks for the collection"
+    );
+}
+
+#[tokio::test]
+async fn a_dispatcher_sets_the_headers_a_response_is_cached_by() {
+    let federation = federation();
+    let answer = get(&federation, "/ap/cached").await;
+    assert_eq!(answer.header("cache-control"), "max-age=180, public");
+    assert_eq!(answer.header("vary"), "Signature");
+    let mut parts = request("GET", "oeee.test", "/ap/cached", Some(ACCEPT_AP));
+    parts
+        .headers
+        .insert("signature", http::HeaderValue::from_static("keyId=\"x\""));
+    let answer = send(&federation, parts).await;
+    assert_eq!(answer.header("cache-control"), "private, no-store");
 }
 
 #[test]

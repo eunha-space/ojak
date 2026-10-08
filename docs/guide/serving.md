@@ -213,6 +213,15 @@ and Multikey contexts; one with its own keeps it. The content type is
 `application/activity+json`, with `Vary: Accept`. The gateway serves portable
 objects as `application/ld+json` with the ActivityStreams profile instead.
 
+How a response may be cached is the application's to say. A dispatcher, a
+collection's functions or a guard calls
+`ctx.set_response_header("cache-control", Some("max-age=180, public"))`,
+or `ctx.set_response_header("vary", None)` to send no such header, and
+it applies to whatever the request is answered with, a refusal or a 404
+included, in place of what Ojak would send. `ctx.request_header("signature")`
+says what the request carried, for a policy such as Mastodon's, which never
+lets a shared cache keep what was fetched with a signature.
+
 
 Collections, paged by cursor
 ----------------------------
@@ -258,6 +267,12 @@ as an account's featured hashtags, as a `Collection` whose pages are
 its documents an `@context` of the application's, from the members each one
 has, in place of the default: Mastodon's names `Hashtag` only for a
 collection of hashtags that has any.
+
+`Collection::page_query` pages a collection by a query of the application's
+own rather than `?cursor=`: given a cursor it writes the page's whole query,
+and given a request's query it says which page that asks for, or none for
+the collection itself. Mastodon's outbox pages, `?page=true` and
+`?max_id=…&page=true`, are written and read that way.
 
 A collection whose links Ojak cannot write is an object the application
 serves itself: one whose template names more than its owner, such as a

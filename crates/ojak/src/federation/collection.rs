@@ -51,6 +51,8 @@ type FirstFn<D> = Arc<
 type UriFn<D> =
     Arc<dyn Fn(Context<D>, String) -> BoxFuture<'static, Result<Option<Url>, Error>> + Send + Sync>;
 type ContextFn = Arc<dyn Fn(&[Value]) -> Value + Send + Sync>;
+type ToQueryFn = Arc<dyn Fn(&str) -> String + Send + Sync>;
+type FromQueryFn = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 type LastFn<D> = Arc<
     dyn Fn(Context<D>, String) -> BoxFuture<'static, Result<Option<String>, Error>> + Send + Sync,
 >;
@@ -64,6 +66,7 @@ pub struct Collection<D> {
     uri: Option<UriFn<D>>,
     ordered: bool,
     context: Option<ContextFn>,
+    query: Option<(ToQueryFn, FromQueryFn)>,
 }
 
 impl<D> Clone for Collection<D> {
@@ -76,6 +79,7 @@ impl<D> Clone for Collection<D> {
             uri: self.uri.clone(),
             ordered: self.ordered,
             context: self.context.clone(),
+            query: self.query.clone(),
         }
     }
 }
@@ -102,6 +106,7 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
             uri: None,
             ordered: true,
             context: None,
+            query: None,
         }
     }
 
@@ -126,6 +131,38 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
     pub fn context(mut self, context: impl Fn(&[Value]) -> Value + Send + Sync + 'static) -> Self {
         self.context = Some(Arc::new(context));
         self
+    }
+
+    /// Write a page's cursor into its URI's query, and read it back, with
+    /// `to_query` and `from_query`, rather than as `?cursor=`: for a
+    /// collection whose pages peers already know by a query of their own,
+    /// such as Mastodon's outbox at `?page=true&max_id=`. `to_query` gives
+    /// the whole query for a cursor; `from_query` is given a request's
+    /// whole query, and says which page it asks for, or `None` for the
+    /// collection itself.
+    #[must_use]
+    pub fn page_query(
+        mut self,
+        to_query: impl Fn(&str) -> String + Send + Sync + 'static,
+        from_query: impl Fn(&str) -> Option<String> + Send + Sync + 'static,
+    ) -> Self {
+        self.query = Some((Arc::new(to_query), Arc::new(from_query)));
+        self
+    }
+
+    /// The URI of the page at `cursor` of the collection at `collection`.
+    fn page_uri(&self, collection: &Url, cursor: &str) -> Url {
+        let mut url = collection.clone();
+        match &self.query {
+            Some((to_query, _)) => {
+                let query = to_query(cursor);
+                url.set_query((!query.is_empty()).then_some(query.as_str()));
+            }
+            None => {
+                url.query_pairs_mut().clear().append_pair("cursor", cursor);
+            }
+        }
+        url
     }
 
     /// `document` with the `@context` the collection gives it, if it gives
@@ -226,11 +263,14 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
             Some(uri) => uri,
             None => context.collection_uri(kind, identifier)?,
         };
-        let cursor = query.and_then(|query| {
-            url::form_urlencoded::parse(query.as_bytes())
-                .find(|(name, _)| name == "cursor")
-                .map(|(_, value)| value.into_owned())
-        });
+        let cursor = match &self.query {
+            Some((_, from_query)) => from_query(query.unwrap_or_default()),
+            None => query.and_then(|query| {
+                url::form_urlencoded::parse(query.as_bytes())
+                    .find(|(name, _)| name == "cursor")
+                    .map(|(_, value)| value.into_owned())
+            }),
+        };
         let identifier = identifier.to_owned();
 
         if let Some(cursor) = cursor {
@@ -239,11 +279,11 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
                 return Ok(empty(StatusCode::NOT_FOUND));
             };
             let document = CollectionDocument {
-                id: Some(page_uri(&uri, &cursor)),
+                id: Some(self.page_uri(&uri, &cursor)),
                 ordered: self.ordered,
                 part_of: Some(uri.clone()),
-                next: page.next.map(|next| page_uri(&uri, &next)),
-                prev: page.prev.map(|prev| page_uri(&uri, &prev)),
+                next: page.next.map(|next| self.page_uri(&uri, &next)),
+                prev: page.prev.map(|prev| self.page_uri(&uri, &prev)),
                 items: Some(page.items),
                 ..CollectionDocument::default()
             };
@@ -280,11 +320,11 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
             document.total_items = count(context.clone(), identifier.clone()).await?;
         }
         if let First::At(cursor) = start {
-            document.first = Some(page_uri(&uri, &cursor).as_str().into());
+            document.first = Some(self.page_uri(&uri, &cursor).as_str().into());
             if let Some(last) = &self.last
                 && let Some(cursor) = last(context.clone(), identifier).await?
             {
-                document.last = Some(page_uri(&uri, &cursor).as_str().into());
+                document.last = Some(self.page_uri(&uri, &cursor).as_str().into());
             }
         }
         document.id = Some(uri);
@@ -388,10 +428,4 @@ impl CollectionDocument {
         }
         Value::Object(document)
     }
-}
-
-fn page_uri(collection: &Url, cursor: &str) -> Url {
-    let mut url = collection.clone();
-    url.query_pairs_mut().clear().append_pair("cursor", cursor);
-    url
 }

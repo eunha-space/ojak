@@ -31,7 +31,7 @@ use crate::kv::{KvError, KvStore};
 use crate::portable::{ApUri, Hashlink, Media};
 use crate::template::{Template, TemplateError};
 use chrono::{DateTime, SecondsFormat, Utc};
-use http::{HeaderValue, Method, StatusCode, header};
+use http::{HeaderName, HeaderValue, Method, StatusCode, header};
 use serde_json::{Value, json};
 use std::fmt;
 use std::future::Future;
@@ -695,6 +695,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
         if entry.alias && response.status() == StatusCode::NOT_FOUND {
             return Handled::NotFound;
         }
+        let response = context.with_response_headers(response);
         Handled::Response(without_body_if(head, response))
     }
 
@@ -1612,6 +1613,9 @@ struct ContextInner<D> {
     origin: Url,
     request: Option<RequestInfo>,
     signer: tokio::sync::OnceCell<Signing>,
+    /// Headers the application set on the response, in the order set: a
+    /// value, or `None` to send none.
+    response_headers: std::sync::Mutex<Vec<(HeaderName, Option<HeaderValue>)>>,
 }
 
 /// The templates URIs are built from, apart from what serves them.
@@ -1781,6 +1785,7 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
                 origin,
                 request,
                 signer: tokio::sync::OnceCell::new(),
+                response_headers: std::sync::Mutex::new(Vec::new()),
             }),
         }
     }
@@ -1999,6 +2004,58 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
         url::form_urlencoded::parse(self.query()?.as_bytes())
             .find(|(key, _)| key == name)
             .map(|(_, value)| value.into_owned())
+    }
+
+    /// The value of the request's header `name`, if it has one and it is
+    /// text.
+    #[must_use]
+    pub fn request_header(&self, name: &str) -> Option<String> {
+        let request = self.inner.request.as_ref()?;
+        request
+            .headers
+            .iter()
+            .find(|(header, _)| header.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.clone())
+    }
+
+    /// Send `value` as the response's header `name`, or no such header
+    /// when it is `None`, in place of what Ojak would send: for a
+    /// dispatcher or guard saying how the response may be cached, such as
+    /// its `Cache-Control` and the request headers it `Vary`s on. It
+    /// applies to whatever the request is answered with, a refusal or a 404
+    /// included. A name or value that is no header is ignored.
+    pub fn set_response_header(&self, name: &str, value: Option<&str>) {
+        let Ok(name) = HeaderName::try_from(name) else {
+            return;
+        };
+        let value = match value.map(HeaderValue::try_from) {
+            Some(Ok(value)) => Some(value),
+            Some(Err(_)) => return,
+            None => None,
+        };
+        if let Ok(mut headers) = self.inner.response_headers.lock() {
+            headers.push((name, value));
+        }
+    }
+
+    /// `response` with the headers the application set.
+    fn with_response_headers(
+        &self,
+        mut response: http::Response<Vec<u8>>,
+    ) -> http::Response<Vec<u8>> {
+        if let Ok(headers) = self.inner.response_headers.lock() {
+            for (name, value) in headers.iter() {
+                match value {
+                    Some(value) => {
+                        response.headers_mut().insert(name.clone(), value.clone());
+                    }
+                    None => {
+                        response.headers_mut().remove(name);
+                    }
+                }
+            }
+        }
+        response
     }
 
     /// The URL the request was for, in the canonical origin.
