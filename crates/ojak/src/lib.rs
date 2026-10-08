@@ -24,6 +24,7 @@ pub mod kv;
 pub mod origin;
 pub mod portable;
 pub mod queue;
+pub mod synchronization;
 pub use ojak_sig as sig;
 pub mod template;
 #[cfg(feature = "testing")]

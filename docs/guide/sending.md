@@ -107,6 +107,17 @@ which has to define `proof` for a JSON-LD reader to find it:
 `ojak::sig::integrity::with_data_integrity_context` adds the Data Integrity
 context first, however `@context` is shaped.
 
+A batch sent with `synchronize_collection` carries a
+`Collection-Synchronization` header ([FEP-8fcf]), which
+`Deliverer::collection_synchronization` writes for each sender and inbox
+when the delivery is made: the sender's followers collection, the digest of
+its followers on the inbox's server, and where those are listed.
+`ojak::synchronization` has the digest, the XOR of each follower ID's
+SHA-256 in hex, and reads and writes the header as Mastodon does; a
+receiving application reads it from `ctx.request_header` in its listener.
+
+[FEP-8fcf]: https://codeberg.org/fediverse/fep/src/branch/main/fep/8fcf/fep-8fcf.md
+
 
 The guarded client
 ------------------

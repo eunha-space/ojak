@@ -80,7 +80,7 @@ async fn answer<D: Clone + Send + Sync + 'static>(
     let actor = match context.load_actor(&actor_ref).await? {
         Found::Found(actor) => actor,
         Found::Gone(_) => return Ok(empty(StatusCode::GONE)),
-        Found::NotFound => return Ok(empty(StatusCode::NOT_FOUND)),
+        Found::NotFound | Found::Redirect(_) => return Ok(empty(StatusCode::NOT_FOUND)),
     };
     let id = match actor.get("id").and_then(Value::as_str) {
         Some(id) => id.to_owned(),

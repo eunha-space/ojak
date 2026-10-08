@@ -41,6 +41,7 @@ struct Received {
     scheme: Scheme,
     verified: bool,
     body: Vec<u8>,
+    synchronization: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -90,6 +91,9 @@ async fn receive(State(inbox): State<Inbox>, headers: HeaderMap, body: Bytes) ->
         scheme,
         verified,
         body: body.to_vec(),
+        synchronization: headers
+            .get("collection-synchronization")
+            .map(|value| value.to_str().unwrap().to_owned()),
     });
     let answer = inbox
         .answers
@@ -177,6 +181,60 @@ async fn a_delivery_verifies_at_the_inbox() {
     assert_eq!(received.len(), 1);
     assert!(received[0].verified, "the inbox verified the signature");
     assert_eq!(received[0].body, body);
+}
+
+#[tokio::test]
+async fn a_synchronizing_delivery_says_whom_the_sender_has_there() {
+    let inbox = Inbox::default();
+    let url = serve(inbox.clone()).await;
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), fast())
+        .collection_synchronization(|sender: String, inbox: Url| async move {
+            Some(
+                ojak::synchronization::CollectionSynchronization {
+                    collection_id: format!("https://ojak.example/users/{sender}/followers"),
+                    url: format!("https://ojak.example/users/{sender}/followers_synchronization"),
+                    digest: ojak::synchronization::Digest::of([inbox.as_str()]).to_hex(),
+                }
+                .to_header(),
+            )
+        });
+    let note = json!({"type": "Create"});
+    deliverer
+        .send_batch(
+            "alice",
+            &note,
+            [url.clone()],
+            &ojak::deliverer::Batch {
+                synchronize_collection: true,
+                ..ojak::deliverer::Batch::default()
+            },
+        )
+        .await
+        .unwrap();
+    deliverer.send("alice", &note, [url.clone()]).await.unwrap();
+    drain(&deliverer, 3).await;
+
+    let headers: Vec<Option<String>> = inbox
+        .received()
+        .into_iter()
+        .map(|received| received.synchronization)
+        .collect();
+    assert_eq!(headers.len(), 2);
+    let header = headers.iter().flatten().next().expect("one synchronizes");
+    let parsed = ojak::synchronization::CollectionSynchronization::parse(header).unwrap();
+    assert_eq!(
+        parsed.collection_id,
+        "https://ojak.example/users/alice/followers"
+    );
+    assert_eq!(
+        parsed.digest,
+        ojak::synchronization::Digest::of([url.as_str()]).to_hex()
+    );
+    assert_eq!(
+        headers.iter().filter(|header| header.is_none()).count(),
+        1,
+        "and the other does not"
+    );
 }
 
 #[tokio::test]

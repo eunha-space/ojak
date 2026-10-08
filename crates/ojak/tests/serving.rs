@@ -205,6 +205,8 @@ fn outbox() -> Collection<App> {
         }))
     })
     .first_cursor(|_, _| async { Ok::<_, String>(Some(First::At(String::new()))) })
+    .count(|_, _| async { Ok::<_, String>(Some(5)) })
+    .count_pages()
     .page_query(
         |cursor| {
             if cursor.is_empty() {
@@ -296,6 +298,11 @@ fn builder() -> ojak::federation::Builder<App> {
         .collection("tags", "/ap/users/{user_id}/tags", tags())
         .object("replies", "/ap/posts/{post_id}/replies", replies)
         .object("cached", "/ap/cached", cached)
+        .object("boost", "/ap/boosts/{boost_id}", |_, _| async {
+            Ok::<_, String>(Found::Redirect(
+                Url::parse("https://oeee.test/@alice/10").unwrap(),
+            ))
+        })
         .collection("posts", "/ap/users/{user_id}/posts", outbox())
         .collection(
             "featured_by_handle",
@@ -590,6 +597,7 @@ async fn a_collection_is_paged_by_the_query_it_is_given() {
     );
     let first = get(&federation, "/ap/users/1/posts?page=true").await.json();
     assert_eq!(first["id"], "https://oeee.test/ap/users/1/posts?page=true");
+    assert_eq!(first["totalItems"], 5, "a page counts too, when told to");
     assert_eq!(
         first["orderedItems"],
         json!([
@@ -616,6 +624,13 @@ async fn a_collection_is_paged_by_the_query_it_is_given() {
         cursor["type"], "OrderedCollection",
         "a cursor it does not read asks for the collection"
     );
+}
+
+#[tokio::test]
+async fn a_dispatcher_may_send_the_requester_elsewhere() {
+    let answer = get(&federation(), "/ap/boosts/1").await;
+    assert_eq!(answer.status, 302);
+    assert_eq!(answer.header("location"), "https://oeee.test/@alice/10");
 }
 
 #[tokio::test]

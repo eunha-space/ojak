@@ -67,6 +67,7 @@ pub struct Collection<D> {
     ordered: bool,
     context: Option<ContextFn>,
     query: Option<(ToQueryFn, FromQueryFn)>,
+    count_pages: bool,
 }
 
 impl<D> Clone for Collection<D> {
@@ -80,6 +81,7 @@ impl<D> Clone for Collection<D> {
             ordered: self.ordered,
             context: self.context.clone(),
             query: self.query.clone(),
+            count_pages: self.count_pages,
         }
     }
 }
@@ -107,6 +109,7 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
             ordered: true,
             context: None,
             query: None,
+            count_pages: false,
         }
     }
 
@@ -147,6 +150,14 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
         from_query: impl Fn(&str) -> Option<String> + Send + Sync + 'static,
     ) -> Self {
         self.query = Some((Arc::new(to_query), Arc::new(from_query)));
+        self
+    }
+
+    /// Say `totalItems` on each page as well as on the collection, from the
+    /// counter, as Mastodon's followers and following pages do.
+    #[must_use]
+    pub fn count_pages(mut self) -> Self {
+        self.count_pages = true;
         self
     }
 
@@ -274,12 +285,20 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
         let identifier = identifier.to_owned();
 
         if let Some(cursor) = cursor {
-            let Some(page) = (self.page)(context.clone(), identifier, Some(cursor.clone())).await?
+            let Some(page) =
+                (self.page)(context.clone(), identifier.clone(), Some(cursor.clone())).await?
             else {
                 return Ok(empty(StatusCode::NOT_FOUND));
             };
+            let total_items = match &self.count {
+                Some(count) if self.count_pages => {
+                    count(context.clone(), identifier.clone()).await?
+                }
+                _ => None,
+            };
             let document = CollectionDocument {
                 id: Some(self.page_uri(&uri, &cursor)),
+                total_items,
                 ordered: self.ordered,
                 part_of: Some(uri.clone()),
                 next: page.next.map(|next| self.page_uri(&uri, &next)),

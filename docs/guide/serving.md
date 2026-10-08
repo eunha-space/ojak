@@ -145,11 +145,13 @@ enum Found<T> {
     /// Deleted: served as a Tombstone with 410, when it was deleted if known.
     Gone(Option<DateTime<Utc>>),
     NotFound,
+    /// Served elsewhere: a 302 to this URL.
+    Redirect(Url),
 }
 ~~~~
 
 A Tombstone's `id` is the requested URL in the canonical origin. WebFinger for
-a gone actor is an empty 410.
+a gone actor is an empty 410, and for one served elsewhere a 404.
 
 Key pairs come from their own dispatcher, `.key_pairs(|ctx, actor| …)`
 returning `Vec<PublicKey>`, each an RSA key or a Multikey, and the actor
@@ -272,7 +274,9 @@ collection of hashtags that has any.
 own rather than `?cursor=`: given a cursor it writes the page's whole query,
 and given a request's query it says which page that asks for, or none for
 the collection itself. Mastodon's outbox pages, `?page=true` and
-`?max_id=…&page=true`, are written and read that way.
+`?max_id=…&page=true`, are written and read that way, and its followers
+pages, `?page=2`. `Collection::count_pages` says `totalItems` on each page
+as well, as Mastodon's followers pages do.
 
 A collection whose links Ojak cannot write is an object the application
 serves itself: one whose template names more than its owner, such as a

@@ -125,13 +125,30 @@ pub async fn deliver(
     key: &SenderKey,
     first: Scheme,
 ) -> Result<Scheme, DeliveryError> {
-    match attempt(client, inbox, body, key, first).await {
+    deliver_with_headers(client, inbox, body, key, first, &[]).await
+}
+
+/// [`deliver`], with `extra` headers sent beside the signature's, such as a
+/// `Collection-Synchronization` header (FEP-8fcf). They are not signed.
+///
+/// # Errors
+///
+/// As [`deliver`].
+pub async fn deliver_with_headers(
+    client: &Client,
+    inbox: &Url,
+    body: &[u8],
+    key: &SenderKey,
+    first: Scheme,
+    extra: &[(String, String)],
+) -> Result<Scheme, DeliveryError> {
+    match attempt(client, inbox, body, key, first, extra).await {
         Ok(()) => Ok(first),
         Err(DeliveryError::Status {
             status: 400 | 401, ..
         }) => {
             let second = first.other();
-            attempt(client, inbox, body, key, second).await?;
+            attempt(client, inbox, body, key, second, extra).await?;
             Ok(second)
         }
         Err(error) => Err(error),
@@ -144,10 +161,18 @@ async fn attempt(
     body: &[u8],
     key: &SenderKey,
     scheme: Scheme,
+    extra: &[(String, String)],
 ) -> Result<(), DeliveryError> {
     let mut headers = HeaderMap::new();
     insert(&mut headers, "content-type", ACTIVITY_JSON)?;
     insert(&mut headers, "accept", ACTIVITY_JSON)?;
+    for (name, value) in extra {
+        let header = HeaderName::try_from(name.as_str())
+            .map_err(|error| DeliveryError::Signing(format!("{name}: {error}")))?;
+        let value = HeaderValue::from_str(value)
+            .map_err(|error| DeliveryError::Signing(format!("{name}: {error}")))?;
+        headers.insert(header, value);
+    }
     match scheme {
         Scheme::DraftCavage => {
             // Mastodon covers Content-Type on deliveries, so it is covered here.

@@ -21,7 +21,7 @@ mod keys;
 mod post;
 
 pub use keys::CachingSenderKeys;
-pub use post::{DeliveryError, deliver, permanent_status};
+pub use post::{DeliveryError, deliver, deliver_with_headers, permanent_status};
 
 use crate::client::Client;
 use crate::portable::ApUri;
@@ -517,6 +517,10 @@ pub struct Batch {
     pub max_attempts: Option<u32>,
     /// Sent in [`DelivererConfig::low_priority`]'s lane, when there is one.
     pub low_priority: bool,
+    /// Sent with a `Collection-Synchronization` header (FEP-8fcf), as
+    /// [`Deliverer::collection_synchronization`] writes it for the sender
+    /// and the inbox when the delivery is made.
+    pub synchronize_collection: bool,
 }
 
 /// One delivery, as it waits in the queue.
@@ -532,6 +536,7 @@ struct Delivery {
     /// Seconds since the Unix epoch.
     deadline: Option<u64>,
     max_attempts: Option<u32>,
+    synchronize_collection: bool,
 }
 
 impl Delivery {
@@ -544,6 +549,7 @@ impl Delivery {
             tag: batch.tag.clone(),
             deadline: batch.deadline.map(unix),
             max_attempts: batch.max_attempts,
+            synchronize_collection: batch.synchronize_collection,
         }
     }
 
@@ -570,6 +576,9 @@ impl Delivery {
         if let Some(max_attempts) = self.max_attempts {
             payload["max_attempts"] = max_attempts.into();
         }
+        if self.synchronize_collection {
+            payload["synchronize_collection"] = true.into();
+        }
         payload
     }
 
@@ -595,6 +604,10 @@ impl Delivery {
                 .get("max_attempts")
                 .and_then(Value::as_u64)
                 .and_then(|n| u32::try_from(n).ok()),
+            synchronize_collection: payload
+                .get("synchronize_collection")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
         })
     }
 
@@ -611,6 +624,11 @@ impl Delivery {
 type FailureHandler = Arc<dyn Fn(&DeliveryFailure) + Send + Sync>;
 type AttemptHandler = Arc<dyn Fn(&DeliveryAttempt) + Send + Sync>;
 type SkipPredicate = Arc<dyn Fn(&Url, &Value) -> bool + Send + Sync>;
+type SynchronizationFn = Arc<
+    dyn Fn(String, Url) -> std::pin::Pin<Box<dyn Future<Output = Option<String>> + Send>>
+        + Send
+        + Sync,
+>;
 type SettledHandler =
     Arc<dyn Fn(Settled) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
@@ -630,6 +648,7 @@ pub struct Deliverer<Q, K> {
     on_attempt: Option<AttemptHandler>,
     on_settled: Option<SettledHandler>,
     skip_if: Option<SkipPredicate>,
+    synchronization: Option<SynchronizationFn>,
 }
 
 impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
@@ -647,7 +666,27 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             on_attempt: None,
             on_settled: None,
             skip_if: None,
+            synchronization: None,
         }
+    }
+
+    /// The `Collection-Synchronization` header (FEP-8fcf) a delivery made
+    /// with [`Batch::synchronize_collection`] carries, as `header`, given
+    /// the sender and the inbox, writes it when the delivery is made: the
+    /// sender's followers collection, the digest of its followers on the
+    /// inbox's server, and where they are listed
+    /// ([`crate::synchronization::CollectionSynchronization`]). `None` sends
+    /// none.
+    #[must_use]
+    pub fn collection_synchronization<F, Fut>(mut self, header: F) -> Self
+    where
+        F: Fn(String, Url) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Option<String>> + Send + 'static,
+    {
+        self.synchronization = Some(Arc::new(move |sender, inbox| {
+            Box::pin(header(sender, inbox))
+        }));
+        self
     }
 
     /// Keep circuit breakers in `store` rather than in this deliverer's
@@ -1113,9 +1152,20 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             .map_err(|error| DeliveryError::Signing(error.to_string()))?;
         // Each gateway in turn: the first that accepts completes the
         // delivery, and one that fails is passed over rather than retried.
+        let mut extra = Vec::new();
+        if delivery.synchronize_collection
+            && let Some(synchronization) = &self.synchronization
+            && let Some(header) =
+                synchronization(delivery.sender.clone(), delivery.inbox.clone()).await
+        {
+            extra.push(("collection-synchronization".to_owned(), header));
+        }
         let mut last = None;
         for target in delivery.targets() {
-            match self.attempt_at(target, &body, &key, &delivery.sender).await {
+            match self
+                .attempt_at(target, &body, &key, &delivery.sender, &extra)
+                .await
+            {
                 Ok(()) => return Ok(()),
                 Err(error) => last = Some(error),
             }
@@ -1129,6 +1179,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         body: &[u8],
         key: &SenderKey,
         sender: &str,
+        extra: &[(String, String)],
     ) -> Result<(), DeliveryError> {
         let host = target.host_str().unwrap_or_default().to_owned();
         let breaker = self.config.breaker.map(|breaker| {
@@ -1160,7 +1211,8 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             .get(&host)
             .copied()
             .unwrap_or(self.config.first_scheme);
-        let result = post::deliver(&self.client, target, body, key, first).await;
+        let result =
+            post::deliver_with_headers(&self.client, target, body, key, first, extra).await;
         drop(shared_permit);
         drop(permit);
         if let Some((breaker, key)) = &breaker {

@@ -83,6 +83,9 @@ pub enum Found<T> {
     /// it was deleted if that is known.
     Gone(Option<DateTime<Utc>>),
     NotFound,
+    /// It is served elsewhere: answered with a `302 Found` to this URL, as
+    /// Mastodon sends whoever asks for a boost to the post it boosted.
+    Redirect(Url),
 }
 
 /// An actor, as the application names it: its kind and its identifier.
@@ -2315,7 +2318,20 @@ fn portable_found(found: Found<Value>, uri: &ApUri) -> http::Response<Vec<u8>> {
             response(StatusCode::GONE, PORTABLE_JSON, body)
         }
         Found::NotFound => empty(StatusCode::NOT_FOUND),
+        Found::Redirect(location) => redirect(&location),
     }
+}
+
+/// A `302 Found` to `location`.
+fn redirect(location: &Url) -> http::Response<Vec<u8>> {
+    let mut response = empty(StatusCode::FOUND);
+    if let Ok(value) = HeaderValue::from_str(location.as_str()) {
+        response.headers_mut().insert(header::LOCATION, value);
+    }
+    response
+        .headers_mut()
+        .insert(header::VARY, HeaderValue::from_static("Accept"));
+    response
 }
 
 fn found(found: Found<Value>, url: &Url) -> http::Response<Vec<u8>> {
@@ -2339,6 +2355,7 @@ fn found(found: Found<Value>, url: &Url) -> http::Response<Vec<u8>> {
                 .insert(header::VARY, HeaderValue::from_static("Accept"));
             response
         }
+        Found::Redirect(location) => redirect(&location),
     }
 }
 
