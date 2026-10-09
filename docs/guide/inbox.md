@@ -101,7 +101,10 @@ same contexts, so that what it is taken to say is what was signed. *ojak-sig*'s
 does. Whichever way a forwarded activity was established, the listener is
 told who passed it on (`Received::forwarder`), which is how an application
 asks Mastodon's question of whether it came through a relay it subscribes
-to.
+to, and what it was taken on (`Received::vouched_by`): the HTTP signature of
+its actor's server, its proof, its Linked Data signature, or the copy at its
+origin. An application that passes an activity on asks the second, since
+whoever it passes it to can check only what the activity carries in itself.
 
 A portable actor, whose identity is a key, is authenticated
 by the proof on its activity alone, checked against its DID; an HTTP

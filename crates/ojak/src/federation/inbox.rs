@@ -58,8 +58,49 @@ pub struct Received<T> {
     /// server serves it; this says who passed it on, which is what Mastodon's
     /// `requested_through_relay?` asks.
     pub forwarder: Option<Url>,
+    /// What the activity was taken on.
+    pub vouched_by: VouchedBy,
     /// What reading it into the listener's type did not keep.
     pub lost: Vec<Loss>,
+}
+
+/// What an activity was taken on: whose word it is that its actor sent it.
+///
+/// An application deciding whether to pass an activity on asks this: a
+/// receiver of the copy cannot check the HTTP signature it arrived with, only
+/// what the activity carries in itself.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VouchedBy {
+    /// The HTTP signature of a server on its actor's origin.
+    Signature,
+    /// Its own FEP-8b32 proof, or for a portable actor, its key.
+    Proof,
+    /// Its actor's Linked Data signature, passed on by another server.
+    LinkedData,
+    /// Nothing it came with: it was fetched from where its id says it lives,
+    /// and `document` is that copy.
+    Origin,
+}
+
+impl VouchedBy {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Signature => "signature",
+            Self::Proof => "proof",
+            Self::LinkedData => "linked_data",
+            Self::Origin => "origin",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "signature" => Self::Signature,
+            "proof" => Self::Proof,
+            "linked_data" => Self::LinkedData,
+            "origin" => Self::Origin,
+            _ => return None,
+        })
+    }
 }
 
 /// An authenticated activity, before it is read into a listener's type.
@@ -71,6 +112,7 @@ pub(super) struct Incoming {
     vouched: Value,
     sender: Url,
     forwarder: Option<Url>,
+    vouched_by: VouchedBy,
     recipient: Option<ActorRef>,
 }
 
@@ -166,6 +208,7 @@ where
             document: incoming.document,
             vouched: incoming.vouched,
             forwarder: incoming.forwarder,
+            vouched_by: incoming.vouched_by,
             lost,
         };
         let future = listen(context, received);
@@ -462,6 +505,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
     let mut read: Option<Value> = None;
     // Who delivered it, when that was not the actor's server.
     let mut forwarder: Option<Url> = None;
+    let mut vouched_by = VouchedBy::Signature;
     let sender = if let Some(uri) = &portable {
         // A portable actor is vouched for by its key alone: the HTTP
         // signature, if there is one, is the gateway's that sent it.
@@ -472,6 +516,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         let resolver = resolver
             .as_deref()
             .and_then(crate::fetch::Fetcher::resolver);
+        vouched_by = VouchedBy::Proof;
         match crate::portable::verify_by(&document, uri.did(), resolver).await {
             Ok(()) => match Url::parse(&uri.encoded()) {
                 Ok(sender) => sender,
@@ -496,7 +541,10 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         match signed {
             Ok(sender) if same_origin(&actor, sender.as_str()) => sender,
             signed => match signer::prove(&context, &document, &actor).await {
-                Ok(sender) => sender,
+                Ok(sender) => {
+                    vouched_by = VouchedBy::Proof;
+                    sender
+                }
                 // Signed by a server other than the actor's: forwarded, by
                 // a relay, a gateway or a server passing on a reply. The
                 // forwarder vouches for nothing of the actor's. The actor's
@@ -509,12 +557,14 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
                     match linked_data(&context, &document, &actor).await {
                         Ok((reading, sender)) => {
                             read = Some(reading);
+                            vouched_by = VouchedBy::LinkedData;
                             sender
                         }
                         Err(unsigned) => match signer::establish(&context, &document, &actor).await
                         {
                             Ok((established, sender)) => {
                                 document = established;
+                                vouched_by = VouchedBy::Origin;
                                 sender
                             }
                             // Dropped, and answered 202 as Mastodon answers
@@ -654,6 +704,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
                 "sender": sender.as_str(),
                 "recipient": recipient.as_ref().map(|r| json!({"kind": r.kind, "identifier": r.identifier})),
                 "origin": origin,
+                "vouched_by": vouched_by.as_str(),
             });
             if let Some(read) = read {
                 payload["read"] = read;
@@ -678,6 +729,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
                     vouched,
                     sender,
                     forwarder,
+                    vouched_by,
                     recipient,
                 },
             )
@@ -919,6 +971,16 @@ impl<D: Clone + Send + Sync + 'static> InboxWorker<D> {
             .get("forwarder")
             .and_then(Value::as_str)
             .and_then(|forwarder| Url::parse(forwarder).ok());
+        // Queued before it was noted: a reading is a Linked Data signature's.
+        let vouched_by = payload
+            .get("vouched_by")
+            .and_then(Value::as_str)
+            .and_then(VouchedBy::parse)
+            .unwrap_or(if payload.get("read").is_some() {
+                VouchedBy::LinkedData
+            } else {
+                VouchedBy::Signature
+            });
         let (normalized, vouched) = readings(
             &document,
             payload.get("read"),
@@ -943,6 +1005,7 @@ impl<D: Clone + Send + Sync + 'static> InboxWorker<D> {
                 vouched,
                 sender,
                 forwarder,
+                vouched_by,
                 recipient,
             },
         )

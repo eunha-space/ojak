@@ -21,7 +21,7 @@ pub use crate::template::Values;
 pub use collection::{Collection, CollectionDocument, First, Page};
 pub use inbox::{
     CollectionRef, Forward, ForwardTo, GatewayInbox, InboxWorker, InboxWorkerConfig,
-    MAX_BODY as MAX_INBOX_BODY, Received,
+    MAX_BODY as MAX_INBOX_BODY, Received, VouchedBy,
 };
 pub use nodeinfo::{NodeInfo, Software, Usage};
 pub use signer::{KnownKey, Signing};

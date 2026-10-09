@@ -33,6 +33,7 @@ struct Seen {
     sender: String,
     recipient: Option<ActorRef>,
     forwarder: Option<String>,
+    vouched_by: ojak::federation::VouchedBy,
     activity: Value,
 }
 
@@ -74,6 +75,7 @@ fn record<T: ojak_vocab::json::ToJson>(
         sender: received.sender.to_string(),
         recipient: received.recipient.clone(),
         forwarder: received.forwarder.as_ref().map(ToString::to_string),
+        vouched_by: received.vouched_by,
         activity: received.activity.to_json(),
     });
     Ok(())
@@ -255,6 +257,7 @@ async fn an_authenticated_activity_reaches_its_listener_typed() {
     assert_eq!(seen[0].kind, "Follow");
     assert_eq!(seen[0].sender, bob);
     assert_eq!(seen[0].forwarder, None, "delivered by its own server");
+    assert_eq!(seen[0].vouched_by, ojak::federation::VouchedBy::Signature);
     assert_eq!(seen[0].recipient, Some(ActorRef::new("person", "1")));
     assert_eq!(
         seen[1].recipient, None,
@@ -658,6 +661,7 @@ async fn an_integrity_proof_authenticates_an_unsigned_activity() {
     let seen = store.seen();
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].sender, bob);
+    assert_eq!(seen[0].vouched_by, ojak::federation::VouchedBy::Proof);
 
     // The proof covers what it signed: altered, it proves nothing.
     let mut altered = activity.clone();
@@ -1121,6 +1125,7 @@ async fn a_relayed_activity_is_taken_on_its_linked_data_signature() {
     assert_eq!(seen[0].kind, "Create");
     assert_eq!(seen[0].sender, author);
     assert_eq!(seen[0].forwarder.as_deref(), Some(relay.as_str()));
+    assert_eq!(seen[0].vouched_by, ojak::federation::VouchedBy::LinkedData);
 
     // Changed on the way: not the author's, and dropped.
     let mut changed = signed_create(&author, 2);
