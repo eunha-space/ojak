@@ -286,6 +286,7 @@ struct Inner<D> {
     gateway_inbox: Option<GatewayInboxFn<D>>,
     forward: Option<inbox::ForwardFn<D>>,
     read_as_written: bool,
+    linked_data_first: bool,
     remote_contexts: Option<RemoteContexts<D>>,
 }
 
@@ -369,6 +370,7 @@ pub struct Builder<D> {
     gateway_inbox: Option<GatewayInboxFn<D>>,
     forward: Option<inbox::ForwardFn<D>>,
     read_as_written: bool,
+    linked_data_first: bool,
     remote_contexts: Option<RemoteContexts<D>>,
     errors: Vec<String>,
 }
@@ -400,6 +402,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             gateway_inbox: None,
             forward: None,
             read_as_written: false,
+            linked_data_first: false,
             remote_contexts: None,
             errors: Vec::new(),
         }
@@ -1189,6 +1192,25 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         self
     }
 
+    /// Check a forwarded activity's Linked Data signature before its
+    /// FEP-8b32 proof, rather than after.
+    ///
+    /// An activity signed by a server other than its actor's is taken on its
+    /// actor's proof by default, and on its Linked Data signature only when it
+    /// has no proof that holds: a proof is the cheaper check, needing no
+    /// JSON-LD processing. Mastodon and Fedify check the signature first, and
+    /// what an activity is taken on decides whether it can be passed on
+    /// (`Received::vouched_by`): Mastodon passes on only an activity taken on
+    /// its Linked Data signature. An application that forwards as Mastodon
+    /// does asks for this, so that an activity carrying both is taken on its
+    /// signature. A request signed by the actor's own server, and one whose
+    /// signature does not verify, are unaffected.
+    #[must_use]
+    pub fn linked_data_before_proof(mut self) -> Self {
+        self.linked_data_first = true;
+        self
+    }
+
     /// Whether activities from `host` are refused, asked before any key is
     /// fetched for them. A refused activity is answered 202 and dropped.
     ///
@@ -1574,6 +1596,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     gateway_inbox: self.gateway_inbox,
                     forward: self.forward,
                     read_as_written: self.read_as_written,
+                    linked_data_first: self.linked_data_first,
                     remote_contexts: self.remote_contexts,
                 }),
             }),

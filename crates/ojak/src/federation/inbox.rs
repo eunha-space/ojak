@@ -540,70 +540,88 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
             .cloned();
         match signed {
             Ok(sender) if same_origin(&actor, sender.as_str()) => sender,
-            signed => match signer::prove(&context, &document, &actor).await {
-                Ok(sender) => {
-                    vouched_by = VouchedBy::Proof;
+            // A forwarded activity's Linked Data signature, when it is to be
+            // checked before its proof (`linked_data_before_proof`).
+            signed => match if signed.is_ok() && inner.linked_data_first {
+                Some(linked_data(&context, &document, &actor).await)
+            } else {
+                None
+            } {
+                Some(Ok((reading, sender))) => {
+                    read = Some(reading);
+                    vouched_by = VouchedBy::LinkedData;
                     sender
                 }
-                // Signed by a server other than the actor's: forwarded, by
-                // a relay, a gateway or a server passing on a reply. The
-                // forwarder vouches for nothing of the actor's. The actor's
-                // own Linked Data signature, as Mastodon signs what relays
-                // pass on, vouches for it; failing that, the activity is
-                // taken from where its id says it lives instead. Only a
-                // signed request gets this far, so an unsigned POST cannot
-                // make this server fetch.
-                Err(unproven) if signed.is_ok() => {
-                    match linked_data(&context, &document, &actor).await {
-                        Ok((reading, sender)) => {
-                            read = Some(reading);
-                            vouched_by = VouchedBy::LinkedData;
-                            sender
-                        }
-                        Err(unsigned) => match signer::establish(&context, &document, &actor).await
-                        {
-                            Ok((established, sender)) => {
-                                document = established;
-                                vouched_by = VouchedBy::Origin;
+                checked => match signer::prove(&context, &document, &actor).await {
+                    Ok(sender) => {
+                        vouched_by = VouchedBy::Proof;
+                        sender
+                    }
+                    // Signed by a server other than the actor's: forwarded, by
+                    // a relay, a gateway or a server passing on a reply. The
+                    // forwarder vouches for nothing of the actor's. The actor's
+                    // own Linked Data signature, as Mastodon signs what relays
+                    // pass on, vouches for it; failing that, the activity is
+                    // taken from where its id says it lives instead. Only a
+                    // signed request gets this far, so an unsigned POST cannot
+                    // make this server fetch.
+                    Err(unproven) if signed.is_ok() => {
+                        let linked = match checked {
+                            Some(linked) => linked,
+                            None => linked_data(&context, &document, &actor).await,
+                        };
+                        match linked {
+                            Ok((reading, sender)) => {
+                                read = Some(reading);
+                                vouched_by = VouchedBy::LinkedData;
                                 sender
                             }
-                            // Dropped, and answered 202 as Mastodon answers
-                            // it: the forwarder's own signature verified, so
-                            // there is nothing for it to retry, and a 401 had
-                            // forwarders sending the same activity dozens of
-                            // times. Mastodon accepts a delivery once its
-                            // signature verifies and drops a relayed activity
-                            // it cannot verify later
-                            // (ActivityPub::ProcessActivityService). The reason
-                            // goes back in the body, for the application to log.
-                            Err(unfetched) => {
-                                return status(
-                                    StatusCode::ACCEPTED,
-                                    &format!(
-                                        "dropped: forwarded; proof: {unproven}; \
+                            Err(unsigned) => {
+                                match signer::establish(&context, &document, &actor).await {
+                                    Ok((established, sender)) => {
+                                        document = established;
+                                        vouched_by = VouchedBy::Origin;
+                                        sender
+                                    }
+                                    // Dropped, and answered 202 as Mastodon answers
+                                    // it: the forwarder's own signature verified, so
+                                    // there is nothing for it to retry, and a 401 had
+                                    // forwarders sending the same activity dozens of
+                                    // times. Mastodon accepts a delivery once its
+                                    // signature verifies and drops a relayed activity
+                                    // it cannot verify later
+                                    // (ActivityPub::ProcessActivityService). The reason
+                                    // goes back in the body, for the application to log.
+                                    Err(unfetched) => {
+                                        return status(
+                                            StatusCode::ACCEPTED,
+                                            &format!(
+                                                "dropped: forwarded; proof: {unproven}; \
                                          linked data: {unsigned}; origin: {unfetched}"
-                                    ),
-                                );
+                                            ),
+                                        );
+                                    }
+                                }
                             }
-                        },
+                        }
                     }
-                }
-                Err(unproven) => {
-                    let unsigned = signed.err().unwrap_or_default();
-                    if let Some(hook) = &inner.on_unverified {
-                        hook(context.clone(), document.clone()).await;
+                    Err(unproven) => {
+                        let unsigned = signed.err().unwrap_or_default();
+                        if let Some(hook) = &inner.on_unverified {
+                            hook(context.clone(), document.clone()).await;
+                        }
+                        // A Delete that does not verify is most often one whose
+                        // actor is gone, key and all; the server would retry it
+                        // until told otherwise.
+                        if document.get("type").and_then(Value::as_str) == Some("Delete") {
+                            return accepted();
+                        }
+                        return status(
+                            StatusCode::UNAUTHORIZED,
+                            &format!("signature: {unsigned}; proof: {unproven}"),
+                        );
                     }
-                    // A Delete that does not verify is most often one whose
-                    // actor is gone, key and all; the server would retry it
-                    // until told otherwise.
-                    if document.get("type").and_then(Value::as_str) == Some("Delete") {
-                        return accepted();
-                    }
-                    return status(
-                        StatusCode::UNAUTHORIZED,
-                        &format!("signature: {unsigned}; proof: {unproven}"),
-                    );
-                }
+                },
             },
         }
     };

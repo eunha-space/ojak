@@ -73,7 +73,10 @@ unauthenticated.
     signs what relays pass on; and failing both the activity is fetched from
     its `id` and processed as the actor's server serves it, if it is the same
     activity by the same actor. Only a request that verified gets this far, so
-    an unsigned POST cannot make the server fetch.
+    an unsigned POST cannot make the server fetch. Mastodon and Fedify check
+    the Linked Data Signature before the proof; `linked_data_before_proof`
+    on the builder has ojak do the same, so that an activity carrying both
+    is taken on its signature, which is what Mastodon passes on.
 
 A Linked Data Signature covers the RDF a document means rather than the JSON
 it is written in, hashed in its canonical form (URDNA2015), so a document can

@@ -1165,6 +1165,69 @@ async fn a_relayed_activity_is_taken_on_its_linked_data_signature() {
     assert_eq!(store.seen().len(), 2);
 }
 
+/// Passed on by a relay, an activity its author both proved and signed in
+/// Linked Data is taken on its proof by default, and on its signature when
+/// the application asks for that first, as Mastodon checks them; with a
+/// signature that does not hold, it is still taken on its proof.
+#[tokio::test]
+async fn a_relayed_activity_is_taken_on_its_linked_data_signature_before_its_proof() {
+    use ojak::federation::VouchedBy;
+    use ojak::sig::integrity;
+
+    let remote = Remote::default();
+    let author = serve_remote(remote.clone()).await;
+    let pem = integrity::generate_ed25519_key(&mut rand_core::OsRng).unwrap();
+    let (seed, public) = integrity::parse_ed25519_key(&pem).unwrap();
+    *remote.multikey.lock().unwrap() = Some(integrity::encode_ed25519_multikey(&public));
+    let relay = serve_remote(Remote::default()).await;
+    let relay_key = format!("{relay}#main-key");
+    let relayed = |activity: &Value| post("/ap/inbox", &relay_key, activity, activity);
+
+    // Proved, then signed over the proof, as Fedify and eunha sign.
+    let both = |n: u32| {
+        let mut create = signed_create(&author, n);
+        create.as_object_mut().unwrap().remove("signature");
+        let proved = integrity::sign_object_integrity_proof(
+            &create,
+            &format!("{author}#ed25519-key"),
+            &seed,
+            chrono::Utc::now().timestamp(),
+        )
+        .unwrap();
+        let now = chrono::Utc::now().timestamp();
+        ojak::sig::linked_data::sign(
+            &ojak_jsonld::Registry::bundled(),
+            &proved,
+            &format!("{author}#main-key"),
+            &PrivateKey::from_pem(PRIVATE_KEY).unwrap(),
+            now,
+            now + ojak::sig::linked_data::DEFAULT_LIFETIME_SECONDS,
+        )
+        .unwrap()
+    };
+
+    let proof_first = federation(|b| b);
+    let store = App::default();
+    assert_eq!(deliver(&proof_first, &store, relayed(&both(1))).await, 202);
+    assert_eq!(store.seen()[0].vouched_by, VouchedBy::Proof);
+
+    let federation = federation(|b| b.linked_data_before_proof());
+    let store = App::default();
+    assert_eq!(deliver(&federation, &store, relayed(&both(2))).await, 202);
+    let seen = store.seen();
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    assert_eq!(seen[0].sender, author);
+    assert_eq!(seen[0].vouched_by, VouchedBy::LinkedData);
+
+    // A signature that no longer holds falls back to the proof.
+    let mut forged = both(3);
+    forged["signature"]["signatureValue"] = json!("AAAA");
+    assert_eq!(deliver(&federation, &store, relayed(&forged)).await, 202);
+    let seen = store.seen();
+    assert_eq!(seen.len(), 2, "{seen:?}");
+    assert_eq!(seen[1].vouched_by, VouchedBy::Proof);
+}
+
 /// Read as written, an activity taken on its Linked Data signature still
 /// reaches an application that reads JSON as JSON-LD reads it, since that is
 /// what the signature covers.
