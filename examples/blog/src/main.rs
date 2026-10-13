@@ -75,9 +75,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// A token no one could guess: 128 random bits, in hexadecimal.
 fn new_token() -> String {
-    use rand_core::RngCore as _;
+    use rand_core::Rng as _;
     let mut bytes = [0; 16];
-    rand_core::OsRng.fill_bytes(&mut bytes);
+    rand_core::UnwrapErr(getrandom::SysRng).fill_bytes(&mut bytes);
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
@@ -86,7 +86,8 @@ fn new_token() -> String {
 fn key_pair(path: &Path) -> Result<(String, String), Box<dyn std::error::Error>> {
     let public = path.with_extension("pub.pem");
     if !path.exists() {
-        let (private, public_pem) = generate_rsa_keypair(&mut rand_core::OsRng)?;
+        let (private, public_pem) =
+            generate_rsa_keypair(&mut rand_core::UnwrapErr(getrandom::SysRng))?;
         std::fs::write(path, private)?;
         std::fs::write(&public, public_pem)?;
     }

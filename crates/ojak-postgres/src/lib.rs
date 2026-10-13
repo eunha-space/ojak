@@ -31,3 +31,10 @@ fn table_name(table: &str) -> Result<String, String> {
         Err(format!("not a table name: {table}"))
     }
 }
+
+/// A statement with a table name in it, which sqlx 0.9 takes only once it is
+/// said to be safe: the only part not written here is a name `table_name`
+/// let through, and every value is bound.
+fn sql(statement: String) -> sqlx::AssertSqlSafe<String> {
+    sqlx::AssertSqlSafe(statement)
+}

@@ -20,7 +20,7 @@ async fn pool() -> PgPool {
 
 /// A queue in a table of its own, dropped afterwards.
 async fn scratch(pool: &PgPool, name: &str) -> PostgresQueue {
-    sqlx::query(&format!("DROP TABLE IF EXISTS {name}"))
+    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {name}")))
         .execute(pool)
         .await
         .expect("drop");
@@ -30,7 +30,7 @@ async fn scratch(pool: &PgPool, name: &str) -> PostgresQueue {
 }
 
 async fn drop_table(pool: &PgPool, name: &str) {
-    sqlx::query(&format!("DROP TABLE {name}"))
+    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE {name}")))
         .execute(pool)
         .await
         .expect("drop");

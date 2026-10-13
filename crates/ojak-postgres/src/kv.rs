@@ -51,7 +51,7 @@ impl PostgresKvStore {
     /// When the database refuses.
     pub async fn initialize(&self) -> Result<(), KvError> {
         for statement in Self::schema(&self.table) {
-            sqlx::query(&statement)
+            sqlx::query(crate::sql(statement))
                 .execute(&self.pool)
                 .await
                 .map_err(error)?;
@@ -86,10 +86,10 @@ impl PostgresKvStore {
     ///
     /// When the database refuses.
     pub async fn prune_expired(&self) -> Result<u64, KvError> {
-        let result = sqlx::query(&format!(
+        let result = sqlx::query(crate::sql(format!(
             "DELETE FROM {} WHERE expires_at <= now()",
             self.table
-        ))
+        )))
         .execute(&self.pool)
         .await
         .map_err(error)?;
@@ -119,10 +119,10 @@ const EXPIRES: &str = "CASE WHEN $3::float8 IS NULL THEN NULL \
 
 impl KvStore for PostgresKvStore {
     async fn get(&self, key: &[&str]) -> Result<Option<Value>, KvError> {
-        let value: Option<String> = sqlx::query_scalar(&format!(
+        let value: Option<String> = sqlx::query_scalar(crate::sql(format!(
             "SELECT value FROM {} WHERE key = $1 AND (expires_at IS NULL OR expires_at > now())",
             self.table
-        ))
+        )))
         .bind(encode_key(key)?)
         .fetch_optional(&self.pool)
         .await
@@ -133,12 +133,12 @@ impl KvStore for PostgresKvStore {
     }
 
     async fn set(&self, key: &[&str], value: Value, ttl: Option<Duration>) -> Result<(), KvError> {
-        sqlx::query(&format!(
+        sqlx::query(crate::sql(format!(
             "INSERT INTO {} (key, value, expires_at) VALUES ($1, $2, {EXPIRES})
              ON CONFLICT (key) DO UPDATE
              SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at",
             self.table
-        ))
+        )))
         .bind(encode_key(key)?)
         .bind(encode_value(&value)?)
         .bind(seconds(ttl))
@@ -157,13 +157,13 @@ impl KvStore for PostgresKvStore {
         // Of inserts racing on one key, one inserts; the others wait for it
         // on the key's uniqueness, then find a live row and update nothing.
         let table = &self.table;
-        let put: Option<i32> = sqlx::query_scalar(&format!(
+        let put: Option<i32> = sqlx::query_scalar(crate::sql(format!(
             "INSERT INTO {table} (key, value, expires_at) VALUES ($1, $2, {EXPIRES})
              ON CONFLICT (key) DO UPDATE
              SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at
              WHERE {table}.expires_at <= now()
              RETURNING 1"
-        ))
+        )))
         .bind(encode_key(key)?)
         .bind(encode_value(&value)?)
         .bind(seconds(ttl))
@@ -174,11 +174,14 @@ impl KvStore for PostgresKvStore {
     }
 
     async fn delete(&self, key: &[&str]) -> Result<(), KvError> {
-        sqlx::query(&format!("DELETE FROM {} WHERE key = $1", self.table))
-            .bind(encode_key(key)?)
-            .execute(&self.pool)
-            .await
-            .map_err(error)?;
+        sqlx::query(crate::sql(format!(
+            "DELETE FROM {} WHERE key = $1",
+            self.table
+        )))
+        .bind(encode_key(key)?)
+        .execute(&self.pool)
+        .await
+        .map_err(error)?;
         Ok(())
     }
 }

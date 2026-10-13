@@ -25,9 +25,10 @@ pub mod verification;
 /// An RSA private key, parsed once; what a [`SenderKey`] signs with.
 pub use signature::PrivateKey;
 
-/// The randomness keys are made with, which the caller supplies: `OsRng`
-/// from `rand_core` with its `getrandom` feature, or a device's own.
-pub use rand_core::CryptoRngCore;
+/// The randomness keys are made with, which the caller supplies: the
+/// system's (`rand::rngs::SysRng` behind `rand_core::UnwrapErr`, or
+/// `rand::rng()`), or a device's own.
+pub use rand_core::CryptoRng;
 
 /// An HTTP signature scheme.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

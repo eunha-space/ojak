@@ -30,7 +30,7 @@ rsa = { version = "0.9", features = ["sha2", "pem"] }
 chrono = "0.4"
 url = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-ed25519-dalek = { version = "2", features = ["pkcs8", "pem", "rand_core"] }
+ed25519-dalek = { version = "3", features = ["pkcs8", "pem", "rand_core"] }
 serde_json_canonicalizer = "0.3"
 bs58 = "0.5"
 

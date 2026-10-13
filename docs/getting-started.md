@@ -20,7 +20,8 @@ ojak = { git = "https://github.com/eunha-space/ojak.git" }
 ojak-axum = { git = "https://github.com/eunha-space/ojak.git" }
 ojak-vocab = { git = "https://github.com/eunha-space/ojak.git" }
 axum = "0.8"
-rand_core = { version = "0.6", features = ["getrandom"] }
+getrandom = { version = "0.4", features = ["sys_rng"] }
+rand_core = "0.10"
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 ~~~~
@@ -33,8 +34,9 @@ her key stays the same across restarts:
 /// Alice's key pair, as PEM: made on the first run, and read after that.
 fn alice_keys() -> Result<(String, String), Box<dyn std::error::Error>> {
     if !std::path::Path::new("alice.pem").exists() {
-        let (private, public) =
-            ojak::sig::signature::generate_rsa_keypair(&mut rand_core::OsRng)?;
+        let (private, public) = ojak::sig::signature::generate_rsa_keypair(
+            &mut rand_core::UnwrapErr(getrandom::SysRng),
+        )?;
         std::fs::write("alice.pem", private)?;
         std::fs::write("alice.pub.pem", public)?;
     }

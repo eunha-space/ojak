@@ -24,7 +24,7 @@
 //! itself calls out: the proof configuration always takes the document's
 //! `@context`, rather than keeping whatever the proof carried.
 
-use crate::{CryptoRngCore, Error};
+use crate::{CryptoRng, Error};
 use ed25519_dalek::Verifier as _;
 use serde_json::{Map, Value};
 use sha2::{Digest as _, Sha256};
@@ -363,7 +363,7 @@ fn canonical(value: &Value) -> Result<String, Error> {
 ///
 /// # Errors
 /// Returns an error if the key cannot be encoded.
-pub fn generate_ed25519_key(rng: &mut impl CryptoRngCore) -> Result<String, Error> {
+pub fn generate_ed25519_key(rng: &mut impl CryptoRng) -> Result<String, Error> {
     use ed25519_dalek::pkcs8::EncodePrivateKey as _;
 
     let key = ed25519_dalek::SigningKey::generate(rng);
@@ -395,7 +395,7 @@ pub fn ed25519_public_key(seed: &[u8; 32]) -> [u8; 32] {
 
 /// A fresh raw 32-byte Ed25519 seed.
 #[must_use]
-pub fn generate_ed25519_seed(rng: &mut impl CryptoRngCore) -> [u8; 32] {
+pub fn generate_ed25519_seed(rng: &mut impl CryptoRng) -> [u8; 32] {
     ed25519_dalek::SigningKey::generate(rng).to_bytes()
 }
 
@@ -1010,7 +1010,7 @@ mod tests {
     /// a stored private key from — and parses back to the bytes that sign.
     #[test]
     fn generates_a_pem_key_that_parses_back() {
-        let pem = generate_ed25519_key(&mut rand::rngs::OsRng).unwrap();
+        let pem = generate_ed25519_key(&mut rand::rng()).unwrap();
         assert!(pem.starts_with("-----BEGIN PRIVATE KEY-----"));
 
         let (seed, public) = parse_ed25519_key(&pem).unwrap();
@@ -1035,7 +1035,7 @@ mod tests {
 
         assert_ne!(
             pem,
-            generate_ed25519_key(&mut rand::rngs::OsRng).unwrap(),
+            generate_ed25519_key(&mut rand::rng()).unwrap(),
             "keys must differ"
         );
     }

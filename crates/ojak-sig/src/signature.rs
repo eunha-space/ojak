@@ -4,7 +4,7 @@
 //! pairs, so it can be used with any HTTP framework, and is given the time
 //! rather than reading a clock.
 
-use crate::{CryptoRngCore, Error};
+use crate::{CryptoRng, Error};
 use alloc::collections::BTreeMap;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use core::fmt;
@@ -444,11 +444,11 @@ pub(crate) fn parse_params(header: &str) -> BTreeMap<String, String> {
 /// # Errors
 ///
 /// When `rng` fails, or the key cannot be encoded.
-pub fn generate_rsa_keypair(rng: &mut impl CryptoRngCore) -> Result<(String, String), Error> {
+pub fn generate_rsa_keypair(rng: &mut impl CryptoRng) -> Result<(String, String), Error> {
     use rsa::pkcs8::{EncodePrivateKey as _, EncodePublicKey as _, LineEnding};
 
     let key = |error: &dyn fmt::Display| Error::Key(format!("RSA key generation: {error}"));
-    let private = rsa::RsaPrivateKey::new(rng, 2048).map_err(|error| key(&error))?;
+    let private = rsa::RsaPrivateKey::new(&mut Rsa06(rng), 2048).map_err(|error| key(&error))?;
     let public = rsa::RsaPublicKey::from(&private);
     Ok((
         private
@@ -461,6 +461,34 @@ pub fn generate_rsa_keypair(rng: &mut impl CryptoRngCore) -> Result<(String, Str
     ))
 }
 
+/// A `rand_core` 0.10 generator, as the `rand_core` 0.6 one `rsa` 0.9 makes
+/// keys with. Every draw is the caller's generator's own; nothing is added or
+/// kept. Until a stable `rsa` takes 0.10, which ojak's callers already use.
+pub(crate) struct Rsa06<'a, R: ?Sized>(pub(crate) &'a mut R);
+
+impl<R: CryptoRng + ?Sized> rand_core_06::RngCore for Rsa06<'_, R> {
+    fn next_u32(&mut self) -> u32 {
+        self.0.next_u32()
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.0.next_u64()
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        self.0.fill_bytes(dest);
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core_06::Error> {
+        // A rand_core 0.10 `CryptoRng` cannot fail: a fallible source is
+        // only one once its caller has decided what failing means.
+        self.0.fill_bytes(dest);
+        Ok(())
+    }
+}
+
+impl<R: CryptoRng + ?Sized> rand_core_06::CryptoRng for Rsa06<'_, R> {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -472,7 +500,7 @@ mod tests {
 
     #[test]
     fn a_generated_key_pair_signs_and_verifies() {
-        let (private, public) = generate_rsa_keypair(&mut rand::rngs::OsRng).unwrap();
+        let (private, public) = generate_rsa_keypair(&mut rand::rng()).unwrap();
         assert!(private.starts_with("-----BEGIN PRIVATE KEY-----"));
         assert!(public.starts_with("-----BEGIN PUBLIC KEY-----"));
         let signed = sign_request(
@@ -526,8 +554,7 @@ mod tests {
     }
 
     fn keypair() -> (String, String) {
-        let mut rng = rand::thread_rng();
-        let priv_key = rsa::RsaPrivateKey::new(&mut rng, 2048).unwrap();
+        let priv_key = rsa::RsaPrivateKey::new(&mut Rsa06(&mut rand::rng()), 2048).unwrap();
         let pub_key = rsa::RsaPublicKey::from(&priv_key);
         (
             priv_key

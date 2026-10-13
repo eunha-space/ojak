@@ -1,5 +1,5 @@
 [tools.rust]
-version = "1.95.0"
+version = "1.99.0"
 profile = "default"
 components = "rust-analyzer,rustfmt,clippy"
 # A target with no standard library, which the no_std crates are built for.

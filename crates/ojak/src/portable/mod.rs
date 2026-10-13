@@ -276,7 +276,9 @@ impl Ed25519Signer {
     /// A signer with a fresh key.
     #[must_use]
     pub fn generate() -> Self {
-        Self::new(integrity::generate_ed25519_seed(&mut rand_core::OsRng))
+        Self::new(integrity::generate_ed25519_seed(&mut rand_core::UnwrapErr(
+            getrandom::SysRng,
+        )))
     }
 
     /// A signer for a PKCS#8 PEM Ed25519 private key.

@@ -74,7 +74,7 @@ impl PostgresQueue {
     /// When the database refuses.
     pub async fn initialize(&self) -> Result<(), QueueError> {
         for statement in Self::schema(&self.table) {
-            sqlx::query(&statement)
+            sqlx::query(crate::sql(statement))
                 .execute(&self.pool)
                 .await
                 .map_err(error)?;
@@ -122,10 +122,10 @@ impl PostgresQueue {
     ///
     /// When the database refuses.
     pub async fn prune_failed(&self, age: Duration) -> Result<u64, QueueError> {
-        let result = sqlx::query(&format!(
+        let result = sqlx::query(crate::sql(format!(
             "DELETE FROM {} WHERE failed_at < now() - make_interval(secs => $1)",
             self.table
-        ))
+        )))
         .bind(age.as_secs_f64())
         .execute(&self.pool)
         .await
@@ -205,10 +205,10 @@ impl Queue for PostgresQueue {
         if payloads.is_empty() {
             return Ok(());
         }
-        sqlx::query(&format!(
+        sqlx::query(crate::sql(format!(
             "INSERT INTO {} (queue, payload) SELECT $1, unnest($2::jsonb[])",
             self.table
-        ))
+        )))
         .bind(queue)
         .bind(payloads.iter().map(wrap).collect::<Vec<_>>())
         .execute(&self.pool)
@@ -231,13 +231,13 @@ impl Queue for PostgresQueue {
             .unzip();
         // `WITH ORDINALITY` keeps the ids in the order the jobs were given,
         // which is the order they are claimed in.
-        sqlx::query(&format!(
+        sqlx::query(crate::sql(format!(
             "INSERT INTO {} (queue, ordering_key, payload)
              SELECT $1, job.key, job.payload
              FROM unnest($2::text[], $3::jsonb[]) WITH ORDINALITY AS job(key, payload, n)
              ORDER BY job.n",
             self.table
-        ))
+        )))
         .bind(queue)
         .bind(keys)
         .bind(payloads)
@@ -254,7 +254,7 @@ impl Queue for PostgresQueue {
         lease: Duration,
     ) -> Result<Vec<Job>, QueueError> {
         let table = &self.table;
-        let rows = sqlx::query(&format!(
+        let rows = sqlx::query(crate::sql(format!(
             // `UPDATE ... RETURNING` hands rows back in no particular order,
             // so the picked order is carried through and reapplied.
             "WITH picked AS (
@@ -274,7 +274,7 @@ impl Queue for PostgresQueue {
                  RETURNING job.id, job.queue, job.payload, job.attempts, picked.run_at AS picked_at
              )
              SELECT id, queue, payload, attempts FROM claimed ORDER BY picked_at, id"
-        ))
+        )))
         .bind(queue)
         .bind(i64::try_from(limit).unwrap_or(i64::MAX))
         .bind(lease.as_secs_f64())
@@ -295,22 +295,25 @@ impl Queue for PostgresQueue {
     }
 
     async fn complete(&self, job: &str) -> Result<(), QueueError> {
-        sqlx::query(&format!("DELETE FROM {} WHERE id = $1", self.table))
-            .bind(id(job)?)
-            .execute(&self.pool)
-            .await
-            .map_err(error)?;
+        sqlx::query(crate::sql(format!(
+            "DELETE FROM {} WHERE id = $1",
+            self.table
+        )))
+        .bind(id(job)?)
+        .execute(&self.pool)
+        .await
+        .map_err(error)?;
         Ok(())
     }
 
     async fn retry(&self, job: &str, delay: Duration, message: &str) -> Result<(), QueueError> {
-        sqlx::query(&format!(
+        sqlx::query(crate::sql(format!(
             "UPDATE {} SET attempts = attempts + 1,
                  run_at = now() + make_interval(secs => $2),
                  last_error = $3
              WHERE id = $1",
             self.table
-        ))
+        )))
         .bind(id(job)?)
         .bind(delay.as_secs_f64())
         .bind(storable(message))
@@ -321,11 +324,11 @@ impl Queue for PostgresQueue {
     }
 
     async fn fail(&self, job: &str, message: &str) -> Result<(), QueueError> {
-        sqlx::query(&format!(
+        sqlx::query(crate::sql(format!(
             "UPDATE {} SET attempts = attempts + 1, failed_at = now(), last_error = $2
              WHERE id = $1",
             self.table
-        ))
+        )))
         .bind(id(job)?)
         .bind(storable(message))
         .execute(&self.pool)
@@ -335,11 +338,11 @@ impl Queue for PostgresQueue {
     }
 
     async fn next_due(&self, queue: &str) -> Result<Option<Duration>, QueueError> {
-        let seconds: Option<f64> = sqlx::query_scalar(&format!(
+        let seconds: Option<f64> = sqlx::query_scalar(crate::sql(format!(
             "SELECT EXTRACT(EPOCH FROM (min(run_at) - now()))::float8
              FROM {} WHERE queue = $1 AND failed_at IS NULL",
             self.table
-        ))
+        )))
         .bind(queue)
         .fetch_one(&self.pool)
         .await

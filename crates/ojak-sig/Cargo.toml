@@ -16,7 +16,11 @@ ml-dsa = "0.1"
 # Linked Data Signatures hash the canonical RDF of what they sign.
 ojak-jsonld.workspace = true
 # Without `getrandom`: randomness comes from the caller.
-rand_core = { version = "0.6", default-features = false }
+rand_core = { version = "0.10", default-features = false }
+# What `rsa` 0.9, the newest stable release, makes keys with. The caller's
+# rand_core 0.10 generator is handed to it through an adapter
+# (`signature::Rsa06`) until an `rsa` that takes 0.10 is stable.
+rand_core_06 = { package = "rand_core", version = "0.6", default-features = false }
 rsa.workspace = true
 serde_json_canonicalizer.workspace = true
 serde_json.workspace = true
@@ -26,7 +30,7 @@ url.workspace = true
 
 [dev-dependencies]
 chrono.workspace = true
-rand = "0.8"
+rand = "0.10"
 
 [lints]
 workspace = true

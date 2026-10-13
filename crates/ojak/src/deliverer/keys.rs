@@ -92,9 +92,11 @@ mod tests {
     }
 
     fn key() -> SenderKey {
-        let pem = crate::sig::signature::generate_rsa_keypair(&mut rand_core::OsRng)
-            .unwrap()
-            .0;
+        let pem = crate::sig::signature::generate_rsa_keypair(&mut rand_core::UnwrapErr(
+            getrandom::SysRng,
+        ))
+        .unwrap()
+        .0;
         SenderKey {
             key_id: "https://a.example/users/alice#main-key".into(),
             private_key: Arc::new(crate::sig::PrivateKey::from_pem(&pem).unwrap()),

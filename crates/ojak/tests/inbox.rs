@@ -65,7 +65,7 @@ fn record<T: ojak_vocab::json::ToJson>(
     let store = ctx.data();
     if store
         .failures
-        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+        .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
         .is_ok()
     {
         return Err("the database is away".into());
@@ -635,7 +635,8 @@ async fn an_integrity_proof_authenticates_an_unsigned_activity() {
 
     let remote = Remote::default();
     let bob = serve_remote(remote.clone()).await;
-    let pem = integrity::generate_ed25519_key(&mut rand_core::OsRng).unwrap();
+    let pem =
+        integrity::generate_ed25519_key(&mut rand_core::UnwrapErr(getrandom::SysRng)).unwrap();
     let (seed, public) = integrity::parse_ed25519_key(&pem).unwrap();
     *remote.multikey.lock().unwrap() = Some(integrity::encode_ed25519_multikey(&public));
     let federation = federation(|b| b);
@@ -987,7 +988,8 @@ async fn an_ed25519_signature_by_a_listed_multikey_authenticates() {
 
     let remote = Remote::default();
     let bob = serve_remote(remote.clone()).await;
-    let pem = integrity::generate_ed25519_key(&mut rand_core::OsRng).unwrap();
+    let pem =
+        integrity::generate_ed25519_key(&mut rand_core::UnwrapErr(getrandom::SysRng)).unwrap();
     let (seed, public) = integrity::parse_ed25519_key(&pem).unwrap();
     *remote.multikey.lock().unwrap() = Some(integrity::encode_ed25519_multikey(&public));
     let federation = federation(|b| b);
@@ -1022,7 +1024,7 @@ async fn an_ed25519_signature_by_a_listed_multikey_authenticates() {
 
     // A key bob does not list proves nothing.
     let other = integrity::parse_ed25519_key(
-        &integrity::generate_ed25519_key(&mut rand_core::OsRng).unwrap(),
+        &integrity::generate_ed25519_key(&mut rand_core::UnwrapErr(getrandom::SysRng)).unwrap(),
     )
     .unwrap()
     .0;
@@ -1176,7 +1178,8 @@ async fn a_relayed_activity_is_taken_on_its_linked_data_signature_before_its_pro
 
     let remote = Remote::default();
     let author = serve_remote(remote.clone()).await;
-    let pem = integrity::generate_ed25519_key(&mut rand_core::OsRng).unwrap();
+    let pem =
+        integrity::generate_ed25519_key(&mut rand_core::UnwrapErr(getrandom::SysRng)).unwrap();
     let (seed, public) = integrity::parse_ed25519_key(&pem).unwrap();
     *remote.multikey.lock().unwrap() = Some(integrity::encode_ed25519_multikey(&public));
     let relay = serve_remote(Remote::default()).await;
