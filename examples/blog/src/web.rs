@@ -35,7 +35,7 @@ static TEMPLATES: LazyLock<Environment<'static>> = LazyLock::new(|| {
 
 /// Render the template `name` with `ctx` and the blog's title.
 fn render(blog: &Blog, name: &str, ctx: Value) -> Result<Html<String>, StatusCode> {
-    let ctx = context! { blog_title => blog.config.title, ..ctx };
+    let ctx = context! { blog_title => blog.config.title.clone(), ..ctx };
     TEMPLATES
         .get_template(name)
         .and_then(|template| template.render(ctx))
@@ -62,7 +62,7 @@ async fn home(State(blog): State<App>) -> Result<Html<String>, StatusCode> {
         .map(|post| {
             context! {
                 id => post.id,
-                title => post.title,
+                title => post.title.clone(),
                 date => post.published.format("%Y-%m-%d").to_string(),
             }
         })
@@ -86,10 +86,10 @@ async fn post_page(
         let comments: Vec<Value> = store
             .comments(id)
             .iter()
-            .map(|comment| context! { author => comment.author.as_str(), text => comment.text })
+            .map(|comment| context! { author => comment.author.to_string(), text => comment.text.clone() })
             .collect();
         context! {
-            title => post.title,
+            title => post.title.clone(),
             date => post.published.format("%Y-%m-%d").to_string(),
             paragraphs => paragraphs(&post.body),
             likes => store.like_count(id),
@@ -184,11 +184,12 @@ pub fn content(body: &str) -> Result<String, minijinja::Error> {
 }
 
 /// The paragraphs of a plain-text body: the runs of lines between blank
-/// ones.
-fn paragraphs(text: &str) -> Vec<&str> {
+/// ones. Owned, since a template's context owns what it is given.
+fn paragraphs(text: &str) -> Vec<String> {
     text.split("\n\n")
         .map(str::trim)
         .filter(|paragraph| !paragraph.is_empty())
+        .map(str::to_owned)
         .collect()
 }
 

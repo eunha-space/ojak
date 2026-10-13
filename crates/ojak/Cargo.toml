@@ -22,9 +22,9 @@ getrandom = { version = "0.4", features = ["sys_rng"] }
 rand_core = "0.10"
 reqwest.workspace = true
 # host-meta, the XRD a host that does not answer WebFinger points to it with.
-roxmltree = "0.20"
+roxmltree = "0.21"
 # Reads the page a URL serves for the link to its ActivityPub object.
-scraper = { version = "0.23", optional = true }
+scraper = { version = "0.27", optional = true }
 serde_json.workspace = true
 sha2.workspace = true
 tokio = { version = "1", features = ["io-util", "net", "sync", "time", "macros"] }

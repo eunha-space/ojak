@@ -24,7 +24,7 @@ rand_core_06 = { package = "rand_core", version = "0.6", default-features = fals
 rsa.workspace = true
 serde_json_canonicalizer.workspace = true
 serde_json.workspace = true
-sfv = "0.15"
+sfv = "0.16"
 sha2.workspace = true
 url.workspace = true
 
