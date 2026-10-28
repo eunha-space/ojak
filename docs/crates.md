@@ -45,9 +45,7 @@ in fails the check.
     extensions the fediverse uses, generated from Fedify's vocabulary schemas
     and Ojak's own additions, with reading and writing through *ojak-jsonld*.
     `ojak_vocab::meaning` says what a post or reaction means where the
-    fediverse says it several ways, and `ojak_vocab::json_ld_helper` reads
-    a document as it arrived, as Mastodon's `JsonLdHelper` does: `type` as
-    a string or an array, a value or its `id`, a `url`'s `href`.
+    fediverse says it several ways.
 
  -  *ojak-jsonld*: JSON-LD term expansion and compaction over bundled contexts,
     so that a document is read by what its keys stand for rather than how they

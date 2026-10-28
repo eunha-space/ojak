@@ -22,7 +22,6 @@ use serde::{Deserialize, Serialize};
 
 pub mod generated;
 pub mod json;
-pub mod json_ld_helper;
 pub mod loss;
 pub mod meaning;
 mod read;

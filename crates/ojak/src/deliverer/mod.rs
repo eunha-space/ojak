@@ -16,7 +16,6 @@
 //! actor lists; [`Deliverer::send_portable`] queues it with them, and one
 //! attempt tries each in order until one accepts.
 
-pub mod availability;
 mod keys;
 mod post;
 
@@ -180,7 +179,8 @@ pub enum BreakerScope {
 }
 
 impl Default for CircuitBreaker {
-    /// Mastodon's: ten failures in a row, a minute's cool-off, for each host.
+    /// Ten failures in a row and a minute's cool-off, as Mastodon's, but for
+    /// each host, where Mastodon keeps one for each inbox.
     fn default() -> Self {
         Self {
             threshold: 10,

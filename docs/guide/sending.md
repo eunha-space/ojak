@@ -75,13 +75,8 @@ Delivery:
     is one, keyed as Stoplight keys them.  `DelivererConfig::breaker` sets
     it, and `None` turns it off;
  -  reports every attempt, delivered, failed or held, to `on_attempt`, for an
-    application that keeps its own account of which servers answer.
-    `deliverer::availability` is Mastodon's account of them, its delivery
-    failure tracker, over an `AvailabilityStore` of your own: failures on
-    seven different days mark a host unavailable, a delivery that goes
-    through clears them, and an answer that will not change counts for
-    nothing.  `Availability::record` takes each attempt, and
-    `Availability::is_unavailable` is what `skip_if` asks;
+    application that keeps its own account of which servers answer, and
+    whose `skip_if` then leaves out those it has stopped sending to;
  -  awaits `on_settled` for each delivery that is done with — delivered,
     refused for good, or skipped — before it leaves the queue, with its
     batch's tag, for what is to follow a delivery having gone through;
@@ -207,16 +202,12 @@ embedder's origin, for the collection and each of its pages, whatever the
 collection's `id` says.  `Walk::by_host` compares pages by host rather than
 by origin, taking another scheme or port of the same host, as Mastodon does.
 
-`Walk::mastodon_compatible` reads a collection exactly as Mastodon's
-`JsonLdHelper#collection_items` does, for a server that has to agree with
-Mastodon about what one holds: by host; with pages fetched by
-`Fetcher::unverified_json`, which takes any JSON object a `200` serves as
-ActivityPub without checking its `id`; embedded pages taken as they are; the
-items a page's type says (`items` or `orderedItems`); a collection with a
-`first` page holding nothing of its own; and a page on another host ending
-the walk rather than failing it.  A status other than success comes back as
-`FetchError::Status`, for the caller to tell a temporary failure from a
-permanent one.  `ojak::origin::same_host` is the host comparison.
+An application that has to read a collection by rules of its own, as a
+server agreeing with Mastodon about what one holds does, fetches each page
+with `Fetcher::unverified_json`, which takes any JSON object a `200` serves
+as ActivityPub without checking its `id`, and returns a status other than
+success as `FetchError::Status`, for the caller to tell a temporary failure
+from a permanent one.  `ojak::origin::same_host` is the host comparison.
 
 
 Finding out what a server runs
@@ -249,10 +240,7 @@ handle and the actor it names.  A `410 Gone` comes back as an error with that
 status, which says the handle is gone from its host.  `Fetcher::confirm` also
 requires the actor named to be the one you expected, as Mastodon checks an
 actor's handle before believing it, and reads a `subject` by its first two
-parts, as Mastodon does there; `webfinger::split_acct` reads a [FEP-2c59]
-`webfinger` property as Mastodon does.  `resolve_with` and `confirm_with` do
+parts, as Mastodon does there.  `resolve_with` and `confirm_with` do
 the same with a lookup of your own.  An onion service is asked over `http`,
 and `Fetcher::with_plain_http_webfinger` asks every host so, for tests whose
 servers cannot serve `https`.
-
-[FEP-2c59]: https://codeberg.org/fediverse/fep/src/branch/main/fep/2c59/fep-2c59.md

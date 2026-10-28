@@ -173,13 +173,9 @@ pub fn lrdd_template(xrd: &str) -> Result<String, String> {
 }
 
 /// An `acct:` URI or a bare handle split at its `@`s as Ruby's
-/// `split('@')` splits it, keeping the first two parts: what Mastodon's
-/// `ProcessAccountService#split_acct` reads an actor's [FEP-2c59]
-/// `webfinger` property as. A part that is missing is empty.
-///
-/// [FEP-2c59]: https://codeberg.org/fediverse/fep/src/branch/main/fep/2c59/fep-2c59.md
-#[must_use]
-pub fn split_acct(acct: &str) -> (String, String) {
+/// `split('@')` splits it, keeping the first two parts, as
+/// [`confirm_with`] reads a `subject`. A part that is missing is empty.
+fn split_acct(acct: &str) -> (String, String) {
     let acct = acct.strip_prefix("acct:").unwrap_or(acct);
     let mut parts = acct.split('@');
     (
