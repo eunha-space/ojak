@@ -309,6 +309,23 @@ impl Fetcher {
         }
     }
 
+    /// GET `url`, signed with `key` when given, without following a redirect,
+    /// for a caller that knows the object's `id` and has no reason to ask
+    /// anywhere else: a redirect is answered as the response it is.
+    ///
+    /// # Errors
+    ///
+    /// When the URL is refused, the request cannot be signed, or it fails. A
+    /// response with any other status is `Ok`.
+    pub async fn get_exact(
+        &self,
+        url: &Url,
+        accept: &str,
+        key: Option<&SenderKey>,
+    ) -> Result<Response, FetchError> {
+        self.get_once(url, accept, key).await
+    }
+
     /// One request, with no redirect followed; a signed one refused in its
     /// first scheme is tried in the other.
     async fn get_once(
@@ -395,41 +412,32 @@ impl Fetcher {
         key: Option<&SenderKey>,
     ) -> Result<Document, FetchError> {
         let response = self.get(url, ACTIVITY_ACCEPT, key).await?;
-        if !(200..300).contains(&response.status) {
-            return Err(FetchError::Status(response.status));
-        }
-        let content_type = response
-            .headers
-            .get("content-type")
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or_default();
-        if !is_activity_content_type(content_type) {
-            return Err(FetchError::NotActivityPub(content_type.to_owned()));
-        }
-        let json: Value = serde_json::from_slice(&response.body)
-            .map_err(|error| FetchError::Invalid(error.to_string()))?;
-        if !json.is_object() {
-            return Err(FetchError::Invalid("not an object".into()));
-        }
-        let id = json
-            .get("id")
-            .and_then(Value::as_str)
-            .ok_or(FetchError::NoId)?
-            .to_owned();
-        if !served_by_its_origin(&id, &response.url) {
+        establish(response)
+    }
+
+    /// [`Fetcher::document`] for a caller that knows the document's `id`:
+    /// no redirect is followed, and the document has to name `url` as its
+    /// `id`, so a server cannot hand over someone else's object from where
+    /// it happens to be able to redirect.
+    ///
+    /// # Errors
+    ///
+    /// As [`Fetcher::document`]; a redirect is [`FetchError::Status`], and a
+    /// document naming another `id` is [`FetchError::CrossOrigin`].
+    pub async fn document_at(
+        &self,
+        url: &Url,
+        key: Option<&SenderKey>,
+    ) -> Result<Document, FetchError> {
+        let response = self.get_exact(url, ACTIVITY_ACCEPT, key).await?;
+        let document = establish(response)?;
+        if document.id != url.as_str() {
             return Err(FetchError::CrossOrigin {
-                id,
-                url: response.url,
+                id: document.id,
+                url: document.url,
             });
         }
-        if let Some(author) = foreign_author(&json, &id) {
-            return Err(FetchError::ForeignAuthor { id, author });
-        }
-        Ok(Document {
-            id,
-            url: response.url,
-            json,
-        })
+        Ok(document)
     }
 
     /// Fetch the JSON at `url` without establishing it, as Mastodon's
@@ -455,18 +463,25 @@ impl Fetcher {
         let response = self
             .get(url, "application/activity+json, application/ld+json", key)
             .await?;
-        if !(200..300).contains(&response.status) {
-            return Err(FetchError::Status(response.status));
-        }
-        let content_type = response
-            .headers
-            .get("content-type")
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or_default();
-        if response.status != 200 || !is_activity_content_type(content_type) {
-            return Ok(None);
-        }
-        Ok(serde_json::from_slice(&response.body).ok())
+        unverified(&response)
+    }
+
+    /// [`Fetcher::unverified_json`] without following a redirect, which is
+    /// answered with [`FetchError::Status`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Fetcher::get_exact`], and [`FetchError::Status`] for a status
+    /// other than success.
+    pub async fn unverified_json_at(
+        &self,
+        url: &Url,
+        key: Option<&SenderKey>,
+    ) -> Result<Option<Value>, FetchError> {
+        let response = self
+            .get_exact(url, "application/activity+json, application/ld+json", key)
+            .await?;
+        unverified(&response)
     }
 
     /// [`Fetcher::document`], and when the document's `id` is on another
@@ -850,6 +865,62 @@ fn newer(version: &str, than: &str) -> bool {
             .collect()
     };
     parse(version) > parse(than)
+}
+
+/// What [`Fetcher::document`] and [`Fetcher::document_at`] ask of a response.
+fn establish(response: Response) -> Result<Document, FetchError> {
+    if !(200..300).contains(&response.status) {
+        return Err(FetchError::Status(response.status));
+    }
+    let content_type = response
+        .headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    if !is_activity_content_type(content_type) {
+        return Err(FetchError::NotActivityPub(content_type.to_owned()));
+    }
+    let json: Value = serde_json::from_slice(&response.body)
+        .map_err(|error| FetchError::Invalid(error.to_string()))?;
+    if !json.is_object() {
+        return Err(FetchError::Invalid("not an object".into()));
+    }
+    let id = json
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or(FetchError::NoId)?
+        .to_owned();
+    if !served_by_its_origin(&id, &response.url) {
+        return Err(FetchError::CrossOrigin {
+            id,
+            url: response.url,
+        });
+    }
+    if let Some(author) = foreign_author(&json, &id) {
+        return Err(FetchError::ForeignAuthor { id, author });
+    }
+    Ok(Document {
+        id,
+        url: response.url,
+        json,
+    })
+}
+
+/// What [`Fetcher::unverified_json`] and [`Fetcher::unverified_json_at`] take
+/// of a response.
+fn unverified(response: &Response) -> Result<Option<Value>, FetchError> {
+    if !(200..300).contains(&response.status) {
+        return Err(FetchError::Status(response.status));
+    }
+    let content_type = response
+        .headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    if response.status != 200 || !is_activity_content_type(content_type) {
+        return Ok(None);
+    }
+    Ok(serde_json::from_slice(&response.body).ok())
 }
 
 /// Whether `document`, served by `gateway` without a proof, may be taken

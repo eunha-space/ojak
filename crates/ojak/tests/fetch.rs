@@ -286,6 +286,31 @@ async fn each_redirect_is_signed_for_where_it_goes() {
 }
 
 #[tokio::test]
+async fn a_document_at_its_id_follows_no_redirect() {
+    let base = serve(Server::default()).await;
+    let fetcher = fetcher();
+    let actor = fetcher
+        .document_at(&base.join("users/bob").unwrap(), Some(&key()))
+        .await
+        .unwrap();
+    assert_eq!(actor.json["preferredUsername"], "bob");
+    let redirected = fetcher
+        .document_at(&base.join("@bob").unwrap(), Some(&key()))
+        .await;
+    assert!(
+        matches!(redirected, Err(FetchError::Status(302))),
+        "{redirected:?}"
+    );
+    let unverified = fetcher
+        .unverified_json_at(&base.join("@bob").unwrap(), Some(&key()))
+        .await;
+    assert!(
+        matches!(unverified, Err(FetchError::Status(302))),
+        "{unverified:?}"
+    );
+}
+
+#[tokio::test]
 async fn redirects_are_bounded() {
     let base = serve(Server::default()).await;
     let error = fetcher()

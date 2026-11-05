@@ -209,6 +209,12 @@ as ActivityPub without checking its `id`, and returns a status other than
 success as `FetchError::Status`, for the caller to tell a temporary failure
 from a permanent one.  `ojak::origin::same_host` is the host comparison.
 
+An application that knows the `id` it is asking for has no reason to go
+anywhere else for it.  `Fetcher::document_at` follows no redirect and takes
+the document only if it names that URL as its `id`, and
+`Fetcher::unverified_json_at` and `Fetcher::get_exact` follow no redirect
+either; each answers a redirect as a status.
+
 
 Finding out what a server runs
 ------------------------------
