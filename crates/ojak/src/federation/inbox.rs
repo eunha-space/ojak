@@ -356,8 +356,11 @@ async fn linked_data<D: Clone + Send + Sync + 'static>(
     document: &Value,
     actor: &str,
 ) -> Result<(Value, Url), String> {
+    check_jsonld_limits(document)?;
     let (sender, registry) = signer::verify_linked_data(context, document, actor).await?;
     let reading = read_linked_data(document, registry.as_ref())?;
+    // What a keyword is can be aliased, so what it reads as is checked too.
+    check_jsonld_limits(&reading)?;
     if actor_of(&reading) != Some(actor) {
         return Err(format!("as JSON-LD reads it, it is not by {actor}"));
     }
@@ -365,6 +368,51 @@ async fn linked_data<D: Clone + Send + Sync + 'static>(
         return Err("as JSON-LD reads it, it is another activity".into());
     }
     Ok((reading, sender))
+}
+
+/// The keywords a Linked Data signed activity may not use, as Mastodon's
+/// `JsonLdHelper::UNSUPPORTED_JSONLD_KEYWORDS`.
+const UNSUPPORTED_JSONLD_KEYWORDS: [&str; 3] = ["@graph", "@included", "@reverse"];
+
+/// How many values a Linked Data signed activity may hold, as the budget of
+/// Mastodon's `JsonLdHelper#check_jsonld_limits!`.
+const JSONLD_NODE_BUDGET: i64 = 1_000;
+
+/// Whether an activity is one to spend JSON-LD processing on: it uses none of
+/// the features that nothing reading it expects, and it is not too large.
+fn check_jsonld_limits(document: &Value) -> Result<(), String> {
+    fn walk(value: &Value, budget: &mut i64) -> Result<(), String> {
+        const TOO_MANY: &str = "has too many JSON-LD nodes";
+        *budget -= 1;
+        if *budget < 0 {
+            return Err(TOO_MANY.into());
+        }
+        match value {
+            Value::Object(members) => {
+                for (key, value) in members {
+                    if UNSUPPORTED_JSONLD_KEYWORDS.contains(&key.as_str()) {
+                        return Err("contains unsupported JSON-LD features".into());
+                    }
+                    if *budget < 1 {
+                        return Err(TOO_MANY.into());
+                    }
+                    walk(value, budget)?;
+                }
+            }
+            Value::Array(items) => {
+                for value in items {
+                    if *budget < 1 {
+                        return Err(TOO_MANY.into());
+                    }
+                    walk(value, budget)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    let mut budget = JSONLD_NODE_BUDGET;
+    walk(document, &mut budget)
 }
 
 /// How an activity reads to a JSON-LD processor, in ojak's spelling.
@@ -1038,6 +1086,20 @@ impl<D: Clone + Send + Sync + 'static> InboxWorker<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_signed_activity_keeps_to_the_jsonld_limits() {
+        let plain = serde_json::json!({"type": "Create", "object": {"type": "Note"}});
+        assert!(check_jsonld_limits(&plain).is_ok());
+        for keyword in UNSUPPORTED_JSONLD_KEYWORDS {
+            let nested = serde_json::json!({"object": [{ keyword: [] }]});
+            assert!(check_jsonld_limits(&nested).is_err(), "{keyword}");
+        }
+        let large: Vec<u8> = vec![0; 1_000];
+        assert!(check_jsonld_limits(&serde_json::json!({"to": large})).is_err());
+        let fits: Vec<u8> = vec![0; 990];
+        assert!(check_jsonld_limits(&serde_json::json!({"to": fits})).is_ok());
+    }
 
     fn sender() -> Url {
         Url::parse("https://a.example/users/alice").unwrap()

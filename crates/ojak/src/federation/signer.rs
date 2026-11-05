@@ -444,7 +444,7 @@ pub(super) async fn prove<D: Clone + Send + Sync + 'static>(
     };
     let fetched = settings
         .fetcher(context.data())
-        .document(&actor_url, key.as_ref())
+        .document_at(&actor_url, key.as_ref())
         .await
         .map_err(|error| error.to_string())?;
     let mut why = String::new();
@@ -496,12 +496,9 @@ pub(super) async fn establish<D: Clone + Send + Sync + 'static>(
     };
     let fetched = settings
         .fetcher(context.data())
-        .document(&url, key.as_ref())
+        .document_at(&url, key.as_ref())
         .await
         .map_err(|error| format!("{id}: {error}"))?;
-    if fetched.id != id {
-        return Err(format!("{id} is served as {}", fetched.id));
-    }
     if super::inbox::actor_of(&fetched.json) != Some(actor) {
         return Err(format!("{id} as its origin serves it is not by {actor}"));
     }
@@ -542,6 +539,11 @@ async fn fetch_key<D: Clone + Send + Sync + 'static>(
         .document(&owner, key.as_ref())
         .await
         .ok()?;
+    // A redirect may lead from a key's id to its actor, but not to another
+    // server's: an actor answers only for the keys on its own host.
+    if !crate::origin::same_host(&document.id, key_id) {
+        return None;
+    }
     let key = verification::published_key(&document.json, key_id)?;
     Some(Published {
         key,
