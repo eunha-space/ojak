@@ -393,6 +393,17 @@ it has one, and whatever `webfinger_links` adds, such as Mastodon's
 before WebFinger, is served at `/.well-known/host-meta` as XRD with an `lrdd`
 template, with no further code. Both are served once any actor is registered.
 
+Handles may be in another host than the one actors are served from, as
+Mastodon's `LOCAL_DOMAIN` and `WEB_DOMAIN` allow: `handle_host` names it, and
+the `subject` is `acct:{preferredUsername}@{handle host}` instead. The handle
+host must be one the origin function maps to the canonical origin, since only
+those hosts' handles are answered; it usually redirects its own
+`/.well-known/webfinger` to the canonical origin.
+
+~~~~ rust
+.handle_host(|ctx| Some(ctx.data().instance.local_domain.clone()))
+~~~~
+
 One namespace or two is the application's business: `handle` may look a name
 up as a user and then as a group, or map the server's own domain to the
 instance actor.

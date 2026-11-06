@@ -88,8 +88,15 @@ async fn answer<D: Clone + Send + Sync + 'static>(
             .actor_uri(&actor_ref.kind, &actor_ref.identifier)?
             .to_string(),
     };
+    let host = context
+        .inner
+        .federation
+        .handle_host
+        .as_ref()
+        .and_then(|host| host(context))
+        .unwrap_or_else(|| authority(context.origin()));
     let subject = match actor.get("preferredUsername").and_then(Value::as_str) {
-        Some(username) => format!("acct:{username}@{}", authority(context.origin())),
+        Some(username) => format!("acct:{username}@{host}"),
         None => id.clone(),
     };
     let pages = urls(actor.get("url"));

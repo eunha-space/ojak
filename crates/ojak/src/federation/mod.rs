@@ -218,6 +218,7 @@ type KeysFn<D> = Arc<
 type LookupFn<D, A> =
     Arc<dyn Fn(Context<D>, A) -> BoxFuture<'static, Result<Option<ActorRef>, Error>> + Send + Sync>;
 type LinksFn<D> = Arc<dyn Fn(&Context<D>, &ActorRef, &Value) -> Vec<Value> + Send + Sync>;
+type HandleHostFn<D> = Arc<dyn Fn(&Context<D>) -> Option<String> + Send + Sync>;
 type NodeInfoFn<D> =
     Arc<dyn Fn(Context<D>) -> BoxFuture<'static, Result<NodeInfo, Error>> + Send + Sync>;
 type OriginFn<D> = Arc<dyn Fn(&str, &D) -> Option<Url> + Send + Sync>;
@@ -271,6 +272,7 @@ struct Inner<D> {
     handle: Option<LookupFn<D, String>>,
     map_alias: Option<LookupFn<D, Url>>,
     webfinger_links: Option<LinksFn<D>>,
+    handle_host: Option<HandleHostFn<D>>,
     nodeinfo: Option<NodeInfoFn<D>>,
     signed_fetch: Option<signer::SignedFetch<D>>,
     on_error: Option<ErrorFn>,
@@ -354,6 +356,7 @@ pub struct Builder<D> {
     handle: Option<LookupFn<D, String>>,
     map_alias: Option<LookupFn<D, Url>>,
     webfinger_links: Option<LinksFn<D>>,
+    handle_host: Option<HandleHostFn<D>>,
     nodeinfo: Option<NodeInfoFn<D>>,
     signed_fetch: Option<signer::SignedFetch<D>>,
     on_error: Option<ErrorFn>,
@@ -386,6 +389,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             handle: None,
             map_alias: None,
             webfinger_links: None,
+            handle_host: None,
             nodeinfo: None,
             signed_fetch: None,
             on_error: None,
@@ -1001,6 +1005,23 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         self
     }
 
+    /// The host handles are in, when it is not the canonical origin's: the
+    /// host in the `acct:` URI a WebFinger answer gives as its `subject`.
+    /// Mastodon's `LOCAL_DOMAIN`, where the origin is its `WEB_DOMAIN`, so
+    /// that `alice@example.com` is served from `social.example.com`. `None`
+    /// keeps the canonical origin's host.
+    ///
+    /// Ojak answers `acct:` URIs only on hosts the origin function maps to
+    /// the canonical origin, so the handle host must be one of them.
+    #[must_use]
+    pub fn handle_host(
+        mut self,
+        host: impl Fn(&Context<D>) -> Option<String> + Send + Sync + 'static,
+    ) -> Self {
+        self.handle_host = Some(Arc::new(host));
+        self
+    }
+
     /// Serve NodeInfo, 2.0 and 2.1, from `nodeinfo`.
     #[must_use]
     pub fn nodeinfo<F, Fut, E>(mut self, nodeinfo: F) -> Self
@@ -1581,6 +1602,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     handle: self.handle,
                     map_alias: self.map_alias,
                     webfinger_links: self.webfinger_links,
+                    handle_host: self.handle_host,
                     nodeinfo: self.nodeinfo,
                     signed_fetch: self.signed_fetch,
                     on_error: self.on_error,

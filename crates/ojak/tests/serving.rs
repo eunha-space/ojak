@@ -745,6 +745,29 @@ async fn webfinger_finds_an_actor_by_handle_uri_or_page() {
 }
 
 #[tokio::test]
+async fn webfinger_names_handles_in_the_handle_host() {
+    let federation = builder()
+        .handle_host(|_| Some("www.oeee.test".to_owned()))
+        .build()
+        .unwrap();
+    for resource in [
+        "acct:alice@www.oeee.test",
+        "acct:alice@oeee.test",
+        "https://oeee.test/ap/users/1",
+    ] {
+        let path = format!("/.well-known/webfinger?resource={resource}");
+        let answer = send(&federation, request("GET", "oeee.test", &path, None)).await;
+        assert_eq!(answer.status, 200, "{resource}");
+        let jrd = answer.json();
+        assert_eq!(jrd["subject"], "acct:alice@www.oeee.test", "{resource}");
+        assert_eq!(
+            jrd["links"][0]["href"], "https://oeee.test/ap/users/1",
+            "{resource}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn host_meta_says_where_webfinger_is() {
     let answer = send(
         &federation(),
