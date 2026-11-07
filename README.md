@@ -38,6 +38,14 @@ takes bytes, keys and the time rather than fetching or reading them.  The
 [crate list]: https://ojak.dev/crates
 
 
+Testing ActivityPub deliveries
+------------------------------
+
+Run `ojak inbox` to inspect deliveries at a temporary actor with public
+HTTPS, or `ojak tunnel` to expose an app already running locally.
+[Build and run the inbox](./docs/guide/test-inbox.md).
+
+
 License
 -------
 

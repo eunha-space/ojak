@@ -12,6 +12,8 @@ together in one small server.
     person, sends a GET.
  -  [The inbox](./inbox.md): what Ojak does with an activity another server
     POSTs, before your listener sees it.
+ -  [Testing with a temporary inbox](./test-inbox.md) shows how to inspect
+    live deliveries with `ojak inbox`.
  -  [Sending and fetching](./sending.md): delivering activities, fetching
     other servers' documents, and finding an actor by its handle.
  -  [Portable objects](./portable.md): objects whose identity is a key rather

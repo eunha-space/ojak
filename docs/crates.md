@@ -33,6 +33,14 @@ To build and preview the guide and API reference together, run
 [ojak-vocab]: https://ojak.dev/api/ojak_vocab/index.html
 
 
+Command-line tools
+------------------
+
+*ojak-cli* builds the `ojak` executable. Use `ojak inbox` to inspect live
+ActivityPub deliveries and `ojak tunnel` to publish a local HTTP port.
+[Build and run the CLI](./guide/test-inbox.md).
+
+
 The vocabulary
 --------------
 

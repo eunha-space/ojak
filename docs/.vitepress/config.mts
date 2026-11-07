@@ -37,6 +37,7 @@ export default defineConfig({
           { text: "Concepts", link: "/guide/concepts" },
           { text: "Serving", link: "/guide/serving" },
           { text: "The inbox", link: "/guide/inbox" },
+          { text: "Testing with a temporary inbox", link: "/guide/test-inbox" },
           { text: "Sending and fetching", link: "/guide/sending" },
           { text: "Portable objects", link: "/guide/portable" },
           { text: "Serving many instances", link: "/guide/multitenancy" },

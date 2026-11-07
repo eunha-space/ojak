@@ -1,0 +1,30 @@
+[package]
+name = "ojak-cli"
+description = "Command-line tools for testing ActivityPub with Ojak"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ojak"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+axum = "0.8"
+clap = { version = "4", features = ["derive"] }
+getrandom = { version = "0.4", features = ["sys_rng"] }
+ojak = { path = "../ojak" }
+ojak-axum = { path = "../ojak-axum" }
+rand_core = "0.10"
+serde_json.workspace = true
+tempfile = "3"
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal"] }
+url.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+ojak = { path = "../ojak", features = ["testing"] }
+tower = { version = "0.5", features = ["util"] }
