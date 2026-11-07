@@ -14,6 +14,7 @@ base64.workspace = true
 bs58.workspace = true
 chrono.workspace = true
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+metrics = { version = "0.24", optional = true }
 http = "1"
 ipnet = "2"
 percent-encoding = "2"
@@ -38,6 +39,8 @@ html = ["dep:scraper"]
 # The checks every queue backend has to pass, for backends' own tests, and
 # another server to federate with in an application's tests.
 testing = []
+# Export protocol observations through the application's metrics recorder.
+metrics = ["dep:metrics"]
 
 [dev-dependencies]
 chrono.workspace = true

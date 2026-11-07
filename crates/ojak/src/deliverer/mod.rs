@@ -646,6 +646,8 @@ pub struct Deliverer<Q, K> {
     breakers: Arc<dyn BreakerStore>,
     on_failure: Option<FailureHandler>,
     on_attempt: Option<AttemptHandler>,
+    #[cfg(feature = "metrics")]
+    metric_labels: Option<Vec<metrics::Label>>,
     on_settled: Option<SettledHandler>,
     skip_if: Option<SkipPredicate>,
     synchronization: Option<SynchronizationFn>,
@@ -664,6 +666,8 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             breakers: Arc::new(MemoryBreakers::default()),
             on_failure: None,
             on_attempt: None,
+            #[cfg(feature = "metrics")]
+            metric_labels: None,
             on_settled: None,
             skip_if: None,
             synchronization: None,
@@ -724,6 +728,32 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
     #[must_use]
     pub fn skip_if(mut self, skip: impl Fn(&Url, &Value) -> bool + Send + Sync + 'static) -> Self {
         self.skip_if = Some(Arc::new(skip));
+        self
+    }
+
+    /// Export `ojak_delivery_attempts_total` with a bounded `outcome` label
+    /// (`delivered`, `failed`, or `held`) through the application's recorder.
+    ///
+    /// Labels supply application context, such as a tenant, without exposing
+    /// inboxes, senders, activities, or errors. Keep their cardinality bounded
+    /// and do not supply an `outcome` label. This complements all callbacks.
+    /// Each successful send counts, including a redelivery after a queue
+    /// acknowledgement fails; it is not a count of unique activities.
+    /// Counters are process-local observations, not a durable billing ledger.
+    #[cfg(feature = "metrics")]
+    #[must_use]
+    pub fn metrics(mut self, labels: Vec<metrics::Label>) -> Self {
+        metrics::describe_counter!(
+            "ojak_delivery_attempts_total",
+            "Outbound delivery attempts by outcome; held attempts made no request."
+        );
+        for outcome in ["delivered", "failed", "held"] {
+            let mut labels = labels.clone();
+            labels.retain(|label| label.key() != "outcome");
+            labels.push(metrics::Label::new("outcome", outcome));
+            metrics::counter!("ojak_delivery_attempts_total", labels).absolute(0);
+        }
+        self.metric_labels = Some(labels);
         self
     }
 
@@ -1071,6 +1101,20 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             Ok(()) => false,
             Err(error) => self.ends(&delivery.sender, error).await,
         };
+        #[cfg(feature = "metrics")]
+        if let Some(labels) = &self.metric_labels {
+            let mut labels = labels.clone();
+            labels.retain(|label| label.key() != "outcome");
+            labels.push(metrics::Label::new(
+                "outcome",
+                match &outcome {
+                    Ok(()) => "delivered",
+                    Err(DeliveryError::Held { .. }) => "held",
+                    Err(_) => "failed",
+                },
+            ));
+            metrics::counter!("ojak_delivery_attempts_total", labels).increment(1);
+        }
         if let Some(handler) = &self.on_attempt {
             handler(&DeliveryAttempt {
                 inbox: delivery.inbox.clone(),

@@ -250,3 +250,24 @@ parts, as Mastodon does there.  `resolve_with` and `confirm_with` do
 the same with a lookup of your own.  An onion service is asked over `http`,
 and `Fetcher::with_plain_http_webfinger` asks every host so, for tests whose
 servers cannot serve `https`.
+
+
+Optional delivery metrics
+-------------------------
+
+Enable ojak's `metrics` feature and call
+`.metrics(vec![metrics::Label::new("tenant", "garden.example")])` on the
+deliverer to record `ojak_delivery_attempts_total` through your application's
+`metrics` recorder. Ojak installs no recorder, exporter or tracing subscriber.
+Existing attempt, settlement and failure callbacks still run.
+
+The `outcome` label is bounded to `delivered`, `failed` and `held`. Held means
+no request was made; a successful send counts even if queue acknowledgement
+fails and causes a redelivery. Labels supply application context: keep them
+bounded, never include secrets, and do not supply `outcome`. Ojak does not add
+inbox URLs, senders, activity IDs, payloads or error text as labels.
+
+These counters reset with the process. Keep counter series from expiring in
+your exporter if you accumulate them across scrapes. A monthly collector must
+account for restarts, gaps and calendar boundaries and label partial totals
+as observations. Exact billing needs a durable ledger instead.
