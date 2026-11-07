@@ -380,6 +380,48 @@ async fn what_is_not_authenticated_reaches_no_listener() {
     assert_eq!(store.unverified.lock().unwrap().len(), 3);
 }
 
+// An activity's id may differ from its actor's in scheme and port, as some
+// servers write `http://` ids for `https://` actors, but not in host.
+#[tokio::test]
+async fn an_activity_id_is_held_to_its_senders_host() {
+    let bob = serve_remote(Remote::default()).await;
+    let key_id = format!("{bob}#main-key");
+    let federation = federation(|b| b);
+    let store = App::default();
+    let host = bob
+        .trim_start_matches("http://")
+        .split([':', '/'])
+        .next()
+        .unwrap()
+        .to_owned();
+
+    let mut other_scheme = follow(&bob, 1);
+    other_scheme["id"] = json!(format!("https://{host}/#Follow/1"));
+    assert_eq!(
+        deliver(
+            &federation,
+            &store,
+            post("/ap/users/1/inbox", &key_id, &other_scheme, &other_scheme)
+        )
+        .await,
+        202
+    );
+    assert_eq!(store.seen().len(), 1);
+
+    let mut other_host = follow(&bob, 2);
+    other_host["id"] = json!("https://elsewhere.test/follows/2");
+    assert_eq!(
+        deliver(
+            &federation,
+            &store,
+            post("/ap/users/1/inbox", &key_id, &other_host, &other_host)
+        )
+        .await,
+        401
+    );
+    assert_eq!(store.seen().len(), 1);
+}
+
 #[tokio::test]
 async fn an_embedded_object_from_elsewhere_arrives_as_a_reference() {
     let bob = serve_remote(Remote::default()).await;

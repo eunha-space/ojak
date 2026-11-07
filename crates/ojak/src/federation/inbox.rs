@@ -8,7 +8,7 @@
 
 use super::{ActorRef, BoxFuture, Context, Error, Federation, Inner, RequestInfo, empty, signer};
 use crate::deliverer::PortableInbox;
-use crate::origin::same_origin;
+use crate::origin::{same_authority, same_origin};
 use crate::portable::ApUri;
 use crate::queue::{Job, QueueError, RetryPolicy, SharedQueue};
 use futures_util::StreamExt as _;
@@ -685,8 +685,13 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         .get("id")
         .and_then(Value::as_str)
         .map(str::to_owned);
+    // The activity's own id is held to the sender's host, not its origin:
+    // Mastodon reads an activity's id only to tell repeats apart, and where it
+    // compares identifiers with an account's it compares hosts
+    // (`non_matching_uri_hosts?`). Some servers write their activities' ids
+    // as `http://` beside `https://` actors.
     if let Some(id) = &id
-        && !same_origin(id, sender.as_str())
+        && !same_authority(id, sender.as_str())
     {
         return status(
             StatusCode::UNAUTHORIZED,
