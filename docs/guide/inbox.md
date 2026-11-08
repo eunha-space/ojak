@@ -8,6 +8,18 @@ for.  The inbox is part of `ojak::federation`, beside [serving](./serving.md),
 and also accepts portable activities at gateways ([Portable
 objects](./portable.md)).
 
+A personal inbox checks that its local recipient exists before verifying
+the sender. By default Ojak uses the actor dispatcher. Use
+`Builder::inbox_recipient` for a lightweight existence check when actor
+dispatch renders a document or has side effects. The deduplication key
+distinguishes each personal inbox from the shared inbox.
+
+`Builder::observe_inbox` reports the recipient, HTTP status, authentication
+method, and disposition of processed inbox requests.
+Ojak tries up to three labeled RFC 9421 signatures. When an ordinary
+activity lacks acceptable authentication, its 401 advertises the
+supported POST signature in `Accept-Signature`.
+
 
 Why the inbox is strict
 -----------------------

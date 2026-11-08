@@ -147,7 +147,6 @@ async fn a_create_mitra_delivered_is_received_with_its_note() {
         ApUri::parse(sender).unwrap().canonical(),
         "ap://did:key:z6MkuLKdSc7GHbgu9zDC8sZEjSbhAn7GzoHKXxsgsGNPakpB/actor"
     );
-    // The note is under the activity's DID, so the activity's proof vouches
-    // for it, and it is kept whole.
+    // The note has its own proof and is under the activity's DID.
     assert_eq!(vouched["object"]["content"], create["object"]["content"]);
 }

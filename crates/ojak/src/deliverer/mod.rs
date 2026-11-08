@@ -36,6 +36,96 @@ use std::time::{Duration, Instant};
 use tokio::sync::{Notify, Semaphore};
 use url::Url;
 
+const BLIND_RECIPIENTS: &[&str] = &[
+    "bto",
+    "bcc",
+    "as:bto",
+    "as:bcc",
+    "https://www.w3.org/ns/activitystreams#bto",
+    "https://www.w3.org/ns/activitystreams#bcc",
+];
+
+fn has_blind_recipients(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => map.iter().any(|(key, child)| {
+            BLIND_RECIPIENTS.contains(&key.as_str())
+                || (key != "@context" && has_blind_recipients(child))
+        }),
+        Value::Array(items) => items.iter().any(has_blind_recipients),
+        _ => false,
+    }
+}
+
+/// Remove blind recipient fields before applying a document proof.
+///
+/// # Errors
+///
+/// If redaction would modify a document carrying a proof or Linked Data
+/// signature. Resolve delivery destinations before calling this function.
+pub fn redact_blind_recipients(activity: &mut Value) -> Result<(), QueueError> {
+    fn redact(value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                for key in BLIND_RECIPIENTS {
+                    map.remove(*key);
+                }
+                for (key, child) in map {
+                    if key != "@context" {
+                        redact(child);
+                    }
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    redact(item);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn check(value: &Value) -> Result<(), QueueError> {
+        match value {
+            Value::Object(map) => {
+                if [
+                    "proof",
+                    "signature",
+                    "https://w3id.org/security#proof",
+                    "https://w3id.org/security#signature",
+                ]
+                .iter()
+                .any(|name| map.contains_key(*name))
+                    && has_blind_recipients(value)
+                {
+                    return Err(QueueError(
+                        "remove blind recipients before signing the activity".into(),
+                    ));
+                }
+                map.iter()
+                    .filter(|(key, _)| *key != "@context")
+                    .try_for_each(|(_, child)| check(child))
+            }
+            Value::Array(items) => items.iter().try_for_each(check),
+            _ => Ok(()),
+        }
+    }
+
+    check(activity)?;
+    redact(activity);
+    Ok(())
+}
+
+pub(crate) fn delivery_activity(
+    activity: &Value,
+) -> Result<std::borrow::Cow<'_, Value>, QueueError> {
+    if !has_blind_recipients(activity) {
+        return Ok(std::borrow::Cow::Borrowed(activity));
+    }
+    let mut activity = activity.clone();
+    redact_blind_recipients(&mut activity)?;
+    Ok(std::borrow::Cow::Owned(activity))
+}
+
 /// Where a sender's signing key comes from: the application.
 pub trait SenderKeys: Send + Sync + 'static {
     /// The key `sender` signs with, or `None` when there is no such sender.
@@ -817,6 +907,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         if inboxes.is_empty() {
             return Ok(());
         }
+        let activity = delivery_activity(activity)?;
         let queue = match (&self.config.low_priority, batch.low_priority) {
             (Some(low), true) => low.as_str(),
             _ => self.queue_for(inboxes.len()),
@@ -829,7 +920,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                         // Each inbox is a sequence of its own.
                         let ordering = format!("{key} {inbox}");
                         let payload =
-                            Delivery::new(activity, inbox, Vec::new(), sender, batch).payload();
+                            Delivery::new(&activity, inbox, Vec::new(), sender, batch).payload();
                         (ordering, payload)
                     })
                     .collect();
@@ -839,7 +930,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                 let payloads = inboxes
                     .into_iter()
                     .map(|inbox| {
-                        Delivery::new(activity, inbox, Vec::new(), sender, batch).payload()
+                        Delivery::new(&activity, inbox, Vec::new(), sender, batch).payload()
                     })
                     .collect();
                 self.queue.enqueue(queue, payloads).await?;
@@ -863,6 +954,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         activity: &Value,
         inboxes: impl IntoIterator<Item = PortableInbox>,
     ) -> Result<(), QueueError> {
+        let activity = delivery_activity(activity)?;
         let mut seen = BTreeSet::new();
         let mut payloads = Vec::new();
         for PortableInbox { inbox, gateways } in inboxes {
@@ -888,7 +980,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                 continue;
             }
             payloads
-                .push(Delivery::new(activity, encoded, via, sender, &Batch::default()).payload());
+                .push(Delivery::new(&activity, encoded, via, sender, &Batch::default()).payload());
         }
         if payloads.is_empty() {
             return Ok(());
@@ -1178,6 +1270,8 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
     }
 
     async fn attempt(&self, delivery: &Delivery) -> Result<(), DeliveryError> {
+        let activity = delivery_activity(&delivery.activity)
+            .map_err(|error| DeliveryError::Signing(error.to_string()))?;
         let key = match self.keys.key(&delivery.sender).await {
             Ok(Some(key)) => key,
             Ok(None) => {
@@ -1192,7 +1286,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
                 return Err(DeliveryError::Unavailable(format!("key lookup: {error}")));
             }
         };
-        let body = serde_json::to_vec(&delivery.activity)
+        let body = serde_json::to_vec(activity.as_ref())
             .map_err(|error| DeliveryError::Signing(error.to_string()))?;
         // Each gateway in turn: the first that accepts completes the
         // delivery, and one that fails is passed over rather than retried.
@@ -1255,8 +1349,7 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
             .get(&host)
             .copied()
             .unwrap_or(self.config.first_scheme);
-        let result =
-            post::deliver_with_headers(&self.client, target, body, key, first, extra).await;
+        let result = post::deliver_prepared(&self.client, target, body, key, first, extra).await;
         drop(shared_permit);
         drop(permit);
         if let Some((breaker, key)) = &breaker {
@@ -1378,6 +1471,23 @@ async fn poll_claim(claiming: &mut Option<(usize, Claim<'_>)>) -> Result<Vec<Job
 mod tests {
     use super::jitter;
     use std::time::Duration;
+
+    #[test]
+    fn redaction_preserves_signed_children_and_rejects_changes_to_signed_content() {
+        let mut activity = serde_json::json!({
+            "bto": ["https://remote.example/bob"],
+            "object": { "type": "Note", "proof": {"type": "DataIntegrityProof"} },
+        });
+        let child = activity["object"].clone();
+        super::redact_blind_recipients(&mut activity).unwrap();
+        assert!(activity.get("bto").is_none());
+        assert_eq!(activity["object"], child);
+
+        activity["object"]["as:bcc"] = serde_json::json!("https://remote.example/alice");
+        let original = activity.clone();
+        assert!(super::redact_blind_recipients(&mut activity).is_err());
+        assert_eq!(activity, original);
+    }
 
     #[test]
     fn jitter_shortens_by_at_most_a_quarter() {

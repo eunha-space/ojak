@@ -269,6 +269,32 @@ async fn an_authenticated_activity_reaches_its_listener_typed() {
     );
 }
 
+#[tokio::test]
+async fn repeats_are_deduplicated_per_inbox_and_unknown_recipients_are_refused() {
+    let bob = serve_remote(Remote::default()).await;
+    let key_id = format!("{bob}#main-key");
+    let federation = federation(|builder| {
+        builder.inbox_recipient(
+            |_, actor| async move { Ok::<_, String>(actor.identifier != "missing") },
+        )
+    });
+    let store = App::default();
+    let body = follow(&bob, 1);
+    for (path, expected) in [
+        ("/ap/users/missing/inbox", 404),
+        ("/ap/users/1/inbox", 202),
+        ("/ap/users/1/inbox", 202),
+        ("/ap/users/2/inbox", 202),
+        ("/ap/inbox", 202),
+    ] {
+        assert_eq!(
+            deliver(&federation, &store, post(path, &key_id, &body, &body)).await,
+            expected,
+        );
+    }
+    assert_eq!(store.seen().len(), 3);
+}
+
 /// The actor document fetched for a key is handed over once it verifies.
 #[tokio::test]
 async fn the_actor_fetched_for_a_key_is_handed_over() {
@@ -1048,17 +1074,22 @@ async fn an_ed25519_signature_by_a_listed_multikey_authenticates() {
         .await,
         202
     );
-    // Again, with the key from the cache rather than bob's document.
+    // A bad first candidate with the same key does not cause a refresh
+    // when a later candidate verifies with the cached key.
     let activity = follow(&bob, 2);
-    assert_eq!(
-        deliver(
-            &federation,
-            &store,
-            post_ed25519("/ap/inbox", &key_id, &seed, &activity)
-        )
-        .await,
-        202
-    );
+    let (mut request, bytes) = post_ed25519("/ap/inbox", &key_id, &seed, &activity);
+    let good_input = request.headers.remove("signature-input").unwrap();
+    let good_signature = request.headers.remove("signature").unwrap();
+    let bad_input = good_input.to_str().unwrap().replacen("sig1=", "bad=", 1);
+    request
+        .headers
+        .append("signature-input", bad_input.parse().unwrap());
+    request.headers.append("signature-input", good_input);
+    request
+        .headers
+        .append("signature", http::HeaderValue::from_static("bad=:AA==:"));
+    request.headers.append("signature", good_signature);
+    assert_eq!(deliver(&federation, &store, (request, bytes)).await, 202);
     assert_eq!(remote.fetches.load(Ordering::SeqCst), 1);
     let seen = store.seen();
     assert_eq!(seen.len(), 2);
@@ -1362,7 +1393,8 @@ async fn a_relayed_activity_is_checked_over_a_context_the_application_loads() {
     // No loader: the signature cannot be checked, and the author's server
     // does not serve the activity, so it is dropped.
     let without = federation(|b| b);
-    let request = post("/ap/inbox", &relay_key, &create(1), &create(1));
+    let activity = create(1);
+    let request = post("/ap/inbox", &relay_key, &activity, &activity);
     assert_eq!(deliver(&without, &store, request).await, 202);
     assert!(store.seen().is_empty());
 
@@ -1382,7 +1414,8 @@ async fn a_relayed_activity_is_checked_over_a_context_the_application_loads() {
             }
         })
     });
-    let request = post("/ap/inbox", &relay_key, &create(2), &create(2));
+    let activity = create(2);
+    let request = post("/ap/inbox", &relay_key, &activity, &activity);
     assert_eq!(deliver(&with, &store, request).await, 202);
     let seen = store.seen();
     assert_eq!(seen.len(), 1, "{seen:?}");

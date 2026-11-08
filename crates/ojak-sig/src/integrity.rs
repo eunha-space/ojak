@@ -246,6 +246,29 @@ pub fn verify_object_integrity_proof(
     proof: &Map<String, Value>,
     public_key: &PublicKey,
 ) -> Result<(), Error> {
+    verify_proof(document, proof, public_key, true)
+}
+
+/// Verify an embedded document's proof using its exact document data.
+/// Any legacy Linked Data signature is part of that data.
+///
+/// # Errors
+///
+/// If the proof is malformed, unsupported, or does not verify.
+pub fn verify_embedded_integrity_proof(
+    document: &Value,
+    proof: &Map<String, Value>,
+    public_key: &PublicKey,
+) -> Result<(), Error> {
+    verify_proof(document, proof, public_key, false)
+}
+
+fn verify_proof(
+    document: &Value,
+    proof: &Map<String, Value>,
+    public_key: &PublicKey,
+    allow_legacy_signature: bool,
+) -> Result<(), Error> {
     let suite = proof
         .get("cryptosuite")
         .and_then(Value::as_str)
@@ -326,7 +349,7 @@ pub fn verify_object_integrity_proof(
     // Fedify reaches the same document via JSON-LD normalization; stripping the
     // field directly avoids pulling in a full JSON-LD processor.
     let mut candidates = vec![unsecured.clone()];
-    if unsecured.contains_key("signature") {
+    if allow_legacy_signature && unsecured.contains_key("signature") {
         let mut without_sig = unsecured;
         without_sig.remove("signature");
         candidates.push(without_sig);

@@ -184,6 +184,27 @@ async fn a_delivery_verifies_at_the_inbox() {
 }
 
 #[tokio::test]
+async fn delivery_signs_the_redacted_body_and_refuses_to_leak_a_signed_one() {
+    let inbox = Inbox::default();
+    let url = serve(inbox.clone()).await;
+    let body = br#"{"type":"Create","object":{"type":"Note","bcc":"https://hidden.example/a"}}"#;
+    delivery::deliver(&client(), &url, body, &key(), Scheme::DraftCavage)
+        .await
+        .unwrap();
+
+    let signed = br#"{"type":"Create","bto":"https://hidden.example/a","proof":{}}"#;
+    let error = delivery::deliver(&client(), &url, signed, &key(), Scheme::DraftCavage)
+        .await
+        .unwrap_err();
+    assert!(error.is_permanent());
+    let received = inbox.received();
+    assert_eq!(received.len(), 1);
+    assert!(received[0].verified);
+    let body: serde_json::Value = serde_json::from_slice(&received[0].body).unwrap();
+    assert_eq!(body["object"], json!({"type":"Note"}));
+}
+
+#[tokio::test]
 async fn a_synchronizing_delivery_says_whom_the_sender_has_there() {
     let inbox = Inbox::default();
     let url = serve(inbox.clone()).await;

@@ -35,6 +35,14 @@ column, which `PostgresQueue::schema` adds to a table made before it.
 `send_portable` delivers to a portable actor's gateways (see
 [Portable objects](./portable.md#delivery)).
 
+Resolve blind recipients when choosing the destination inboxes. The
+`Deliverer` strips `bto` and `bcc` from unsigned content before queueing.
+If you add an integrity proof or Linked Data signature, call
+`ojak::deliverer::redact_blind_recipients` before signing. Delivery rejects
+blind addressing covered by a document proof or signature because removing
+it would invalidate the signature. Ojak signs the HTTP request with the
+application's key. The application adds document proofs itself.
+
 Delivery:
 
  -  removes duplicate inboxes;

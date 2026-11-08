@@ -20,8 +20,8 @@ mod webfinger;
 pub use crate::template::Values;
 pub use collection::{Collection, CollectionDocument, First, Page};
 pub use inbox::{
-    CollectionRef, Forward, ForwardTo, GatewayInbox, InboxWorker, InboxWorkerConfig,
-    MAX_BODY as MAX_INBOX_BODY, Received, VouchedBy,
+    CollectionRef, Forward, ForwardTo, GatewayInbox, InboxDisposition, InboxReport, InboxWorker,
+    InboxWorkerConfig, MAX_BODY as MAX_INBOX_BODY, Received, VouchedBy,
 };
 pub use nodeinfo::{NodeInfo, Software, Usage};
 pub use signer::{KnownKey, Signing};
@@ -282,6 +282,8 @@ struct Inner<D> {
     fallback_listener: Option<inbox::ListenerFn<D>>,
     blocked: Option<inbox::BlockedFn<D>>,
     on_unverified: Option<inbox::UnverifiedFn<D>>,
+    inbox_observer: Option<inbox::ObserveFn<D>>,
+    inbox_recipient: Option<inbox::RecipientFn<D>>,
     inbox_queue: Option<inbox::QueueFn<D>>,
     gateway: Option<GatewayFn<D>>,
     gateway_media: Option<GatewayMediaFn<D>>,
@@ -367,6 +369,8 @@ pub struct Builder<D> {
     fallback_listener: Option<inbox::ListenerFn<D>>,
     blocked: Option<inbox::BlockedFn<D>>,
     on_unverified: Option<inbox::UnverifiedFn<D>>,
+    inbox_observer: Option<inbox::ObserveFn<D>>,
+    inbox_recipient: Option<inbox::RecipientFn<D>>,
     inbox_queue: Option<inbox::QueueFn<D>>,
     gateway: Option<GatewayFn<D>>,
     gateway_media: Option<GatewayMediaFn<D>>,
@@ -400,6 +404,8 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             fallback_listener: None,
             blocked: None,
             on_unverified: None,
+            inbox_observer: None,
+            inbox_recipient: None,
             inbox_queue: None,
             gateway: None,
             gateway_media: None,
@@ -1276,6 +1282,33 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         self
     }
 
+    /// Check whether a personal inbox has a local recipient. By default,
+    /// Ojak checks the actor dispatcher. Supply a lightweight lookup when
+    /// rendering an actor is expensive or has side effects.
+    #[must_use]
+    pub fn inbox_recipient<F, Fut, E>(mut self, lookup: F) -> Self
+    where
+        F: Fn(Context<D>, ActorRef) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<bool, E>> + Send + 'static,
+        E: Into<Error>,
+    {
+        self.inbox_recipient = Some(Arc::new(move |context, actor| {
+            let lookup = lookup(context, actor);
+            Box::pin(async move { lookup.await.map_err(Into::into) })
+        }));
+        self
+    }
+
+    /// Observe the recipient and HTTP result of each processed inbox request.
+    #[must_use]
+    pub fn observe_inbox(
+        mut self,
+        observer: impl Fn(&D, InboxReport) + Send + Sync + 'static,
+    ) -> Self {
+        self.inbox_observer = Some(Arc::new(observer));
+        self
+    }
+
     /// See every activity whose sender could not be authenticated, which is
     /// where an application removes an actor whose Delete it could not
     /// verify because the actor, key and all, is gone.
@@ -1612,6 +1645,8 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     fallback_listener: self.fallback_listener,
                     blocked: self.blocked,
                     on_unverified: self.on_unverified,
+                    inbox_observer: self.inbox_observer,
+                    inbox_recipient: self.inbox_recipient,
                     inbox_queue: self.inbox_queue,
                     gateway: self.gateway,
                     gateway_media: self.gateway_media,

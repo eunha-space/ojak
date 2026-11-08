@@ -331,6 +331,33 @@ async fn a_portable_actor_is_vouched_for_by_its_key_alone() {
 }
 
 #[tokio::test]
+async fn an_outer_proof_cannot_substitute_for_an_embedded_proof() {
+    let alice = Ed25519Signer::generate();
+    let bob = Ed25519Signer::generate();
+    let federation = federation(&alice);
+    let store = App::default();
+    let mut activity = follow(&bob, &alice, 10);
+    let note = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("ap://{}/notes/1", bob.did()),
+        "type": "Note",
+        "content": "Original",
+    });
+    activity["attachment"] = json!([note]);
+    let missing = bob.prove(&activity).await.unwrap();
+    assert_eq!(post(&federation, &store, "/ap/inbox", &missing).await, 401);
+
+    activity["attachment"][0] = bob.prove(&note).await.unwrap();
+    let valid = bob.prove(&activity).await.unwrap();
+    assert_eq!(post(&federation, &store, "/ap/inbox", &valid).await, 202);
+
+    activity["attachment"][0]["content"] = json!("Tampered");
+    let tampered = bob.prove(&activity).await.unwrap();
+    assert_eq!(post(&federation, &store, "/ap/inbox", &tampered).await, 401);
+    assert_eq!(store.seen.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn a_gateway_serves_what_the_application_stored() {
     let alice = Ed25519Signer::generate();
     let federation = federation(&alice);

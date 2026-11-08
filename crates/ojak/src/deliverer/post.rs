@@ -142,6 +142,35 @@ pub async fn deliver_with_headers(
     first: Scheme,
     extra: &[(String, String)],
 ) -> Result<Scheme, DeliveryError> {
+    let mut redacted = None;
+    if let Ok(activity) = serde_json::from_slice(body)
+        && let std::borrow::Cow::Owned(activity) = super::delivery_activity(&activity)
+            .map_err(|error| DeliveryError::Signing(error.to_string()))?
+    {
+        redacted = Some(
+            serde_json::to_vec(&activity)
+                .map_err(|error| DeliveryError::Signing(error.to_string()))?,
+        );
+    }
+    deliver_prepared(
+        client,
+        inbox,
+        redacted.as_deref().unwrap_or(body),
+        key,
+        first,
+        extra,
+    )
+    .await
+}
+
+pub(super) async fn deliver_prepared(
+    client: &Client,
+    inbox: &Url,
+    body: &[u8],
+    key: &SenderKey,
+    first: Scheme,
+    extra: &[(String, String)],
+) -> Result<Scheme, DeliveryError> {
     match attempt(client, inbox, body, key, first, extra).await {
         Ok(()) => Ok(first),
         Err(DeliveryError::Status {

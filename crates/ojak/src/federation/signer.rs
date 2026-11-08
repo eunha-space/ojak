@@ -124,7 +124,7 @@ pub(super) async fn verify<D: Clone + Send + Sync + 'static>(context: &Context<D
     if !signed {
         return Signing::Unsigned;
     }
-    match authenticate_signed(context, b"").await {
+    match authenticate_signed(context, b"", None).await {
         Ok(signer) => Signing::Verified(signer),
         Err(Refusal::Blocked(host)) => Signing::Blocked(host),
         Err(Refusal::Invalid(why)) => Signing::Invalid(why),
@@ -156,8 +156,9 @@ impl From<&str> for Refusal {
 pub(super) async fn authenticate<D: Clone + Send + Sync + 'static>(
     context: &Context<D>,
     body: &[u8],
+    actor: &str,
 ) -> Result<Url, String> {
-    authenticate_signed(context, body)
+    authenticate_signed(context, body, Some(actor))
         .await
         .map_err(|refusal| match refusal {
             Refusal::Blocked(host) => format!("signed with a key on {host}, which is blocked"),
@@ -194,23 +195,26 @@ pub(super) async fn blocked_key_id<D: Clone + Send + Sync + 'static>(
         headers: &headers,
         body,
     };
-    let Ok(signature) = verification::parse(&request) else {
-        return Ok(None);
-    };
-    let Some(host) = Url::parse(&signature.key_id)
-        .ok()
-        .and_then(|key| key.host_str().map(str::to_owned))
-    else {
-        return Ok(None);
-    };
-    Ok(blocked(context.clone(), host)
-        .await?
-        .then_some(signature.key_id))
+    let mut refused = None;
+    for signature in verification::candidates(&request) {
+        let Some(host) = Url::parse(&signature.key_id)
+            .ok()
+            .and_then(|key| key.host_str().map(str::to_owned))
+        else {
+            return Ok(None);
+        };
+        if !blocked(context.clone(), host).await? {
+            return Ok(None);
+        }
+        refused = Some(signature.key_id);
+    }
+    Ok(refused)
 }
 
 async fn authenticate_signed<D: Clone + Send + Sync + 'static>(
     context: &Context<D>,
     body: &[u8],
+    actor: Option<&str>,
 ) -> Result<Url, Refusal> {
     let settings = context
         .inner
@@ -230,39 +234,70 @@ async fn authenticate_signed<D: Clone + Send + Sync + 'static>(
         headers: &headers,
         body,
     };
-    let signature = verification::parse(&request).map_err(|error| error.to_string())?;
-    // A key on a blocked server is neither looked for nor fetched, as the
-    // inbox fetches nothing for an activity from one.
-    if let (Some(blocked), Some(host)) = (
-        &context.inner.federation.blocked,
-        Url::parse(&signature.key_id)
-            .ok()
-            .and_then(|key| key.host_str().map(str::to_owned)),
-    ) {
-        match blocked(context.clone(), host.clone()).await {
-            Ok(true) => return Err(Refusal::Blocked(host)),
-            Ok(false) => {}
-            Err(error) => {
-                context.report(&error);
-                return Err(format!("could not tell whether {host} is blocked").into());
-            }
-        }
+    let candidates = verification::candidates(&request);
+    if candidates.is_empty() {
+        return Err(verification::parse(&request).err().map_or_else(
+            || "no usable signature".into(),
+            |error| error.to_string().into(),
+        ));
     }
     let canonical = authority(context.origin());
     let hosts = [info.host.as_str(), canonical.as_str()];
-    verification::check(
-        &signature,
-        &request,
-        &Policy::new(&hosts),
-        chrono::Utc::now().timestamp(),
-    )
-    .map_err(|error| error.to_string())?;
-
-    find_key(context, settings, &signature.key_id, |key| {
-        verification::verify(&signature, &request, key.as_key()).is_ok()
-    })
-    .await
-    .map_err(Refusal::from)
+    let policy = Policy::new(&hosts);
+    let now = chrono::Utc::now().timestamp();
+    let mut last = Refusal::from("no usable signature");
+    let mut forwarder = None;
+    let mut checked = Vec::new();
+    for signature in &candidates {
+        match verification::check(signature, &request, &policy, now) {
+            Ok(()) => checked.push(signature),
+            Err(error) => last = error.to_string().into(),
+        }
+    }
+    let mut tried = Vec::new();
+    for signature in &checked {
+        if tried.contains(&signature.key_id.as_str()) {
+            continue;
+        }
+        tried.push(signature.key_id.as_str());
+        if let (Some(blocked), Some(host)) = (
+            &context.inner.federation.blocked,
+            Url::parse(&signature.key_id)
+                .ok()
+                .and_then(|key| key.host_str().map(str::to_owned)),
+        ) {
+            match blocked(context.clone(), host.clone()).await {
+                Ok(true) => {
+                    last = Refusal::Blocked(host);
+                    continue;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    context.report(&error);
+                    return Err(format!("could not tell whether {host} is blocked").into());
+                }
+            }
+        }
+        match find_key(context, settings, &signature.key_id, |key| {
+            checked.iter().any(|candidate| {
+                candidate.key_id == signature.key_id
+                    && verification::verify(candidate, &request, key.as_key()).is_ok()
+            })
+        })
+        .await
+        {
+            Ok(signer)
+                if actor.is_none_or(|actor| crate::origin::same_origin(actor, signer.as_str())) =>
+            {
+                return Ok(signer);
+            }
+            Ok(signer) => {
+                forwarder.get_or_insert(signer);
+            }
+            Err(error) => last = error.into(),
+        }
+    }
+    forwarder.ok_or(last)
 }
 
 /// The actor publishing `key_id`, when the key passes `check`: the copy the

@@ -151,6 +151,56 @@ pub enum Key<'a> {
     Ed25519(&'a [u8; 32]),
 }
 
+/// Read up to three signature candidates in wire order. Each RFC 9421
+/// candidate retains its own label and parameters.
+pub fn candidates(request: &Request<'_>) -> Vec<Signature> {
+    let field = |field: &str| {
+        request
+            .headers
+            .iter()
+            .filter(|(name, _)| name.eq_ignore_ascii_case(field))
+            .map(|(_, value)| *value)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    if request.header("signature-input").is_none() {
+        return parse(request).into_iter().collect();
+    }
+    let input = field("signature-input");
+    let signature = field("signature");
+    let Ok(dictionary) = sfv::Parser::new(&input).parse::<sfv::Dictionary>() else {
+        return Vec::new();
+    };
+    let Ok(values) = sfv::Parser::new(&signature).parse::<sfv::Dictionary>() else {
+        return Vec::new();
+    };
+    if dictionary.len() != values.len()
+        || dictionary
+            .iter()
+            .any(|(label, _)| values.get(label).is_none())
+    {
+        return Vec::new();
+    }
+    dictionary
+        .iter()
+        .take(3)
+        .filter_map(|(label, entry)| {
+            let mut serializer = sfv::ListSerializer::new();
+            serializer.members([entry]);
+            let input = format!("{}={}", label.as_str(), serializer.finish()?);
+            let headers = [
+                ("signature-input", input.as_str()),
+                ("signature", signature.as_str()),
+            ];
+            parse(&Request {
+                headers: &headers,
+                ..*request
+            })
+            .ok()
+        })
+        .collect()
+}
+
 /// Read the signature on `request`.
 ///
 /// # Errors

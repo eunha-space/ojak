@@ -6,7 +6,9 @@
 //! Activities are queued, when the application gives Ojak a queue, and run
 //! by an [`InboxWorker`]; otherwise inside the request.
 
-use super::{ActorRef, BoxFuture, Context, Error, Federation, Inner, RequestInfo, empty, signer};
+use super::{
+    ActorRef, BoxFuture, Context, Error, Federation, Found, Inner, RequestInfo, empty, signer,
+};
 use crate::deliverer::PortableInbox;
 use crate::origin::{same_authority, same_origin};
 use crate::portable::ApUri;
@@ -462,13 +464,63 @@ fn accepted() -> http::Response<Vec<u8>> {
     empty(StatusCode::ACCEPTED)
 }
 
+/// The result of an inbox POST, before any queued listener runs.
+#[derive(Clone, Debug)]
+pub struct InboxReport {
+    pub recipient: Option<ActorRef>,
+    pub status: StatusCode,
+    /// How the sender was authenticated, when authentication succeeded.
+    pub vouched_by: Option<VouchedBy>,
+    pub disposition: InboxDisposition,
+}
+
+/// What the inbox did with the delivery.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InboxDisposition {
+    Rejected,
+    Dropped,
+    Duplicate,
+    Queued,
+    Handled,
+}
+
+pub(super) type RecipientFn<D> =
+    Arc<dyn Fn(Context<D>, ActorRef) -> BoxFuture<'static, Result<bool, Error>> + Send + Sync>;
+
+pub(super) type ObserveFn<D> = Arc<dyn Fn(&D, InboxReport) + Send + Sync>;
+
+async fn receive_observed<D: Clone + Send + Sync + 'static>(
+    context: Context<D>,
+    recipient: Option<ActorRef>,
+    body: &[u8],
+    gateway: Option<(ApUri, Vec<Url>)>,
+) -> http::Response<Vec<u8>> {
+    let observer = context.inner.federation.inbox_observer.clone();
+    let mut report = InboxReport {
+        recipient: observer.as_ref().and_then(|_| recipient.clone()),
+        status: StatusCode::ACCEPTED,
+        vouched_by: None,
+        disposition: InboxDisposition::Dropped,
+    };
+    let observed = observer.as_ref().map(|_| context.clone());
+    let response = receive_at(context, recipient, body, gateway, &mut report).await;
+    if let (Some(observer), Some(context)) = (observer, observed) {
+        report.status = response.status();
+        if !report.status.is_success() {
+            report.disposition = InboxDisposition::Rejected;
+        }
+        observer(context.data(), report);
+    }
+    response
+}
+
 /// Receive `body`, POSTed to `recipient`'s inbox or the shared one.
 pub(super) async fn receive<D: Clone + Send + Sync + 'static>(
     context: Context<D>,
     recipient: Option<ActorRef>,
     body: &[u8],
 ) -> http::Response<Vec<u8>> {
-    receive_at(context, recipient, body, None).await
+    receive_observed(context, recipient, body, None).await
 }
 
 /// Receive `body`, POSTed to a portable inbox this server is a gateway for:
@@ -480,7 +532,7 @@ pub(super) async fn receive_at_gateway<D: Clone + Send + Sync + 'static>(
     body: &[u8],
 ) -> http::Response<Vec<u8>> {
     let recipient = Some(gateway.recipient.clone());
-    receive_at(context, recipient, body, Some((inbox, gateway.gateways))).await
+    receive_observed(context, recipient, body, Some((inbox, gateway.gateways))).await
 }
 
 async fn receive_at<D: Clone + Send + Sync + 'static>(
@@ -488,6 +540,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
     recipient: Option<ActorRef>,
     body: &[u8],
     gateway: Option<(ApUri, Vec<Url>)>,
+    report: &mut InboxReport,
 ) -> http::Response<Vec<u8>> {
     let inner = context.inner.federation.clone();
     if body.len() > MAX_BODY {
@@ -500,6 +553,27 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
     let Some(actor) = actor_of(&document).map(str::to_owned) else {
         return status(StatusCode::BAD_REQUEST, "no actor");
     };
+
+    if gateway.is_none()
+        && let Some(recipient) = &recipient
+    {
+        let exists = if let Some(lookup) = &inner.inbox_recipient {
+            lookup(context.clone(), recipient.clone()).await
+        } else {
+            context
+                .load_actor(recipient)
+                .await
+                .map(|actor| matches!(actor, Found::Found(_)))
+        };
+        match exists {
+            Ok(true) => {}
+            Ok(false) => return empty(StatusCode::NOT_FOUND),
+            Err(error) => {
+                context.report(&error);
+                return empty(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    }
 
     let portable = ApUri::parse(&actor);
 
@@ -554,16 +628,14 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
     // Who delivered it, when that was not the actor's server.
     let mut forwarder: Option<Url> = None;
     let mut vouched_by = VouchedBy::Signature;
+    let fetcher = inner
+        .signed_fetch
+        .as_ref()
+        .map(|settings| settings.fetcher(context.data()));
+    let resolver = fetcher.as_deref().and_then(crate::fetch::Fetcher::resolver);
     let sender = if let Some(uri) = &portable {
         // A portable actor is vouched for by its key alone: the HTTP
         // signature, if there is one, is the gateway's that sent it.
-        let resolver = inner
-            .signed_fetch
-            .as_ref()
-            .map(|settings| settings.fetcher(context.data()));
-        let resolver = resolver
-            .as_deref()
-            .and_then(crate::fetch::Fetcher::resolver);
         vouched_by = VouchedBy::Proof;
         match crate::portable::verify_by(&document, uri.did(), resolver).await {
             Ok(()) => match Url::parse(&uri.encoded()) {
@@ -580,7 +652,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
             }
         }
     } else {
-        let signed = signer::authenticate(&context, body).await;
+        let signed = signer::authenticate(&context, body, &actor).await;
         forwarder = signed
             .as_ref()
             .ok()
@@ -664,15 +736,24 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
                         if document.get("type").and_then(Value::as_str) == Some("Delete") {
                             return accepted();
                         }
-                        return status(
+                        let mut response = status(
                             StatusCode::UNAUTHORIZED,
                             &format!("signature: {unsigned}; proof: {unproven}"),
                         );
+                        response.headers_mut().insert(
+                            "accept-signature",
+                            HeaderValue::from_static(
+                                r#"sig1=("@method" "@target-uri" "content-digest");created"#,
+                            ),
+                        );
+                        return response;
                     }
                 },
             },
         }
     };
+
+    report.vouched_by = Some(vouched_by);
 
     // A server vouches for its own actors and activities, and nobody else's.
     if !same_origin(&actor, sender.as_str()) {
@@ -697,6 +778,22 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
             StatusCode::UNAUTHORIZED,
             &format!("activity {id} is not on the origin of {sender}"),
         );
+    }
+
+    match tokio::time::timeout(
+        Duration::from_secs(5),
+        crate::portable::verify_embedded(&document, portable.as_ref().map(ApUri::did), resolver),
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(reason)) => return status(StatusCode::UNAUTHORIZED, &reason),
+        Err(_) => {
+            return status(
+                StatusCode::UNAUTHORIZED,
+                "embedded proof verification timed out",
+            );
+        }
     }
 
     let (normalized, vouched) =
@@ -748,18 +845,39 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         let bytes = serde_json::to_vec(&document).unwrap_or_default();
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(&bytes))
     });
-    let seen = id
-        .as_deref()
-        .zip(digest.as_deref())
-        .map(|(id, digest)| ["ojak", "inbox", origin.as_str(), id, digest]);
-    if let (Some(seen), Some(settings)) = (&seen, &inner.signed_fetch) {
+    let personal;
+    let shared;
+    let seen = match (id.as_deref(), digest.as_deref(), recipient.as_ref()) {
+        (Some(id), Some(digest), Some(recipient)) => {
+            personal = [
+                "ojak",
+                "inbox",
+                origin.as_str(),
+                "personal",
+                recipient.kind.as_str(),
+                recipient.identifier.as_str(),
+                id,
+                digest,
+            ];
+            Some(personal.as_slice())
+        }
+        (Some(id), Some(digest), None) => {
+            shared = ["ojak", "inbox", origin.as_str(), id, digest];
+            Some(shared.as_slice())
+        }
+        _ => None,
+    };
+    if let (Some(seen), Some(settings)) = (seen, &inner.signed_fetch) {
         match settings
             .kv(context.data())
             .insert(seen, Value::Bool(true), Some(SEEN_FOR))
             .await
         {
             Ok(true) => {}
-            Ok(false) => return accepted(),
+            Ok(false) => {
+                report.disposition = InboxDisposition::Duplicate;
+                return accepted();
+            }
             Err(error) => context.report(&Error::from(error)),
         }
     }
@@ -768,6 +886,11 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         .inbox_queue
         .as_ref()
         .and_then(|queue| queue(context.data()));
+    let disposition = if queue.is_some() {
+        InboxDisposition::Queued
+    } else {
+        InboxDisposition::Handled
+    };
     let outcome = match queue {
         Some(queue) => {
             let mut payload = json!({
@@ -801,18 +924,21 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
                     sender,
                     forwarder,
                     vouched_by,
-                    recipient,
+                    recipient: recipient.clone(),
                 },
             )
             .await
         }
     };
     match outcome {
-        Ok(()) => accepted(),
+        Ok(()) => {
+            report.disposition = disposition;
+            accepted()
+        }
         Err(error) => {
             context.report(&error);
             // Not processed, so not seen: the sender's retry is processed.
-            if let (Some(seen), Some(settings)) = (&seen, &inner.signed_fetch) {
+            if let (Some(seen), Some(settings)) = (seen, &inner.signed_fetch) {
                 let _ = settings.kv(context.data()).delete(seen).await;
             }
             empty(StatusCode::INTERNAL_SERVER_ERROR)
@@ -834,6 +960,13 @@ async fn forward<D: Clone + Send + Sync + 'static>(
     let (Some(hook), Some(settings)) = (&inner.forward, &inner.signed_fetch) else {
         return;
     };
+    let activity = match crate::deliverer::delivery_activity(activity) {
+        Ok(activity) => activity,
+        Err(error) => {
+            context.report(&Error::from(error));
+            return;
+        }
+    };
     let kind = match to {
         ForwardTo::Gateways(_) => "gateways",
         ForwardTo::Collections(_) => "collections",
@@ -854,7 +987,7 @@ async fn forward<D: Clone + Send + Sync + 'static>(
         }
     }
     let forward = Forward {
-        activity: activity.clone(),
+        activity: activity.into_owned(),
         to,
     };
     if let Err(error) = hook(context.clone(), forward).await {

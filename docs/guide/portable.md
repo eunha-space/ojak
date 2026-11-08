@@ -165,6 +165,13 @@ given the actor's DID. A portable activity whose proof does not verify is
 refused with 401, `Delete` included, since unlike a server's actor a DID
 cannot have gone away; `on_unverified` sees it.
 
+Embedded documents with a portable `id` or `@id` need their own proof.
+Ojak checks up to 32 embedded documents, tries up to eight usable proofs
+per document, and allows five seconds for the embedded checks. Keys
+published inline by their verified owner are covered by the owner's proof.
+An embedded portable document that fails verification causes a 401 before
+forwarding or dispatch.
+
 An activity from an `https` actor may arrive at a portable inbox, and is
 authenticated as it would be anywhere else.
 
@@ -291,11 +298,6 @@ objects. Where they differ:
  -  Fedify writes portable IDs as `ap+ef61://`, in case the FEP's recommended
     scheme changes to it; Ojak writes `ap://`, as the FEP recommends now.
     Both read both, and compare them as the same.
- -  Fedify verifies each portable object embedded in an activity against its
-    own proof, under an interim profile of its own. Ojak keeps an embedded
-    object only when it is under the activity's DID, which the activity's
-    proof vouches for, and reduces any other to its `id`, as it does for
-    every activity. Nothing it keeps depends on how embedded proofs are read.
  -  Fedify authenticates the HTTP signature of a gateway that signs for a
     portable actor with a key in the actor's `assertionMethod` (FEP-521a).
     Ojak's inbox does not ask a portable actor's HTTP signature anything:

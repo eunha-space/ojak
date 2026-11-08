@@ -115,8 +115,19 @@ pub async fn verify_by(
     did: &str,
     resolver: Option<&dyn DidResolver>,
 ) -> Result<(), PortableError> {
+    verify_document(document, did, resolver, false).await
+}
+
+async fn verify_document(
+    document: &Value,
+    did: &str,
+    resolver: Option<&dyn DidResolver>,
+    embedded: bool,
+) -> Result<(), PortableError> {
     let mut last = PortableError::NoProof;
     for (proof, _, method) in integrity::integrity_proofs(document, chrono::Utc::now().timestamp())
+        .into_iter()
+        .take(8)
     {
         if did_of(&method) != Some(did) {
             last = PortableError::ForeignMethod {
@@ -125,6 +136,9 @@ pub async fn verify_by(
             };
             continue;
         }
+        if embedded {
+            tokio::task::yield_now().await;
+        }
         let key = match resolve(&method, resolver).await {
             Ok(key) => key,
             Err(error) => {
@@ -132,12 +146,74 @@ pub async fn verify_by(
                 continue;
             }
         };
-        match integrity::verify_object_integrity_proof(document, &proof, &key) {
+        let result = if embedded {
+            integrity::verify_embedded_integrity_proof(document, &proof, &key)
+        } else {
+            integrity::verify_object_integrity_proof(document, &proof, &key)
+        };
+        match result {
             Ok(()) => return Ok(()),
             Err(error) => last = PortableError::Invalid(error.to_string()),
         }
     }
     Err(last)
+}
+
+/// Verify the proof of every embedded portable document independently.
+pub(crate) async fn verify_embedded(
+    document: &Value,
+    root_did: Option<&str>,
+    resolver: Option<&dyn DidResolver>,
+) -> Result<(), String> {
+    let mut pending = vec![(document, false, None)];
+    let mut verified = 0;
+    while let Some((value, embedded, key_owner)) = pending.pop() {
+        match value {
+            Value::Array(values) => {
+                pending.extend(values.iter().map(|value| (value, true, key_owner)))
+            }
+            Value::Object(members) => {
+                let mut owner = None;
+                for name in ["id", "@id"] {
+                    let Some(id) = members.get(name).and_then(Value::as_str) else {
+                        continue;
+                    };
+                    if let Some((base, fragment)) = id.split_once('#')
+                        && key_owner == Some(base)
+                        && !fragment.is_empty()
+                    {
+                        continue;
+                    }
+                    let Some(uri) = ApUri::parse(id) else {
+                        continue;
+                    };
+                    if embedded {
+                        verified += 1;
+                        if verified > 32 {
+                            return Err("too many embedded portable proofs".into());
+                        }
+                        verify_document(value, uri.did(), resolver, true)
+                            .await
+                            .map_err(|error| format!("embedded proof: {error}"))?;
+                    }
+                    if embedded || root_did == Some(uri.did()) {
+                        owner = Some(id);
+                    }
+                }
+                for (name, child) in members {
+                    if name == "@context" {
+                        continue;
+                    }
+                    let key_owner = matches!(name.as_str(), "publicKey" | "assertionMethod")
+                        .then_some(owner)
+                        .flatten();
+                    pending.push((child, true, key_owner));
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// Verify a portable document: its `id` is an `ap` URI, a proof by the
