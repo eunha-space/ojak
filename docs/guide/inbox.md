@@ -78,36 +78,25 @@ unauthenticated.
     on the builder has ojak do the same, so that an activity carrying both
     is taken on its signature, which is what Mastodon passes on.
 
-A Linked Data Signature covers the RDF a document means rather than the JSON
-it is written in, hashed in its canonical form (URDNA2015), so a document can
-be reworded to read differently to a reader of keys and still verify: `actor`
-mapped to nothing in its `@context` and the real one under `as:actor`, say.
-An activity taken on one is therefore handed on as JSON-LD processing reads
-it, normalised, even under `read_inbox_as_written`, and is refused if that
-reading names another actor or `id` than the copy as written. The
-signature's `creator` is held to `blocked` as a signature's key is.
+A Linked Data signature covers canonical RDF (URDNA2015). Ojak normalizes
+activities accepted on that signature even with `read_inbox_as_written`,
+so applications read the signed graph. It rejects a mismatch in actor or ID
+between the original and normalized documents, and applies the block hook
+to the signature creator. The inbox rejects `@graph`, `@included`, and
+`@reverse` in this verification path. Canonicalization has a work budget
+for blank-node labeling.
 
-A signature can only be checked over the contexts its signer named. By
-default those have to be ones ojak ships. Mastodon fetches any other
-(`JsonLdHelper#load_jsonld_context`), and an application that wants relayed
-activities taken as Mastodon takes them gives the federation a loader with
-`Builder::remote_contexts`. It is asked for each context the activity names,
-or a named context names in turn, that ojak does not ship, and returns the
-document; `ojak::contexts::fetch_cached` fetches one as Mastodon does, asking
-for `application/ld+json` and taking only a `200` of that type up to a
-megabyte through the guarded client, and keeps it in a key-value store for
-30 days. `contexts::Limits` bounds how many one activity may cause to be
-loaded and how long they may take together. Only this check loads contexts,
-for a creator that is not blocked, and the activity is then read over the
-same contexts, so that what it is taken to say is what was signed. *ojak-sig*'s
-`linked_data` makes and checks these signatures, byte for byte as Mastodon
-does. Whichever way a forwarded activity was established, the listener is
-told who passed it on (`Received::forwarder`), which is how an application
-asks Mastodon's question of whether it came through a relay it subscribes
-to, and what it was taken on (`Received::vouched_by`): the HTTP signature of
-its actor's server, its proof, its Linked Data signature, or the copy at its
-origin. An application that passes an activity on asks the second, since
-whoever it passes it to can check only what the activity carries in itself.
+Ojak uses bundled contexts by default. For Mastodon-compatible remote
+context loading, set `Builder::remote_contexts`. `contexts::Limits` bounds
+the number of loads and total time. `contexts::fetch_cached` accepts a 200
+`application/ld+json` response up to 1 MiB through the guarded client and
+caches it for 30 days. Verification and normalization use the same contexts.
+
+`Received::forwarder` identifies the forwarding peer, which lets the
+application check its relay subscriptions. `Received::vouched_by` records
+which verification path succeeded. An application that passes an activity on
+asks the second, since whoever it passes it to can check only what the activity
+carries in itself.
 
 A portable actor, whose identity is a key, is authenticated
 by the proof on its activity alone, checked against its DID; an HTTP

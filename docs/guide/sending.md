@@ -86,10 +86,8 @@ Delivery:
  -  runs at most a configured number of deliveries per remote host at once,
     and optionally shares a limit across deliverers, such as every tenant's
     in one process;
- -  signs with one scheme, and retries once with the other when the first is
-    refused, remembering per host which one worked.  The first scheme is
-    draft-cavage by default, because it is what most of the network
-    verifies;
+ -  starts with draft-cavage by default, tries the other scheme on a 400
+    or 401, and remembers the successful scheme per host;
  -  returns typed errors, so whether a failure is worth retrying is a
     variant, not a substring of a message.
 
