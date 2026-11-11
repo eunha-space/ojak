@@ -80,6 +80,6 @@ ojak = { git = "https://github.com/eunha-space/ojak.git" }
 License
 -------
 
-Ojak is licensed under the [GNU Affero General Public License v3.0][AGPL].
+Ojak is licensed under the [MIT License][MIT].
 
-[AGPL]: https://github.com/eunha-space/ojak/blob/main/LICENSE
+[MIT]: https://github.com/eunha-space/ojak/blob/main/LICENSE

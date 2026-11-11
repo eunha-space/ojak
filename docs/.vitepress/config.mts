@@ -50,7 +50,7 @@ export default defineConfig({
     },
     search: { provider: "local" },
     footer: {
-      message: "Released under the GNU Affero General Public License v3.0.",
+      message: "Released under the MIT License.",
     },
   },
 });

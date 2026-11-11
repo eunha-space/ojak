@@ -49,5 +49,5 @@ HTTPS, or `ojak tunnel` to expose an app already running locally.
 License
 -------
 
-Ojak is licensed under the GNU Affero General Public License v3.0. See
-[*LICENSE*](./LICENSE) for details.
+Ojak is licensed under the MIT License. See [*LICENSE*](./LICENSE) for
+details.
