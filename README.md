@@ -49,5 +49,11 @@ HTTPS, or `ojak tunnel` to expose an app already running locally.
 License
 -------
 
-Ojak is licensed under the MIT License. See [*LICENSE*](./LICENSE) for
-details.
+Ojak is licensed under the [GNU Affero General Public License
+v3.0](./LICENSE), the same license as Mastodon and eunha.
+
+Ojak was released under the MIT License up to commit c1cfe14, and that code,
+contributors' work included, remains available under it; the notice is in
+[*LICENSE-MIT*](./LICENSE-MIT). The Fedify schemas in
+*crates/ojak-vocab/schemas/* and the FEP-ef61 fixtures keep their own MIT
+licenses.

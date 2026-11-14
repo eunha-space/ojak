@@ -50,7 +50,7 @@ export default defineConfig({
     },
     search: { provider: "local" },
     footer: {
-      message: "Released under the MIT License.",
+      message: "Released under the GNU AGPL-3.0.",
     },
   },
 });
