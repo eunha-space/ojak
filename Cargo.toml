@@ -16,7 +16,7 @@ resolver = "3"
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-license = "AGPL-3.0-only"
+license = "MIT"
 
 [workspace.dependencies]
 ojak-jsonld = { path = "crates/ojak-jsonld" }
