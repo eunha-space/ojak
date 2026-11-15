@@ -407,9 +407,11 @@ async fn what_is_not_authenticated_reaches_no_listener() {
 }
 
 // An activity's id may differ from its actor's in scheme and port, as some
-// servers write `http://` ids for `https://` actors, but not in host.
+// servers write `http://` ids for `https://` actors, and even in host, as
+// hackers.pub names its Accept of a QuoteRequest after the request. Mastodon
+// processes both.
 #[tokio::test]
-async fn an_activity_id_is_held_to_its_senders_host() {
+async fn an_activity_id_on_another_host_is_processed() {
     let bob = serve_remote(Remote::default()).await;
     let key_id = format!("{bob}#main-key");
     let federation = federation(|b| b);
@@ -443,9 +445,9 @@ async fn an_activity_id_is_held_to_its_senders_host() {
             post("/ap/users/1/inbox", &key_id, &other_host, &other_host)
         )
         .await,
-        401
+        202
     );
-    assert_eq!(store.seen().len(), 1);
+    assert_eq!(store.seen().len(), 2);
 }
 
 #[tokio::test]
@@ -887,6 +889,11 @@ async fn a_reply_to_our_post_is_forwarded_to_its_authors_followers() {
         .await,
         202
     );
+
+    // Processed, but not forwarded: the id is not its sender's to speak for.
+    let mut foreign = reply(4, &ours, &followers);
+    foreign["id"] = json!("https://elsewhere.test/notes/4/activity");
+    assert_eq!(deliver(&federation, &store, send(foreign)).await, 202);
 
     let forwarded = store.forwarded.lock().unwrap().clone();
     assert_eq!(forwarded.len(), 1, "{forwarded:?}");

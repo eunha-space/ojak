@@ -766,19 +766,18 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         .get("id")
         .and_then(Value::as_str)
         .map(str::to_owned);
-    // The activity's own id is held to the sender's host, not its origin:
-    // Mastodon reads an activity's id only to tell repeats apart, and where it
-    // compares identifiers with an account's it compares hosts
-    // (`non_matching_uri_hosts?`). Some servers write their activities' ids
-    // as `http://` beside `https://` actors.
-    if let Some(id) = &id
-        && !same_authority(id, sender.as_str())
-    {
-        return status(
-            StatusCode::UNAUTHORIZED,
-            &format!("activity {id} is not on the origin of {sender}"),
-        );
-    }
+    // An activity whose id is on another host is still processed, as Mastodon
+    // processes it: Mastodon reads an activity's id only to tell repeats
+    // apart, and holds the actor, not the id, to the signer. hackers.pub
+    // names its Accept of a QuoteRequest after the request, so the Accept's
+    // id is on the requester's server. Such an id is not the sender's to
+    // speak for, though, so the activity is not forwarded under it. The host
+    // is compared rather than the origin, as Mastodon compares identifiers
+    // with an account's (`non_matching_uri_hosts?`): some servers write their
+    // activities' ids as `http://` beside `https://` actors.
+    let forwardable = id
+        .as_deref()
+        .is_some_and(|id| same_authority(id, sender.as_str()));
 
     match tokio::time::timeout(
         Duration::from_secs(5),
@@ -805,7 +804,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
     // Forwarded before anything else is decided, whether or not a listener
     // wants it: the other gateways keep the actor's data too.
     let origin = context.origin().to_string();
-    if let Some(id) = &id {
+    if let Some(id) = id.as_ref().filter(|_| forwardable) {
         if let Some((inbox, gateways)) = gateway {
             let ours = context.origin().clone();
             let others: Vec<Url> = gateways
