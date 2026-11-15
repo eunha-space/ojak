@@ -785,6 +785,16 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
     let forwardable = id
         .as_deref()
         .is_some_and(|id| same_authority(id, sender.as_str()));
+    // A portable actor's key vouches for what is under its own DID and
+    // nothing else; Mastodon has no such actors to compare with.
+    if portable.is_some()
+        && let Some(id) = id.as_deref().filter(|_| !forwardable)
+    {
+        return status(
+            StatusCode::UNAUTHORIZED,
+            &format!("activity {id} is not under {sender}"),
+        );
+    }
 
     match tokio::time::timeout(
         Duration::from_secs(5),
