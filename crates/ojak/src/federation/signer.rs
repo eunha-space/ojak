@@ -287,7 +287,8 @@ async fn authenticate_signed<D: Clone + Send + Sync + 'static>(
         .await
         {
             Ok(signer)
-                if actor.is_none_or(|actor| crate::origin::same_origin(actor, signer.as_str())) =>
+                if actor
+                    .is_none_or(|actor| Url::parse(actor).is_ok_and(|actor| actor == signer)) =>
             {
                 return Ok(signer);
             }

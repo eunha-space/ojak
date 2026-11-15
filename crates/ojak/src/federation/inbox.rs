@@ -73,7 +73,7 @@ pub struct Received<T> {
 /// what the activity carries in itself.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VouchedBy {
-    /// The HTTP signature of a server on its actor's origin.
+    /// The HTTP signature of its actor itself.
     Signature,
     /// Its own FEP-8b32 proof, or for a portable actor, its key.
     Proof,
@@ -653,13 +653,20 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         }
     } else {
         let signed = signer::authenticate(&context, body, &actor).await;
+        // The signer is the actor itself, or it passed the activity on, as
+        // Mastodon takes any other signer, on the actor's server or not, for
+        // one (`ProcessCollectionService#different_actor?`, which then wants
+        // the actor's own Linked Data signature). A server's actor does not
+        // speak for another actor there.
+        let actor_url = Url::parse(&actor).ok();
+        let by_actor = |signer: &Url| actor_url.as_ref() == Some(signer);
         forwarder = signed
             .as_ref()
             .ok()
-            .filter(|signer| !same_origin(&actor, signer.as_str()))
+            .filter(|signer| !by_actor(signer))
             .cloned();
         match signed {
-            Ok(sender) if same_origin(&actor, sender.as_str()) => sender,
+            Ok(sender) if by_actor(&sender) => sender,
             // A forwarded activity's Linked Data signature, when it is to be
             // checked before its proof (`linked_data_before_proof`).
             signed => match if signed.is_ok() && inner.linked_data_first {
@@ -677,7 +684,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
                         vouched_by = VouchedBy::Proof;
                         sender
                     }
-                    // Signed by a server other than the actor's: forwarded, by
+                    // Signed by someone other than the actor: forwarded, by
                     // a relay, a gateway or a server passing on a reply. The
                     // forwarder vouches for nothing of the actor's. The actor's
                     // own Linked Data signature, as Mastodon signs what relays

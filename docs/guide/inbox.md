@@ -77,10 +77,12 @@ unauthenticated.
 6.  The activity's `actor`, and its `id` when it has one, have to be on the
     sender's origin. A server vouches for its own actors, as Mastodon's rule
     has it, and for nobody else's.
-7.  A request signed by a server other than the actor's was forwarded: by a
-    relay, by a gateway ([Portable objects](./portable.md)), or by a server
-    passing a reply on to its followers. Its signature says nothing of the
-    actor, so a proof by the actor is looked for; then a Linked Data
+7.  A request signed by anyone other than the actor itself was forwarded: by
+    a relay, by a gateway ([Portable objects](./portable.md)), or by a server
+    passing a reply on to its followers. Another actor on the actor's own
+    server is no different: Mastodon holds the signer to be the actor
+    (`ProcessCollectionService#different_actor?`). Its signature says nothing
+    of the actor, so a proof by the actor is looked for; then a Linked Data
     Signature (`RsaSignature2017`) by a key the actor publishes, as Mastodon
     signs what relays pass on; and failing both the activity is fetched from
     its `id` and processed as the actor's server serves it, if it is the same

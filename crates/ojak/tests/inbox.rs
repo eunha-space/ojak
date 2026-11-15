@@ -91,11 +91,12 @@ struct Remote {
 
 async fn bob(
     State(remote): State<Remote>,
+    axum::extract::Path(name): axum::extract::Path<String>,
     headers: http::HeaderMap,
 ) -> ([(&'static str, &'static str); 1], String) {
     remote.fetches.fetch_add(1, Ordering::SeqCst);
     let host = headers["host"].to_str().unwrap();
-    let id = format!("http://{host}/users/bob");
+    let id = format!("http://{host}/users/{name}");
     let mut actor = json!({
         "@context": [
             "https://www.w3.org/ns/activitystreams",
@@ -125,7 +126,7 @@ async fn serve_remote(remote: Remote) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let app = Router::new()
-        .route("/users/bob", routing::get(bob))
+        .route("/users/{name}", routing::get(bob))
         .with_state(remote);
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     format!("http://{address}/users/bob")
@@ -1446,4 +1447,52 @@ async fn a_relayed_activity_is_checked_over_a_context_the_application_loads() {
     let request = post("/ap/inbox", &relay_key, &elsewhere, &elsewhere);
     assert_eq!(deliver(&with, &store, request).await, 202);
     assert_eq!(store.seen().len(), 1);
+}
+
+/// Signed by another actor on its actor's own server, an activity is not
+/// taken on that signature: Mastodon holds the signer to be the actor
+/// (`ProcessCollectionService#different_actor?`) and otherwise wants the
+/// actor's Linked Data signature, with the signer as the one that passed it
+/// on.
+#[tokio::test]
+async fn an_activity_signed_by_another_actor_on_its_server_needs_its_actors_signature() {
+    let author = serve_remote(Remote::default()).await;
+    let carol = author.replace("/users/bob", "/users/carol");
+    let carol_key = format!("{carol}#main-key");
+    let federation = federation(|b| b);
+    let store = App::default();
+    let by_carol = |activity: &Value| post("/ap/inbox", &carol_key, activity, activity);
+
+    // Bob's Follow, signed by carol alone: dropped, as a forwarded activity
+    // nobody vouches for is.
+    let carols = follow(&author, 1);
+    assert_eq!(deliver(&federation, &store, by_carol(&carols)).await, 202);
+    assert!(store.seen().is_empty(), "{:?}", store.seen());
+
+    // Bob's Create, signed by bob in Linked Data and sent by carol: taken,
+    // from bob, as passed on by carol.
+    let create = signed_create(&author, 1);
+    assert_eq!(deliver(&federation, &store, by_carol(&create)).await, 202);
+    let seen = store.seen();
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    assert_eq!(seen[0].sender, author);
+    assert_eq!(seen[0].forwarder.as_deref(), Some(carol.as_str()));
+    assert_eq!(seen[0].vouched_by, ojak::federation::VouchedBy::LinkedData);
+
+    // Signed by bob himself: taken on his signature.
+    let bob_key = format!("{author}#main-key");
+    let bobs = follow(&author, 2);
+    assert_eq!(
+        deliver(
+            &federation,
+            &store,
+            post("/ap/inbox", &bob_key, &bobs, &bobs)
+        )
+        .await,
+        202
+    );
+    let seen = store.seen();
+    assert_eq!(seen.len(), 2, "{seen:?}");
+    assert_eq!(seen[1].forwarder, None);
+    assert_eq!(seen[1].vouched_by, ojak::federation::VouchedBy::Signature);
 }
