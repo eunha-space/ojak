@@ -677,6 +677,46 @@ async fn run_until_returns_when_stopped_and_not_before_the_batch_is_done() {
     assert!(deliverer.queue().records()[0].complete);
 }
 
+/// What another process queued is taken up when the loop is woken, not when
+/// its idle poll next comes round.
+#[tokio::test]
+async fn wake_takes_up_what_another_process_queued() {
+    use ojak::queue::Queue as _;
+
+    let config = DelivererConfig {
+        idle_poll: Duration::from_secs(3600),
+        ..fast()
+    };
+    let deliverer = Deliverer::new(MemoryQueue::new(), Keys, client(), config);
+
+    let stop = Arc::new(tokio::sync::Notify::new());
+    let stopping = stop.clone();
+    let run = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(
+            deliverer.run_until(async move { stopping.notified().await }),
+            async {
+                // Let the loop find the queue empty and go to sleep.
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                // Straight into the table, as another process would put it,
+                // without this deliverer hearing of it.
+                deliverer
+                    .queue()
+                    .enqueue("delivery", vec![json!({"not": "a delivery"})])
+                    .await
+                    .unwrap();
+                deliverer.wake();
+                while !deliverer.queue().records()[0].failed {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                stop.notify_one();
+            }
+        )
+    })
+    .await;
+
+    assert!(run.is_ok(), "the woken loop took the job up");
+}
+
 /// A batch finishes by its deadline: a server that keeps failing is given
 /// up on rather than retried for as long as the policy allows, and what is
 /// claimed after the deadline is not sent at all.

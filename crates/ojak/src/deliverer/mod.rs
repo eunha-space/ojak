@@ -875,6 +875,14 @@ impl<Q: Queue, K: SenderKeys> Deliverer<Q, K> {
         &self.queue
     }
 
+    /// Tell the loop to look at the queue now: for deliveries another process
+    /// queued, which [`DelivererConfig::idle_poll`] would otherwise find only
+    /// when it next comes round. Sending through this deliverer wakes it
+    /// already.
+    pub fn wake(&self) {
+        self.wake.notify_one();
+    }
+
     /// Queue `activity`, signed by `sender`, for each of `inboxes`, once each.
     ///
     /// # Errors

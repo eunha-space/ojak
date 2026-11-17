@@ -161,7 +161,11 @@ schema and can be exported or moved one tenant at a time.
  -  *Waking.*  A deliverer with nothing due sleeps for up to its
     `idle_poll`, shortened at random by up to a quarter.  Without that,
     hundreds of idle tenants' loops started together would wake together,
-    and query the database together.
+    and query the database together.  The poll is only for deliveries
+    another process queued, which this deliverer did not hear of.  If your
+    processes can tell each other, over Redis pub/sub for instance, call
+    `Deliverer::wake` when one does, and make `idle_poll` long: an idle
+    tenant then touches its database not at all.
 
 
 Ojak does not spawn tasks
