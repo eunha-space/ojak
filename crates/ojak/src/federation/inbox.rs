@@ -953,6 +953,12 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
         }
         Err(error) => {
             context.report(&error);
+            if error.is_permanent() {
+                // Sending it again would fail the same way: accepted, and
+                // seen, so that a retry is not processed either.
+                report.disposition = disposition;
+                return accepted();
+            }
             // Not processed, so not seen: the sender's retry is processed.
             if let (Some(seen), Some(settings)) = (seen, &inner.signed_fetch) {
                 let _ = settings.kv(context.data()).delete(seen).await;
@@ -1159,7 +1165,12 @@ impl<D: Clone + Send + Sync + 'static> InboxWorker<D> {
             Ok(()) => self.queue.complete(&job.id).await,
             Err(error) => {
                 let message = error.to_string();
-                match self.config.retry.delay(job.attempts + 1) {
+                let delay = if error.is_permanent() {
+                    None
+                } else {
+                    self.config.retry.delay(job.attempts + 1)
+                };
+                match delay {
                     Some(delay) => self.queue.retry(&job.id, delay, &message).await,
                     None => self.queue.fail(&job.id, &message).await,
                 }
@@ -1168,19 +1179,25 @@ impl<D: Clone + Send + Sync + 'static> InboxWorker<D> {
     }
 
     async fn run(&self, payload: &Value) -> Result<(), Error> {
-        let document = payload.get("document").cloned().ok_or("no document")?;
+        let malformed = |what: &str| Error::msg(format!("queued without {what}")).permanent();
+        let document = payload
+            .get("document")
+            .cloned()
+            .ok_or_else(|| malformed("a document"))?;
         let sender = Url::parse(
             payload
                 .get("sender")
                 .and_then(Value::as_str)
-                .ok_or("no sender")?,
-        )?;
+                .ok_or_else(|| malformed("a sender"))?,
+        )
+        .map_err(|error| Error::from(error).permanent())?;
         let origin = Url::parse(
             payload
                 .get("origin")
                 .and_then(Value::as_str)
-                .ok_or("no origin")?,
-        )?;
+                .ok_or_else(|| malformed("an origin"))?,
+        )
+        .map_err(|error| Error::from(error).permanent())?;
         let recipient = payload.get("recipient").and_then(|r| {
             Some(ActorRef::new(
                 r.get("kind")?.as_str()?,

@@ -15,7 +15,7 @@ use ojak::kv::MemoryKvStore;
 use ojak::queue::{MemoryQueue, RetryPolicy, SharedQueue, shared};
 use ojak::sig::Scheme;
 use ojak::sig::signature::{PrivateKey, sign_request_with_key};
-use ojak_vocab::generated::{Create, Delete, Follow};
+use ojak_vocab::generated::{Create, Delete, Follow, Like};
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -44,6 +44,8 @@ struct Store {
     queue: Option<SharedQueue>,
     /// Listener calls to fail before succeeding.
     failures: AtomicUsize,
+    /// Likes refused, as a refusal no retry mends.
+    refused: AtomicUsize,
     forwarded: Mutex<Vec<Forward>>,
     /// The key-value store `kv_for` picks for this one.
     kv: Arc<MemoryKvStore>,
@@ -673,6 +675,88 @@ async fn a_failing_listener_is_retried() {
     let seen = store.seen();
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].sender, bob);
+}
+
+/// An application's own error, which is not a `std::error::Error`.
+#[derive(Debug)]
+struct Refusal;
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("refused")
+    }
+}
+
+impl From<Refusal> for ojak::Error {
+    fn from(refusal: Refusal) -> Self {
+        Self::msg(refusal).permanent()
+    }
+}
+
+/// A listener registered as it is written: no closure, no type arguments.
+async fn refuse_likes(ctx: Context<App>, _: Received<Like>) -> Result<(), Refusal> {
+    ctx.data().refused.fetch_add(1, Ordering::SeqCst);
+    Err(Refusal)
+}
+
+fn like(bob: &str, n: u32) -> Value {
+    json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{bob}/likes/{n}"),
+        "type": "Like",
+        "actor": bob,
+        "object": format!("https://{HOST}/ap/users/1"),
+    })
+}
+
+#[tokio::test]
+async fn a_permanent_failure_is_not_retried() {
+    let bob = serve_remote(Remote::default()).await;
+    let key_id = format!("{bob}#main-key");
+    let federation = federation(|b| b.on(refuse_likes));
+
+    // Inline: accepted, so that the sender does not send it again, and seen,
+    // so that if it does, it is not processed again.
+    let store = App::default();
+    let activity = like(&bob, 1);
+    for _ in 0..2 {
+        assert_eq!(
+            deliver(
+                &federation,
+                &store,
+                post("/ap/inbox", &key_id, &activity, &activity)
+            )
+            .await,
+            202
+        );
+    }
+    assert_eq!(store.refused.load(Ordering::SeqCst), 1);
+
+    // Queued: failed at once rather than retried.
+    let queue = shared(MemoryQueue::new());
+    let store = Arc::new(Store {
+        queue: Some(queue.clone()),
+        ..Store::default()
+    });
+    let activity = like(&bob, 2);
+    assert_eq!(
+        deliver(
+            &federation,
+            &store,
+            post("/ap/inbox", &key_id, &activity, &activity)
+        )
+        .await,
+        202
+    );
+    let worker =
+        InboxWorker::new(federation.clone(), store.clone(), queue).with_config(InboxWorkerConfig {
+            retry: RetryPolicy::exponential(Duration::from_millis(1), Duration::from_millis(1), 3),
+            ..InboxWorkerConfig::default()
+        });
+    assert_eq!(worker.run_once().await.unwrap(), 1);
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    assert_eq!(worker.run_once().await.unwrap(), 0, "nothing left to retry");
+    assert_eq!(store.refused.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

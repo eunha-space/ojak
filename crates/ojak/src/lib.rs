@@ -18,6 +18,8 @@ extern crate alloc;
 pub mod client;
 pub mod contexts;
 pub mod deliverer;
+mod error;
+pub use error::Error;
 pub mod federation;
 pub mod fetch;
 pub mod kv;
