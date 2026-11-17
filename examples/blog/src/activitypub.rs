@@ -7,8 +7,8 @@
 use crate::store::Post;
 use crate::{App, Config, inbox, web};
 use ojak::federation::{
-    ActorRef, BuildError, Collection, Context, Error, Federation, First, Found, NodeInfo, Page,
-    PublicKey, Software, Values, with_keys,
+    ActorKind, ActorRef, BuildError, Collection, CollectionKind, Context, Error, Federation, First,
+    Found, NodeInfo, ObjectKind, Page, PublicKey, Software, Values, with_keys,
 };
 use ojak::fetch::Fetcher;
 use ojak::kv::MemoryKvStore;
@@ -17,14 +17,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// The kinds everything is registered under, and their templates.
-pub const AUTHOR: &str = "author";
+pub const AUTHOR: ActorKind = ActorKind::new("author");
 const AUTHOR_PATH: &str = "/users/{username}";
-pub const POST: &str = "post";
+pub const POST: ObjectKind = ObjectKind::new("post");
 const POST_PATH: &str = "/posts/{id}";
-pub const CREATE: &str = "create";
+pub const CREATE: ObjectKind = ObjectKind::new("create");
 const CREATE_PATH: &str = "/posts/{id}/create";
-pub const OUTBOX: &str = "outbox";
-pub const FOLLOWERS: &str = "followers";
+pub const OUTBOX: CollectionKind = CollectionKind::new("outbox");
+pub const FOLLOWERS: CollectionKind = CollectionKind::new("followers");
 
 const PUBLIC: &str = "https://www.w3.org/ns/activitystreams#Public";
 /// How many posts one page of the outbox holds.
@@ -44,7 +44,7 @@ pub fn federation(config: &Config, fetcher: Arc<Fetcher>) -> Result<Federation<A
         .actor(AUTHOR, AUTHOR_PATH, author)
         .key_pairs(|ctx: Context<App>, actor: ActorRef| async move {
             Ok::<_, Error>(vec![PublicKey::Rsa {
-                id: ctx.key_id(&actor.kind, &actor.identifier)?.to_string(),
+                id: ctx.key_id(actor.kind, &actor.identifier).to_string(),
                 pem: ctx.data().config.public_key_pem.clone(),
             }])
         })
@@ -104,17 +104,17 @@ async fn author(ctx: Context<App>, username: String) -> Result<Found<Value>, Err
     if username != config.username {
         return Ok(Found::NotFound);
     }
-    let id = ctx.actor_uri(AUTHOR, &username)?;
+    let id = ctx.actor_uri(AUTHOR, &username);
     let mut actor = json!({
         "id": id.as_str(),
         "type": "Person",
         "preferredUsername": username,
         "name": config.title,
         "url": ctx.origin().as_str(),
-        "inbox": ctx.inbox_uri(AUTHOR, &username)?.as_str(),
-        "outbox": ctx.collection_uri(OUTBOX, &username)?.as_str(),
-        "followers": ctx.collection_uri(FOLLOWERS, &username)?.as_str(),
-        "endpoints": {"sharedInbox": ctx.shared_inbox_uri()?.as_str()},
+        "inbox": ctx.inbox_uri(AUTHOR, &username).as_str(),
+        "outbox": ctx.collection_uri(OUTBOX, &username).as_str(),
+        "followers": ctx.collection_uri(FOLLOWERS, &username).as_str(),
+        "endpoints": {"sharedInbox": ctx.shared_inbox_uri().as_str()},
         "manuallyApprovesFollowers": false,
         "discoverable": true,
     });
@@ -148,17 +148,17 @@ fn found(
 /// When a URI cannot be built.
 pub fn article(ctx: &Context<App>, post: &Post) -> Result<Value, Error> {
     let username = &ctx.data().config.username;
-    let id = ctx.object_uri(POST, &[("id", &post.id.to_string())])?;
+    let id = ctx.object_uri(POST, &[("id", &post.id.to_string())]);
     Ok(json!({
         "id": id.as_str(),
         "type": "Article",
-        "attributedTo": ctx.actor_uri(AUTHOR, username)?.as_str(),
+        "attributedTo": ctx.actor_uri(AUTHOR, username).as_str(),
         "name": post.title,
         "content": web::content(&post.body)?,
         "url": id.as_str(),
         "published": post.published.to_rfc3339(),
         "to": [PUBLIC],
-        "cc": [ctx.collection_uri(FOLLOWERS, username)?.as_str()],
+        "cc": [ctx.collection_uri(FOLLOWERS, username).as_str()],
     }))
 }
 
@@ -173,9 +173,9 @@ pub fn create(ctx: &Context<App>, post: &Post) -> Result<Value, Error> {
     let article = article(ctx, post)?;
     Ok(json!({
         "@context": "https://www.w3.org/ns/activitystreams",
-        "id": ctx.object_uri(CREATE, &[("id", &post.id.to_string())])?.as_str(),
+        "id": ctx.object_uri(CREATE, &[("id", &post.id.to_string())]).as_str(),
         "type": "Create",
-        "actor": ctx.actor_uri(AUTHOR, username)?.as_str(),
+        "actor": ctx.actor_uri(AUTHOR, username).as_str(),
         "published": article["published"],
         "to": article["to"],
         "cc": article["cc"],

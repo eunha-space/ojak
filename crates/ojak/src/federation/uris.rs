@@ -19,21 +19,23 @@ impl Uris {
         }
     }
 
-    pub(super) fn template(&self, kind: &str, noun: &str) -> Result<&Template, UriError> {
+    pub(super) fn template(&self, kind: &'static str, noun: &str) -> &Template {
         self.templates
             .routes
             .iter()
-            .find_map(|(k, n, template)| (k == kind && *n == noun).then_some(template))
-            .ok_or_else(|| UriError::UnknownKind(kind.to_owned()))
+            .find_map(|(k, n, template)| (*k == kind && *n == noun).then_some(template))
+            .unwrap_or_else(|| panic!("no {noun} of kind {kind:?} is registered"))
     }
 
-    pub(super) fn uri(&self, template: &Template, values: &Values) -> Result<Url, UriError> {
-        let path = template.expand(values).map_err(UriError::Template)?;
+    pub(super) fn uri(&self, template: &Template, values: &Values) -> Url {
+        let path = template
+            .expand(values)
+            .unwrap_or_else(|error| panic!("{error}"));
         let mut url = self.origin.clone();
         url.set_path(&path);
         url.set_query(None);
         url.set_fragment(None);
-        Ok(url)
+        url
     }
 
     pub(super) fn single(template: &Template, identifier: &str) -> Values {
@@ -45,12 +47,14 @@ impl Uris {
 
     /// The URI of the actor of `kind` with `identifier`.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// When no actor dispatcher is of `kind`, or `identifier` is empty for a
-    /// template that needs one.
-    pub fn actor_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
-        let template = self.template(kind, "actor")?;
+    /// When no actor of `kind` is registered, or `identifier` is empty and
+    /// its template needs one: both mistakes in the application, which a
+    /// test of the code that builds the URI finds.
+    #[must_use]
+    pub fn actor_uri(&self, kind: ActorKind, identifier: &str) -> Url {
+        let template = self.template(kind.name(), ActorKind::NOUN);
         self.uri(template, &Self::single(template, identifier))
     }
 
@@ -58,63 +62,67 @@ impl Uris {
     /// its IRI with the fragment `main-key`, as Mastodon names it, and as
     /// the actor document should publish it.
     ///
-    /// # Errors
+    /// # Panics
     ///
     /// As [`Uris::actor_uri`].
-    pub fn key_id(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
-        let mut uri = self.actor_uri(kind, identifier)?;
+    #[must_use]
+    pub fn key_id(&self, kind: ActorKind, identifier: &str) -> Url {
+        let mut uri = self.actor_uri(kind, identifier);
         uri.set_fragment(Some(KEY_FRAGMENT));
-        Ok(uri)
+        uri
     }
 
     /// The URI of the object of `kind` with `values`.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// When no object dispatcher is of `kind`, or `values` do not fill its
-    /// template.
-    pub fn object_uri(&self, kind: &str, values: &[(&str, &str)]) -> Result<Url, UriError> {
-        let template = self.template(kind, "object")?;
+    /// When no object of `kind` is registered, or `values` leave one of its
+    /// template's expressions empty.
+    #[must_use]
+    pub fn object_uri(&self, kind: ObjectKind, values: &[(&str, &str)]) -> Url {
+        let template = self.template(kind.name(), ObjectKind::NOUN);
         self.uri(template, &values.iter().copied().collect())
     }
 
     /// The URI of the collection `kind` of what `identifier` names.
     ///
-    /// # Errors
+    /// # Panics
     ///
     /// As [`Uris::actor_uri`], for collections.
-    pub fn collection_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
-        let template = self.template(kind, "collection")?;
+    #[must_use]
+    pub fn collection_uri(&self, kind: CollectionKind, identifier: &str) -> Url {
+        let template = self.template(kind.name(), CollectionKind::NOUN);
         self.uri(template, &Self::single(template, identifier))
     }
 
     /// The URI of the inbox of the actor of `kind` with `identifier`.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// When no inbox is registered for `kind`, or `identifier` does not fill
-    /// its template.
-    pub fn inbox_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
+    /// When no inbox is registered for `kind`, or as [`Uris::actor_uri`].
+    #[must_use]
+    pub fn inbox_uri(&self, kind: ActorKind, identifier: &str) -> Url {
         let template = self
             .templates
             .inboxes
             .iter()
-            .find_map(|(inbox, template)| (inbox == kind).then_some(template))
-            .ok_or_else(|| UriError::UnknownKind(kind.to_owned()))?;
+            .find_map(|(inbox, template)| (*inbox == kind).then_some(template))
+            .unwrap_or_else(|| panic!("no inbox for {kind:?} is registered"));
         self.uri(template, &Self::single(template, identifier))
     }
 
     /// The URI of the shared inbox.
     ///
-    /// # Errors
+    /// # Panics
     ///
     /// When no shared inbox is registered.
-    pub fn shared_inbox_uri(&self) -> Result<Url, UriError> {
+    #[must_use]
+    pub fn shared_inbox_uri(&self) -> Url {
         let template = self
             .templates
             .shared_inbox
             .as_ref()
-            .ok_or_else(|| UriError::UnknownKind("shared inbox".to_owned()))?;
+            .expect("no shared inbox is registered");
         self.uri(template, &Values::new())
     }
 }

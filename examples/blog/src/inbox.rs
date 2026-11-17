@@ -18,7 +18,7 @@ use url::Url;
 /// Someone follows the blog: note where to deliver to them, and accept.
 pub async fn follow(ctx: Context<App>, follow: Received<Follow>) -> Result<(), Error> {
     let blog = ctx.data();
-    let author = ctx.actor_uri(AUTHOR, &blog.config.username)?;
+    let author = ctx.actor_uri(AUTHOR, &blog.config.username);
     let names_author = |object: &AnyObject| {
         object
             .id()

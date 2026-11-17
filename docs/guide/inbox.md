@@ -154,12 +154,12 @@ Listeners are typed
 -------------------
 
 ~~~~ rust
-.inbox("person", "/ap/users/{user_id}/inbox")
-.inbox("group", "/ap/communities/{community_id}/inbox")
+.inbox(PERSON, "/ap/users/{user_id}/inbox")
+.inbox(GROUP, "/ap/communities/{community_id}/inbox")
 .shared_inbox("/ap/inbox")
-.on::<Follow, _, _, _>(on_follow)
-.on::<Create, _, _, _>(on_create)
-.on(on_undo) // when on_undo's type names Received<Undo>
+.on(on_follow) // async fn on_follow(ctx: Context<App>, follow: Received<Follow>)
+.on(on_create)
+.on::<Undo, _, _, _>(|ctx, undo| async move { … }) // a closure names its type
 ~~~~
 
 A listener is an async function of the context and a `Received<T>`:
@@ -208,6 +208,11 @@ The queue is the application's, per request, so an application whose tenants
 each have their own database can keep one queue per tenant; `None` runs the
 listener inside the request, where a listener that fails is answered 500, so
 the sender retries. A queue that refuses the activity is a 500 too.
+
+A listener whose error is permanent (`ojak::Error::permanent`) is not
+retried: inside the request the activity is answered 202 and stays seen, so
+that the sender's retry is not processed either, and in the worker its job
+fails at once.
 
 An activity processed once is not processed again: its `id` goes into the
 key-value store, with a digest of the activity as it arrived, under the

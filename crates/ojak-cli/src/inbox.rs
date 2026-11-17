@@ -7,7 +7,10 @@ use axum::http::Method;
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use ojak::client::{Client, ClientConfig};
-use ojak::federation::{ActorRef, Collection, Context, Error, Federation, Found, Page, PublicKey};
+use ojak::federation::{
+    ActorKind, ActorRef, Collection, CollectionKind, Context, Error, Federation, Found, Page,
+    PublicKey,
+};
 use ojak::fetch::Fetcher;
 use ojak::kv::MemoryKvStore;
 use ojak::sig::{PrivateKey, Scheme, SenderKey, signature::generate_rsa_keypair};
@@ -18,7 +21,8 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use url::Url;
 
-const KIND: &str = "actor";
+const KIND: ActorKind = ActorKind::new("actor");
+const OUTBOX_KIND: CollectionKind = CollectionKind::new("outbox");
 const USERNAME: &str = "inbox";
 const ACTOR: &str = "/actor";
 const INBOX: &str = "/inbox";
@@ -126,7 +130,7 @@ fn router(
                 }])
             })
             .collection(
-                "outbox",
+                ojak::federation::CollectionKind::new("outbox"),
                 OUTBOX,
                 Collection::new(|_: Context<Data>, _, _| async {
                     Ok::<_, Error>(Some(Page::default()))
@@ -176,14 +180,14 @@ fn router(
 }
 
 async fn actor(ctx: Context<Data>, _: String) -> Result<Found<Value>, Error> {
-    let id = ctx.actor_uri(KIND, "")?;
+    let id = ctx.actor_uri(KIND, "");
     let mut document = json!({
         "id": id.as_str(),
         "type": "Person",
         "preferredUsername": USERNAME,
         "name": "Ojak test inbox",
-        "inbox": ctx.inbox_uri(KIND, "")?.as_str(),
-        "outbox": ctx.collection_uri("outbox", "")?.as_str(),
+        "inbox": ctx.inbox_uri(KIND, "").as_str(),
+        "outbox": ctx.collection_uri(OUTBOX_KIND, "").as_str(),
         "manuallyApprovesFollowers": true,
     });
     let keys = ctx.actor_keys(&ActorRef::new(KIND, "")).await?;

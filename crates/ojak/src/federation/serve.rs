@@ -79,7 +79,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
         self.inner.inboxes.iter().find_map(|(kind, template)| {
             let values = template.matches(path)?;
             Some(Some(ActorRef::new(
-                kind.clone(),
+                *kind,
                 values.single().unwrap_or_default(),
             )))
         })
@@ -368,7 +368,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
                 // A Tombstone names the object, and an alias is not its name.
                 let url = if entry.alias {
                     let values: Vec<(&str, &str)> = values.iter().collect();
-                    context.object_uri(&entry.kind, &values).unwrap_or(url)
+                    context.object_uri(ObjectKind::new(entry.kind), &values)
                 } else {
                     url
                 };
@@ -377,7 +377,7 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             Dispatcher::Collection(collection) => {
                 let identifier = values.single().unwrap_or_default().to_owned();
                 collection
-                    .serve(context, &entry.kind, &identifier, query)
+                    .serve(context, CollectionKind::new(entry.kind), &identifier, query)
                     .await
             }
         }

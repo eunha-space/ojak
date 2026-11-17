@@ -225,7 +225,10 @@ fn federation(alice: &Ed25519Signer) -> Federation<App> {
             async move {
                 Ok::<_, String>(hosted.then(|| {
                     GatewayInbox {
-                        recipient: ActorRef::new("person", "alice"),
+                        recipient: ActorRef::new(
+                            ojak::federation::ActorKind::new("person"),
+                            "alice",
+                        ),
                         gateways: ALICE_GATEWAYS
                             .iter()
                             .map(|g| Url::parse(g).unwrap())
@@ -297,7 +300,13 @@ async fn a_portable_actor_is_vouched_for_by_its_key_alone() {
     assert_eq!(seen.len(), 2);
     let sender = ApUri::parse(&seen[0].0).unwrap();
     assert_eq!(sender.canonical(), format!("ap://{}/actor", bob.did()));
-    assert_eq!(seen[0].1, Some(ActorRef::new("person", "alice")));
+    assert_eq!(
+        seen[0].1,
+        Some(ActorRef::new(
+            ojak::federation::ActorKind::new("person"),
+            "alice"
+        ))
+    );
     assert_eq!(seen[1].1, None);
 
     // Another key does not speak for bob, and no proof is no sender, a

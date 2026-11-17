@@ -161,12 +161,12 @@ async fn publish_and_deliver(
     let post = blog.store().publish(title, body);
     let ctx = blog.context();
     let create = activitypub::create(&ctx, &post)?;
-    let author = ctx.actor_uri(AUTHOR, &blog.config.username)?;
+    let author = ctx.actor_uri(AUTHOR, &blog.config.username);
     let inboxes = blog.store().inboxes();
     blog.deliverer
         .send(author.as_str(), &create, inboxes)
         .await?;
-    Ok(ctx.object_uri(activitypub::POST, &[("id", &post.id.to_string())])?)
+    Ok(ctx.object_uri(activitypub::POST, &[("id", &post.id.to_string())]))
 }
 // #endregion publish
 

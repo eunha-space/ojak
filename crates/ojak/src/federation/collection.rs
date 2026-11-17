@@ -10,7 +10,7 @@
 //! of the application's own, is a document the application builds, as a
 //! [`CollectionDocument`], and serves as an object.
 
-use super::{BoxFuture, Context, Error, activity, boxed, empty};
+use super::{BoxFuture, CollectionKind, Context, Error, activity, boxed, empty};
 use http::StatusCode;
 use serde_json::Value;
 use std::future::Future;
@@ -262,7 +262,7 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
     pub(super) async fn serve(
         &self,
         context: &Context<D>,
-        kind: &str,
+        kind: CollectionKind,
         identifier: &str,
         query: Option<&str>,
     ) -> Result<http::Response<Vec<u8>>, Error> {
@@ -272,7 +272,7 @@ impl<D: Clone + Send + Sync + 'static> Collection<D> {
         };
         let uri = match own {
             Some(uri) => uri,
-            None => context.collection_uri(kind, identifier)?,
+            None => context.collection_uri(kind, identifier),
         };
         let cursor = match &self.query {
             Some((_, from_query)) => from_query(query.unwrap_or_default()),

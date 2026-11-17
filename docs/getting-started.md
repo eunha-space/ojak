@@ -68,7 +68,7 @@ use axum::Router;
 use ojak::client::{Client, ClientConfig};
 use ojak::deliverer::{Deliverer, DelivererConfig};
 use ojak::federation::{
-    ActorRef, Context, Error, Federation, Found, PublicKey, Received, with_keys,
+    ActorKind, ActorRef, Context, Error, Federation, Found, PublicKey, Received, with_keys,
 };
 use ojak::fetch::Fetcher;
 use ojak::kv::MemoryKvStore;
@@ -79,6 +79,9 @@ use serde_json::{Value, json};
 
 const ORIGIN: &str = "https://example.com";
 const ALICE: &str = "https://example.com/users/alice";
+
+/// The one kind of actor this server has.
+const PERSON: ActorKind = ActorKind::new("person");
 
 #[derive(Clone)]
 struct App {
@@ -106,14 +109,14 @@ async fn alice(ctx: Context<App>, username: String) -> Result<Found<Value>, Erro
     if username != "alice" {
         return Ok(Found::NotFound);
     }
-    let id = ctx.actor_uri("person", &username)?;
+    let id = ctx.actor_uri(PERSON, &username);
     let mut actor = json!({
         "id": id.as_str(),
         "type": "Person",
         "preferredUsername": "alice",
-        "inbox": ctx.inbox_uri("person", &username)?.as_str(),
+        "inbox": ctx.inbox_uri(PERSON, &username).as_str(),
     });
-    let keys = ctx.actor_keys(&ActorRef::new("person", username)).await?;
+    let keys = ctx.actor_keys(&ActorRef::new(PERSON, username)).await?;
     with_keys(&mut actor, &keys);
     Ok(Found::Found(actor))
 }
@@ -183,17 +186,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let federation = Federation::builder()
         .origin(ORIGIN.parse()?)
-        .actor("person", "/users/{username}", alice)
+        .actor(PERSON, "/users/{username}", alice)
         .key_pairs(|ctx: Context<App>, actor: ActorRef| async move {
             Ok::<_, Error>(vec![PublicKey::Rsa {
-                id: ctx.key_id(&actor.kind, &actor.identifier)?.to_string(),
+                id: ctx.key_id(actor.kind, &actor.identifier).to_string(),
                 pem: ctx.data().public_pem.clone(),
             }])
         })
         .handle(|_, username: String| async move {
-            Ok::<_, Error>((username == "alice").then(|| ActorRef::new("person", username)))
+            Ok::<_, Error>((username == "alice").then(|| ActorRef::new(PERSON, username)))
         })
-        .inbox("person", "/users/{username}/inbox")
+        .inbox(PERSON, "/users/{username}/inbox")
         .signed_fetch(fetcher, MemoryKvStore::new(), Duration::from_secs(3600), |ctx: Context<App>| async move {
             Ok::<_, Error>(Some(ctx.data().key.clone()))
         })

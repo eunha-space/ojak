@@ -75,22 +75,32 @@ your callbacks need, typically a database pool, and every callback receives a
 functions rather than methods on traits you implement.
 
 ~~~~ rust
+const PERSON: ActorKind = ActorKind::new("person");
+const GROUP: ActorKind = ActorKind::new("group");
+const NOTE: ObjectKind = ObjectKind::new("note");
+const FOLLOWERS: CollectionKind = CollectionKind::new("followers");
+
 let federation = Federation::builder()
     .origin(Url::parse("https://example.com")?)
-    .actor("person", "/ap/users/{user_id}", load_person)
-    .actor("group", "/ap/communities/{community_id}", load_group)
+    .actor(PERSON, "/ap/users/{user_id}", load_person)
+    .actor(GROUP, "/ap/communities/{community_id}", load_group)
     .key_pairs(load_key_pairs)
-    .object("note", "/ap/posts/{post_id}", load_note)
-    .collection("followers", "/ap/users/{user_id}/followers", Collection::new(followers_page))
+    .object(NOTE, "/ap/posts/{post_id}", load_note)
+    .collection(FOLLOWERS, "/ap/users/{user_id}/followers", Collection::new(followers_page))
     .signed_fetch(fetcher, PostgresKvStore::new(pool.clone()), key_ttl, instance_key)
-    .inbox("person", "/ap/users/{user_id}/inbox")
+    .inbox(PERSON, "/ap/users/{user_id}/inbox")
     .shared_inbox("/ap/inbox")
     .inbox_queue(|state: &AppState| Some(state.inbox_queue.clone()))
-    .on::<Follow, _, _, _>(on_follow)
-    .on::<Create, _, _, _>(on_create)
-    .on::<Like, _, _, _>(on_like)
+    .on(on_follow)
+    .on(on_create)
+    .on(on_like)
     .build()?;
 ~~~~
+
+A listener's activity type comes from its signature,
+`async fn on_follow(ctx: Context<AppState>, follow: Received<Follow>)`, and it
+may fail with its own error type: anything that converts into `ojak::Error`
+(see “Errors are the application's” below).
 
 The key-value store comes with the signed-fetch settings, which the inbox
 needs, and the inbox's queue comes from your data.  Sending is separate: a
@@ -117,14 +127,21 @@ template such as `/ap/users/{user_id}`.  Ojak routes requests with it and
 builds URIs with it:
 
 ~~~~ rust
-ctx.actor_uri("person", &user_id)?
-ctx.object_uri("note", &[("post_id", &id)])?
-ctx.collection_uri("followers", &user_id)?
-ctx.inbox_uri("person", &user_id)?
-ctx.shared_inbox_uri()?
-ctx.parse_object("note", &iri)  // the values, if it is one of our notes
-ctx.parse_actor("person", &iri) // the identifier, if it is one of our people
+ctx.actor_uri(PERSON, &user_id)
+ctx.object_uri(NOTE, &[("post_id", &id)])
+ctx.collection_uri(FOLLOWERS, &user_id)
+ctx.inbox_uri(PERSON, &user_id)
+ctx.shared_inbox_uri()
+ctx.parse_object(NOTE, &iri)  // the values, if it is one of our notes
+ctx.parse_actor(PERSON, &iri) // the identifier, if it is one of our people
 ~~~~
+
+A kind is a constant of one of three types, `ActorKind`, `ObjectKind` and
+`CollectionKind`, so a misspelt kind does not compile and an actor kind
+cannot be passed where a collection kind is meant.  Building a URI cannot
+fail, and returns a `Url`.  It panics instead for what is a mistake in the
+application and not in what it is handling: a kind that was never
+registered, or an empty identifier where the template needs one.
 
 `parse_object` is what an inbox listener uses to recognise a local post in
 `inReplyTo`, and `parse_uri` says which dispatcher any IRI of ours belongs
@@ -251,3 +268,28 @@ is delivered to its inboxes, and it signs activities for your inbox the way
 a real server would.  `ojak::testing::client_config()` lets your client
 reach it.  The [tutorial](../tutorial.md#testing-it) shows a test that
 follows, replies, likes and unfollows through it.
+
+
+Errors are the application's
+----------------------------
+
+Every callback fails with whatever error type the application uses, as long
+as it converts into `ojak::Error`.  Any `std::error::Error` does, and so do
+`anyhow::Error`, `String` and `&str`.  An application error type that is
+none of these gets a `From` impl of its own:
+
+~~~~ rust
+impl From<AppError> for ojak::Error {
+    fn from(error: AppError) -> Self {
+        match error {
+            AppError::NotFound(_) => Self::msg(error).permanent(),
+            other => Self::msg(other),
+        }
+    }
+}
+~~~~
+
+`ojak::Error` keeps the error's causes, which `downcast_ref` and `chain`
+look into.  `permanent()` marks one that doing it again will not mend: the
+inbox does not ask for the activity again, and its worker fails the job
+instead of retrying it.

@@ -24,10 +24,10 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         self
     }
 
-    pub(super) fn add(&mut self, kind: &str, template: &str, dispatcher: Dispatcher<D>) {
+    pub(super) fn add(&mut self, kind: &'static str, template: &str, dispatcher: Dispatcher<D>) {
         match Template::parse(template) {
             Ok(template) => self.entries.push(Entry {
-                kind: kind.to_owned(),
+                kind,
                 template,
                 dispatcher,
                 authorize: None,
@@ -40,7 +40,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     /// Serve actors of `kind` at `template`, whose one expression, if it has
     /// one, is the actor's identifier.
     #[must_use]
-    pub fn actor<F, Fut, E>(mut self, kind: &str, template: &str, load: F) -> Self
+    pub fn actor<F, Fut, E>(mut self, kind: ActorKind, template: &str, load: F) -> Self
     where
         F: Fn(Context<D>, String) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<Found<Value>, E>> + Send + 'static,
@@ -48,7 +48,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     {
         let load = boxed(move |(context, identifier)| load(context, identifier));
         self.add(
-            kind,
+            kind.name(),
             template,
             Dispatcher::Actor(Arc::new(move |context, identifier| {
                 load((context, identifier))
@@ -60,7 +60,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     /// Serve objects of `kind` at `template`, whose expressions the
     /// dispatcher receives by name.
     #[must_use]
-    pub fn object<F, Fut, E>(mut self, kind: &str, template: &str, load: F) -> Self
+    pub fn object<F, Fut, E>(mut self, kind: ObjectKind, template: &str, load: F) -> Self
     where
         F: Fn(Context<D>, Values) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<Found<Value>, E>> + Send + 'static,
@@ -68,7 +68,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     {
         let load = boxed(move |(context, values)| load(context, values));
         self.add(
-            kind,
+            kind.name(),
             template,
             Dispatcher::Object(Arc::new(move |context, values| load((context, values)))),
         );
@@ -83,9 +83,9 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     /// template's values, so it has to name every expression the first
     /// template does, and may name more.
     #[must_use]
-    pub fn object_alias(mut self, kind: &str, template: &str) -> Self {
+    pub fn object_alias(mut self, kind: ObjectKind, template: &str) -> Self {
         self.aliases
-            .push((kind.to_owned(), "object", template.to_owned()));
+            .push((kind.name(), ObjectKind::NOUN, template.to_owned()));
         self
     }
 
@@ -97,17 +97,22 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     /// links. The alias names the owner in as many expressions as that
     /// template does: one, or none.
     #[must_use]
-    pub fn collection_alias(mut self, kind: &str, template: &str) -> Self {
+    pub fn collection_alias(mut self, kind: CollectionKind, template: &str) -> Self {
         self.aliases
-            .push((kind.to_owned(), "collection", template.to_owned()));
+            .push((kind.name(), CollectionKind::NOUN, template.to_owned()));
         self
     }
 
     /// Serve the collection `kind` at `template`, whose one expression, if it
     /// has one, is the identifier of what it belongs to.
     #[must_use]
-    pub fn collection(mut self, kind: &str, template: &str, collection: Collection<D>) -> Self {
-        self.add(kind, template, Dispatcher::Collection(collection));
+    pub fn collection(
+        mut self,
+        kind: CollectionKind,
+        template: &str,
+        collection: Collection<D>,
+    ) -> Self {
+        self.add(kind.name(), template, Dispatcher::Collection(collection));
         self
     }
 
@@ -115,8 +120,9 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     /// It receives the verified signer of the request, if it was signed and
     /// signed fetches are configured. A request it refuses is 401.
     #[must_use]
-    pub fn authorize<F, Fut, E>(self, kind: &str, authorize: F) -> Self
+    pub fn authorize<K, F, Fut, E>(self, kind: K, authorize: F) -> Self
     where
+        K: Kind,
         F: Fn(Context<D>, Values, Option<Url>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<bool, E>> + Send + 'static,
         E: Into<Error>,
@@ -147,15 +153,17 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     /// needs to know who signed, so a guard that lets everyone through costs
     /// no signature check, nor a key fetched to make one.
     #[must_use]
-    pub fn guard<F, Fut, E>(mut self, kind: &str, guard: F) -> Self
+    pub fn guard<K, F, Fut, E>(mut self, kind: K, guard: F) -> Self
     where
+        K: Kind,
         F: Fn(Context<D>, Values) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<Access, E>> + Send + 'static,
         E: Into<Error>,
     {
         let guard = boxed(move |(context, values)| guard(context, values));
         self.authorize.push((
-            kind.to_owned(),
+            kind.name(),
+            K::NOUN,
             Arc::new(move |context, values| guard((context, values))),
         ));
         self
@@ -369,8 +377,8 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     /// whose own template has no expression, such as an instance actor at
     /// `/actor`, with none.
     #[must_use]
-    pub fn inbox(mut self, kind: &str, template: &str) -> Self {
-        self.inboxes.push((kind.to_owned(), template.to_owned()));
+    pub fn inbox(mut self, kind: ActorKind, template: &str) -> Self {
+        self.inboxes.push((kind, template.to_owned()));
         self
     }
 
@@ -740,7 +748,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     // has none, such as an instance actor at `/actor` with
                     // its inbox at `/actor/inbox`.
                     match self.entries.iter().find(|entry| {
-                        entry.kind == kind && matches!(entry.dispatcher, Dispatcher::Actor(_))
+                        kind == entry.kind && matches!(entry.dispatcher, Dispatcher::Actor(_))
                     }) {
                         Some(actor) => {
                             let expected = actor.template.names().count().min(1);
@@ -808,14 +816,18 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         if !inbox_templates.is_empty() && self.signed_fetch.is_none() {
             errors.push("an inbox needs signed_fetch, to fetch and cache senders' keys".into());
         }
-        for (kind, authorize) in std::mem::take(&mut self.authorize) {
+        for (kind, noun, authorize) in std::mem::take(&mut self.authorize) {
             let mut found = false;
-            for entry in self.entries.iter_mut().filter(|entry| entry.kind == kind) {
+            for entry in self
+                .entries
+                .iter_mut()
+                .filter(|entry| entry.kind == kind && entry.noun() == noun)
+            {
                 entry.authorize = Some(authorize.clone());
                 found = true;
             }
             if !found {
-                errors.push(format!("authorize names no dispatcher of kind {kind:?}"));
+                errors.push(format!("authorize names no {noun} of kind {kind:?}"));
             }
         }
         let templates = Arc::new(Templates {
@@ -823,7 +835,7 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                 .entries
                 .iter()
                 .filter(|entry| !entry.alias)
-                .map(|entry| (entry.kind.clone(), entry.noun(), entry.template.clone()))
+                .map(|entry| (entry.kind, entry.noun(), entry.template.clone()))
                 .collect(),
             inboxes: inboxes.clone(),
             shared_inbox: shared_inbox.clone(),

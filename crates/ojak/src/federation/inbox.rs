@@ -7,7 +7,8 @@
 //! by an [`InboxWorker`]; otherwise inside the request.
 
 use super::{
-    ActorRef, BoxFuture, Context, Error, Federation, Found, Inner, RequestInfo, empty, signer,
+    ActorRef, BoxFuture, CollectionKind, Context, Error, Federation, Found, Inner, RequestInfo,
+    empty, signer,
 };
 use crate::deliverer::PortableInbox;
 use crate::origin::{same_authority, same_origin};
@@ -163,7 +164,7 @@ pub enum ForwardTo {
 /// A collection of this server's, as the application registered it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CollectionRef {
-    pub kind: String,
+    pub kind: CollectionKind,
     pub identifier: String,
 }
 
@@ -870,7 +871,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
                 "inbox",
                 origin.as_str(),
                 "personal",
-                recipient.kind.as_str(),
+                recipient.kind.name(),
                 recipient.identifier.as_str(),
                 id,
                 digest,
@@ -912,7 +913,7 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
             let mut payload = json!({
                 "document": document,
                 "sender": sender.as_str(),
-                "recipient": recipient.as_ref().map(|r| json!({"kind": r.kind, "identifier": r.identifier})),
+                "recipient": recipient.as_ref().map(|r| json!({"kind": r.kind.name(), "identifier": r.identifier})),
                 "origin": origin,
                 "vouched_by": vouched_by.as_str(),
             });
@@ -1200,7 +1201,7 @@ impl<D: Clone + Send + Sync + 'static> InboxWorker<D> {
         .map_err(|error| Error::from(error).permanent())?;
         let recipient = payload.get("recipient").and_then(|r| {
             Some(ActorRef::new(
-                r.get("kind")?.as_str()?,
+                self.federation.inner.actor_kind(r.get("kind")?.as_str()?)?,
                 r.get("identifier")?.as_str()?,
             ))
         });

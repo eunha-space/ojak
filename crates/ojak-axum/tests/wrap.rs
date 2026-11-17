@@ -11,11 +11,15 @@ use tower::ServiceExt as _;
 fn app() -> Router {
     let federation = Federation::builder()
         .origin("https://oeee.test".parse().unwrap())
-        .actor("person", "/ap/users/{id}", |_, id: String| async move {
-            Ok::<_, String>(Found::Found(
-                json!({"id": format!("https://oeee.test/ap/users/{id}")}),
-            ))
-        })
+        .actor(
+            ojak::federation::ActorKind::new("person"),
+            "/ap/users/{id}",
+            |_, id: String| async move {
+                Ok::<_, String>(Found::Found(
+                    json!({"id": format!("https://oeee.test/ap/users/{id}")}),
+                ))
+            },
+        )
         .build()
         .unwrap();
     let pages = Router::new()
@@ -77,9 +81,11 @@ async fn an_inbox_post_is_read_and_received() {
 
     let federation = Federation::builder()
         .origin("https://oeee.test".parse().unwrap())
-        .actor("person", "/ap/users/{id}", |_, _: String| async move {
-            Ok::<_, String>(Found::NotFound)
-        })
+        .actor(
+            ojak::federation::ActorKind::new("person"),
+            "/ap/users/{id}",
+            |_, _: String| async move { Ok::<_, String>(Found::NotFound) },
+        )
         .shared_inbox("/ap/inbox")
         .signed_fetch(
             Arc::new(Fetcher::new(

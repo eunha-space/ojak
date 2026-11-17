@@ -71,7 +71,7 @@ impl Blog {
         // from its template before there is any request.
         let key_id = federation
             .uris(config.origin.clone())
-            .key_id(activitypub::AUTHOR, &config.username)?;
+            .key_id(activitypub::AUTHOR, &config.username);
         let key = SenderKey {
             key_id: key_id.to_string(),
             private_key: Arc::new(PrivateKey::from_pem(&config.private_key_pem)?),

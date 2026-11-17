@@ -45,18 +45,21 @@ async fn person(ctx: Context<App>, id: String) -> Result<Found<Value>, String> {
         "2" => return Ok(Found::Gone(None)),
         _ => return Ok(Found::NotFound),
     };
-    let uri = ctx.actor_uri("person", &id).map_err(|e| e.to_string())?;
+    let uri = ctx.actor_uri(ojak::federation::ActorKind::new("person"), &id);
     let mut actor = json!({
         "id": uri.as_str(),
         "type": "Person",
         "preferredUsername": username,
         "name": name,
         "url": format!("{}@{username}", ctx.origin()),
-        "followers": ctx.collection_uri("followers", &id).unwrap().as_str(),
-        "featured": ctx.collection_uri("featured", &id).unwrap().as_str(),
+        "followers": ctx.collection_uri(ojak::federation::CollectionKind::new("followers"), &id).as_str(),
+        "featured": ctx.collection_uri(ojak::federation::CollectionKind::new("featured"), &id).as_str(),
     });
     let keys = ctx
-        .actor_keys(&ActorRef::new("person", &id))
+        .actor_keys(&ActorRef::new(
+            ojak::federation::ActorKind::new("person"),
+            &id,
+        ))
         .await
         .map_err(|e| e.to_string())?;
     with_keys(&mut actor, &keys);
@@ -68,7 +71,7 @@ async fn group(ctx: Context<App>, id: String) -> Result<Found<Value>, String> {
         return Ok(Found::NotFound);
     }
     Ok(Found::Found(json!({
-        "id": ctx.actor_uri("group", &id).unwrap().as_str(),
+        "id": ctx.actor_uri(ojak::federation::ActorKind::new("group"), &id).as_str(),
         "type": "Group",
         "preferredUsername": "cafe",
     })))
@@ -76,7 +79,7 @@ async fn group(ctx: Context<App>, id: String) -> Result<Found<Value>, String> {
 
 async fn instance(ctx: Context<App>, _id: String) -> Result<Found<Value>, String> {
     Ok(Found::Found(json!({
-        "id": ctx.actor_uri("instance", "").unwrap().as_str(),
+        "id": ctx.actor_uri(ojak::federation::ActorKind::new("instance"), "").as_str(),
         "type": "Application",
         "preferredUsername": ctx.origin().host_str().unwrap(),
     })))
@@ -109,9 +112,9 @@ async fn note(ctx: Context<App>, values: Values) -> Result<Found<Value>, String>
         _ => return Ok(Found::NotFound),
     }
     Ok(Found::Found(json!({
-        "id": ctx.object_uri("note", &[("post_id", &id)]).unwrap().as_str(),
+        "id": ctx.object_uri(ojak::federation::ObjectKind::new("note"), &[("post_id", &id)]).as_str(),
         "type": "Note",
-        "attributedTo": ctx.actor_uri("person", "1").unwrap().as_str(),
+        "attributedTo": ctx.actor_uri(ojak::federation::ActorKind::new("person"), "1").as_str(),
         "content": "hello",
     })))
 }
@@ -150,7 +153,11 @@ fn followers() -> Collection<App> {
 /// asked for under the handle form.
 fn featured_by_handle() -> Collection<App> {
     featured().uri(|ctx: Context<App>, handle: String| async move {
-        Ok::<_, String>((handle == "alice").then(|| ctx.collection_uri("featured", "1").unwrap()))
+        Ok::<_, String>(
+            (handle == "alice").then(|| {
+                ctx.collection_uri(ojak::federation::CollectionKind::new("featured"), "1")
+            }),
+        )
     })
 }
 
@@ -159,9 +166,11 @@ fn featured() -> Collection<App> {
         |ctx: Context<App>, _id: String, _cursor: Option<String>| async move {
             Ok::<_, String>(Some(Page {
                 items: vec![json!(
-                    ctx.object_uri("note", &[("post_id", "10")])
-                        .unwrap()
-                        .as_str()
+                    ctx.object_uri(
+                        ojak::federation::ObjectKind::new("note"),
+                        &[("post_id", "10")]
+                    )
+                    .as_str()
                 )],
                 ..Page::default()
             }))
@@ -247,9 +256,10 @@ async fn cached(ctx: Context<App>, _: Values) -> Result<Found<Value>, String> {
 /// A note's replies, paged by a query of the application's own rather than
 /// Ojak's cursor: `?page=true&min_id=`.
 async fn replies(ctx: Context<App>, values: Values) -> Result<Found<Value>, String> {
-    let note = ctx
-        .object_uri("note", &[("post_id", &values["post_id"])])
-        .unwrap();
+    let note = ctx.object_uri(
+        ojak::federation::ObjectKind::new("note"),
+        &[("post_id", &values["post_id"])],
+    );
     let uri = Url::parse(&format!("{note}/replies")).unwrap();
     let min_id: usize = ctx
         .query_value("min_id")
@@ -289,28 +299,72 @@ fn builder() -> ojak::federation::Builder<App> {
             "oeee.test" | "www.oeee.test" => Some(canonical()),
             _ => None,
         })
-        .actor("person", "/ap/users/{user_id}", person)
-        .actor("group", "/ap/communities/{community_id}", group)
-        .actor("instance", "/actor", instance)
-        .object("note", "/ap/posts/{post_id}", note)
-        .collection("followers", "/ap/users/{user_id}/followers", followers())
-        .collection("featured", "/ap/users/{user_id}/featured", featured())
-        .collection("tags", "/ap/users/{user_id}/tags", tags())
-        .object("replies", "/ap/posts/{post_id}/replies", replies)
-        .object("cached", "/ap/cached", cached)
-        .object("boost", "/ap/boosts/{boost_id}", |_, _| async {
-            Ok::<_, String>(Found::Redirect(
-                Url::parse("https://oeee.test/@alice/10").unwrap(),
-            ))
-        })
-        .collection("posts", "/ap/users/{user_id}/posts", outbox())
+        .actor(
+            ojak::federation::ActorKind::new("person"),
+            "/ap/users/{user_id}",
+            person,
+        )
+        .actor(
+            ojak::federation::ActorKind::new("group"),
+            "/ap/communities/{community_id}",
+            group,
+        )
+        .actor(
+            ojak::federation::ActorKind::new("instance"),
+            "/actor",
+            instance,
+        )
+        .object(
+            ojak::federation::ObjectKind::new("note"),
+            "/ap/posts/{post_id}",
+            note,
+        )
         .collection(
-            "featured_by_handle",
+            ojak::federation::CollectionKind::new("followers"),
+            "/ap/users/{user_id}/followers",
+            followers(),
+        )
+        .collection(
+            ojak::federation::CollectionKind::new("featured"),
+            "/ap/users/{user_id}/featured",
+            featured(),
+        )
+        .collection(
+            ojak::federation::CollectionKind::new("tags"),
+            "/ap/users/{user_id}/tags",
+            tags(),
+        )
+        .object(
+            ojak::federation::ObjectKind::new("replies"),
+            "/ap/posts/{post_id}/replies",
+            replies,
+        )
+        .object(
+            ojak::federation::ObjectKind::new("cached"),
+            "/ap/cached",
+            cached,
+        )
+        .object(
+            ojak::federation::ObjectKind::new("boost"),
+            "/ap/boosts/{boost_id}",
+            |_, _| async {
+                Ok::<_, String>(Found::Redirect(
+                    Url::parse("https://oeee.test/@alice/10").unwrap(),
+                ))
+            },
+        )
+        .collection(
+            ojak::federation::CollectionKind::new("posts"),
+            "/ap/users/{user_id}/posts",
+            outbox(),
+        )
+        .collection(
+            ojak::federation::CollectionKind::new("featured_by_handle"),
             "/users/{handle}/featured",
             featured_by_handle(),
         )
         .key_pairs(|ctx: Context<App>, actor: ActorRef| async move {
-            let id = ctx.actor_uri(&actor.kind, &actor.identifier).unwrap();
+            let id = ctx.actor_uri(actor.kind, &actor.identifier);
             Ok::<_, String>(vec![PublicKey::Rsa {
                 id: format!("{id}#main-key"),
                 pem: "PEM".into(),
@@ -318,13 +372,22 @@ fn builder() -> ojak::federation::Builder<App> {
         })
         .handle(|_, username: String| async move {
             Ok::<_, String>(match username.as_str() {
-                "alice" => Some(ActorRef::new("person", "1")),
-                "cafe" => Some(ActorRef::new("group", "cafe")),
+                "alice" => Some(ActorRef::new(
+                    ojak::federation::ActorKind::new("person"),
+                    "1",
+                )),
+                "cafe" => Some(ActorRef::new(
+                    ojak::federation::ActorKind::new("group"),
+                    "cafe",
+                )),
                 _ => None,
             })
         })
         .map_alias(|_, url: Url| async move {
-            Ok::<_, String>((url.path() == "/@alice").then(|| ActorRef::new("person", "1")))
+            Ok::<_, String>(
+                (url.path() == "/@alice")
+                    .then(|| ActorRef::new(ojak::federation::ActorKind::new("person"), "1")),
+            )
         })
         .webfinger_links(|ctx, _, _| {
             vec![json!({
@@ -840,31 +903,36 @@ async fn uris_are_built_in_the_canonical_origin_and_parsed_back() {
 
     let ctx = federation.context(canonical(), App::default());
     let did = "did:key:z6MkrJVnaZkeFzdQyMZu1cgjg7k1pZZ6pvBQ7XJPt4swbTQ2";
-    let uri = ctx.actor_uri("person", did).unwrap();
+    let uri = ctx.actor_uri(ojak::federation::ActorKind::new("person"), did);
     assert_eq!(
         ctx.parse_uri(uri.as_str()),
-        Some(Route::Actor(ActorRef::new("person", did)))
+        Some(Route::Actor(ActorRef::new(
+            ojak::federation::ActorKind::new("person"),
+            did
+        )))
     );
     assert_eq!(
         ctx.parse_uri("https://www.oeee.test/ap/posts/10"),
         Some(Route::Object {
-            kind: "note".into(),
+            kind: ojak::federation::ObjectKind::new("note"),
             values: [("post_id", "10")].into_iter().collect()
         })
     );
     assert_eq!(
         ctx.parse_uri("https://oeee.test/ap/users/1/followers"),
         Some(Route::Collection {
-            kind: "followers".into(),
+            kind: ojak::federation::CollectionKind::new("followers"),
             identifier: "1".into()
         })
     );
     assert_eq!(ctx.parse_uri("https://elsewhere.test/ap/users/1"), None);
     assert_eq!(ctx.parse_uri("http://oeee.test/ap/users/1"), None);
     assert_eq!(ctx.parse_uri("https://oeee.test/about"), None);
-    assert!(ctx.actor_uri("robot", "1").is_err());
+    assert!(panics(
+        || ctx.actor_uri(ojak::federation::ActorKind::new("robot"), "1")
+    ));
     assert!(
-        ctx.collection_uri("outbox", "1").is_err(),
+        panics(|| ctx.collection_uri(ojak::federation::CollectionKind::new("outbox"), "1")),
         "an unregistered collection has no URI"
     );
 }
@@ -875,17 +943,43 @@ async fn a_federation_that_could_not_route_is_not_built() {
         |builder: ojak::federation::Builder<App>| builder.build().err().unwrap().to_string();
     assert!(error(Federation::builder()).contains("no origin"));
     assert!(
-        error(builder().actor("robot", "/ap/users/{id}", person)).contains("could match one path")
+        error(builder().actor(
+            ojak::federation::ActorKind::new("robot"),
+            "/ap/users/{id}",
+            person
+        ))
+        .contains("could match one path")
     );
-    assert!(error(builder().actor("person", "/people/{id}", person)).contains("two dispatchers"));
-    assert!(error(builder().actor("robot", "/.well-known/{x}", person)).contains("Ojak serves"));
     assert!(
-        error(builder().actor("robot", "/robots/{a}/{b}", person))
-            .contains("more than one expression")
+        error(builder().actor(
+            ojak::federation::ActorKind::new("person"),
+            "/people/{id}",
+            person
+        ))
+        .contains("two dispatchers")
     );
     assert!(
-        error(builder().authorize("outbox", |_, _, _| async { Ok::<_, String>(true) }))
-            .contains("no dispatcher")
+        error(builder().actor(
+            ojak::federation::ActorKind::new("robot"),
+            "/.well-known/{x}",
+            person
+        ))
+        .contains("Ojak serves")
+    );
+    assert!(
+        error(builder().actor(
+            ojak::federation::ActorKind::new("robot"),
+            "/robots/{a}/{b}",
+            person
+        ))
+        .contains("more than one expression")
+    );
+    assert!(
+        error(builder().authorize(
+            ojak::federation::CollectionKind::new("outbox"),
+            |_, _, _| async { Ok::<_, String>(true) }
+        ))
+        .contains("no collection of kind")
     );
 }
 
@@ -1006,11 +1100,10 @@ async fn authorize_refuses_what_it_does_not_allow() {
     let bob = serve_remote(remote).await;
     let key_id = format!("{bob}#main-key");
     // Secure mode for people: only signed requests see an actor.
-    let federation = with_signed_fetch(
-        builder().authorize("person", |_, _, signer: Option<Url>| async move {
-            Ok::<_, String>(signer.is_some())
-        }),
-    );
+    let federation = with_signed_fetch(builder().authorize(
+        ojak::federation::ActorKind::new("person"),
+        |_, _, signer: Option<Url>| async move { Ok::<_, String>(signer.is_some()) },
+    ));
 
     let unsigned = send(
         &federation,
@@ -1038,17 +1131,22 @@ async fn a_guard_verifies_only_what_it_asks_about() {
     // notes as each of its answers says.
     let federation = with_signed_fetch(
         builder()
-            .guard("person", |_, _| async { Ok::<_, String>(Access::Allow) })
-            .guard("note", |ctx: Context<App>, values: Values| async move {
-                Ok::<_, String>(match &values["post_id"] {
-                    "10" => match ctx.signing().await {
-                        Signing::Verified(_) => Access::Allow,
-                        _ => Access::Unauthorized,
-                    },
-                    "11" => Access::Forbidden,
-                    _ => Access::NotFound,
-                })
-            }),
+            .guard(ojak::federation::ActorKind::new("person"), |_, _| async {
+                Ok::<_, String>(Access::Allow)
+            })
+            .guard(
+                ojak::federation::ObjectKind::new("note"),
+                |ctx: Context<App>, values: Values| async move {
+                    Ok::<_, String>(match &values["post_id"] {
+                        "10" => match ctx.signing().await {
+                            Signing::Verified(_) => Access::Allow,
+                            _ => Access::Unauthorized,
+                        },
+                        "11" => Access::Forbidden,
+                        _ => Access::NotFound,
+                    })
+                },
+            ),
     );
 
     let person = send(&federation, signed_request("/ap/users/1", &key_id)).await;
@@ -1086,7 +1184,7 @@ async fn a_key_on_a_blocked_server_is_never_fetched() {
     let federation = with_signed_fetch(
         builder()
             .blocked(|_, host: String| async move { Ok::<_, String>(host == "127.0.0.1") })
-            .guard("person", {
+            .guard(ojak::federation::ActorKind::new("person"), {
                 let seen = seen.clone();
                 move |ctx: Context<App>, _| {
                     let seen = seen.clone();
@@ -1117,86 +1215,115 @@ async fn a_key_on_a_blocked_server_is_never_fetched() {
 async fn inboxes_have_uris_and_uris_need_no_data() {
     let with_inboxes = with_signed_fetch(
         builder()
-            .inbox("person", "/ap/users/{user_id}/inbox")
-            .inbox("instance", "/actor/inbox")
+            .inbox(
+                ojak::federation::ActorKind::new("person"),
+                "/ap/users/{user_id}/inbox",
+            )
+            .inbox(ojak::federation::ActorKind::new("instance"), "/actor/inbox")
             .shared_inbox("/ap/inbox"),
     );
 
     // Before there is any request or data, as for the ID of a key.
     let uris = with_inboxes.uris(canonical());
     assert_eq!(
-        uris.actor_uri("person", "1").unwrap().as_str(),
+        uris.actor_uri(ojak::federation::ActorKind::new("person"), "1")
+            .as_str(),
         "https://oeee.test/ap/users/1"
     );
     assert_eq!(
-        uris.inbox_uri("person", "1").unwrap().as_str(),
+        uris.inbox_uri(ojak::federation::ActorKind::new("person"), "1")
+            .as_str(),
         "https://oeee.test/ap/users/1/inbox"
     );
     assert_eq!(
-        uris.shared_inbox_uri().unwrap().as_str(),
+        uris.shared_inbox_uri().as_str(),
         "https://oeee.test/ap/inbox"
     );
     assert_eq!(
-        uris.inbox_uri("instance", "").unwrap().as_str(),
+        uris.inbox_uri(ojak::federation::ActorKind::new("instance"), "")
+            .as_str(),
         "https://oeee.test/actor/inbox",
         "an actor with no expression has an inbox with none"
     );
     assert!(with_inboxes.is_inbox("/actor/inbox"), "and it is an inbox");
     assert!(
         Federation::<App>::builder()
-            .actor("person", "/ap/users/{user_id}", person)
-            .inbox("person", "/ap/users/inbox")
+            .actor(
+                ojak::federation::ActorKind::new("person"),
+                "/ap/users/{user_id}",
+                person
+            )
+            .inbox(
+                ojak::federation::ActorKind::new("person"),
+                "/ap/users/inbox"
+            )
             .build()
             .is_err(),
         "an actor with an identifier has an inbox that names it"
     );
     assert!(
-        uris.inbox_uri("group", "cafe").is_err(),
+        panics(|| uris.inbox_uri(ojak::federation::ActorKind::new("group"), "cafe")),
         "a kind with no inbox has no inbox URI"
     );
+    let without = federation().uris(canonical());
     assert!(
-        federation().uris(canonical()).shared_inbox_uri().is_err(),
+        panics(|| without.shared_inbox_uri()),
         "nor does a federation with no shared inbox"
     );
 
     let ctx = with_inboxes.context(canonical(), App::default());
     assert_eq!(
-        ctx.inbox_uri("person", "1").unwrap(),
-        uris.inbox_uri("person", "1").unwrap()
+        ctx.inbox_uri(ojak::federation::ActorKind::new("person"), "1"),
+        uris.inbox_uri(ojak::federation::ActorKind::new("person"), "1")
     );
-    assert_eq!(
-        ctx.shared_inbox_uri().unwrap(),
-        uris.shared_inbox_uri().unwrap()
-    );
+    assert_eq!(ctx.shared_inbox_uri(), uris.shared_inbox_uri());
 }
 
 #[tokio::test]
 async fn an_iri_is_parsed_as_an_actor_or_object_of_one_kind() {
     let ctx = federation().context(canonical(), App::default());
     assert_eq!(
-        ctx.parse_actor("person", "https://www.oeee.test/ap/users/1"),
+        ctx.parse_actor(
+            ojak::federation::ActorKind::new("person"),
+            "https://www.oeee.test/ap/users/1"
+        ),
         Some("1".to_owned()),
         "an alias's IRI is ours"
     );
     assert_eq!(
-        ctx.parse_actor("group", "https://oeee.test/ap/users/1"),
+        ctx.parse_actor(
+            ojak::federation::ActorKind::new("group"),
+            "https://oeee.test/ap/users/1"
+        ),
         None
     );
     assert_eq!(
-        ctx.parse_actor("person", "https://oeee.test/ap/posts/10"),
+        ctx.parse_actor(
+            ojak::federation::ActorKind::new("person"),
+            "https://oeee.test/ap/posts/10"
+        ),
         None
     );
     assert_eq!(
-        ctx.parse_object("note", "https://oeee.test/ap/posts/10")
-            .map(|values| values["post_id"].to_owned()),
+        ctx.parse_object(
+            ojak::federation::ObjectKind::new("note"),
+            "https://oeee.test/ap/posts/10"
+        )
+        .map(|values| values["post_id"].to_owned()),
         Some("10".to_owned())
     );
     assert_eq!(
-        ctx.parse_object("note", "https://oeee.test/ap/users/1"),
+        ctx.parse_object(
+            ojak::federation::ObjectKind::new("note"),
+            "https://oeee.test/ap/users/1"
+        ),
         None
     );
     assert_eq!(
-        ctx.parse_object("note", "https://elsewhere.test/ap/posts/10"),
+        ctx.parse_object(
+            ojak::federation::ObjectKind::new("note"),
+            "https://elsewhere.test/ap/posts/10"
+        ),
         None
     );
 }
@@ -1210,27 +1337,33 @@ async fn uris_can_be_kept_apart_from_the_federation_and_name_keys() {
     }
     let uris = kept(uris.clone());
     assert_eq!(
-        uris.key_id("person", "1").unwrap().as_str(),
+        uris.key_id(ojak::federation::ActorKind::new("person"), "1")
+            .as_str(),
         "https://oeee.test/ap/users/1#main-key"
     );
     let tenant = uris.with_origin(Url::parse("https://other.test").unwrap());
     assert_eq!(
-        tenant.actor_uri("person", "1").unwrap().as_str(),
+        tenant
+            .actor_uri(ojak::federation::ActorKind::new("person"), "1")
+            .as_str(),
         "https://other.test/ap/users/1"
     );
     assert_eq!(uris.origin().as_str(), "https://oeee.test/");
 
     let ctx = federation().context(canonical(), App::default());
     assert_eq!(
-        ctx.key_id("person", "1").unwrap(),
-        uris.key_id("person", "1").unwrap()
+        ctx.key_id(ojak::federation::ActorKind::new("person"), "1"),
+        uris.key_id(ojak::federation::ActorKind::new("person"), "1")
     );
 }
 
 #[tokio::test]
 async fn an_object_is_served_and_recognised_at_its_alias_and_named_by_its_template() {
     let federation = builder()
-        .object_alias("note", "/@{handle}/{post_id}")
+        .object_alias(
+            ojak::federation::ObjectKind::new("note"),
+            "/@{handle}/{post_id}",
+        )
         .build()
         .unwrap();
     let answer = get(&federation, "/@alice/10").await;
@@ -1243,13 +1376,18 @@ async fn an_object_is_served_and_recognised_at_its_alias_and_named_by_its_templa
 
     let ctx = federation.context(canonical(), App::default());
     let values = ctx
-        .parse_object("note", "https://oeee.test/@alice/10")
+        .parse_object(
+            ojak::federation::ObjectKind::new("note"),
+            "https://oeee.test/@alice/10",
+        )
         .unwrap();
     assert_eq!((&values["post_id"], &values["handle"]), ("10", "alice"));
     assert_eq!(
-        ctx.object_uri("note", &[("post_id", "10")])
-            .unwrap()
-            .as_str(),
+        ctx.object_uri(
+            ojak::federation::ObjectKind::new("note"),
+            &[("post_id", "10")]
+        )
+        .as_str(),
         "https://oeee.test/ap/posts/10",
         "URIs are built from the template, never the alias"
     );
@@ -1259,10 +1397,14 @@ async fn an_object_is_served_and_recognised_at_its_alias_and_named_by_its_templa
 async fn an_alias_is_authorized_as_its_kind() {
     let federation = with_signed_fetch(
         builder()
-            .object_alias("note", "/@{handle}/{post_id}")
-            .authorize("note", |_, _, signer: Option<Url>| async move {
-                Ok::<_, String>(signer.is_some())
-            }),
+            .object_alias(
+                ojak::federation::ObjectKind::new("note"),
+                "/@{handle}/{post_id}",
+            )
+            .authorize(
+                ojak::federation::ObjectKind::new("note"),
+                |_, _, signer: Option<Url>| async move { Ok::<_, String>(signer.is_some()) },
+            ),
     );
     assert_eq!(get(&federation, "/ap/posts/10").await.status, 401);
     assert_eq!(get(&federation, "/@alice/10").await.status, 401);
@@ -1272,14 +1414,27 @@ async fn an_alias_is_authorized_as_its_kind() {
 async fn an_alias_has_to_be_of_an_object_kind_and_name_its_values() {
     let error =
         |builder: ojak::federation::Builder<App>| builder.build().err().unwrap().to_string();
-    assert!(error(builder().object_alias("robot", "/robots/{id}")).contains("no object kind"));
     assert!(
-        error(builder().object_alias("person", "/people/{user_id}")).contains("no object kind")
+        error(builder().object_alias(ojak::federation::ObjectKind::new("robot"), "/robots/{id}"))
+            .contains("no object kind")
     );
-    assert!(error(builder().object_alias("note", "/@{handle}")).contains("does not name post_id"));
     assert!(
-        error(builder().object_alias("note", "/ap/posts/{post_id}"))
-            .contains("could match one path"),
+        error(builder().object_alias(
+            ojak::federation::ObjectKind::new("person"),
+            "/people/{user_id}"
+        ))
+        .contains("no object kind")
+    );
+    assert!(
+        error(builder().object_alias(ojak::federation::ObjectKind::new("note"), "/@{handle}"))
+            .contains("does not name post_id")
+    );
+    assert!(
+        error(builder().object_alias(
+            ojak::federation::ObjectKind::new("note"),
+            "/ap/posts/{post_id}"
+        ))
+        .contains("could match one path"),
         "an alias that nothing tells apart from a template is ambiguous"
     );
 }
@@ -1287,7 +1442,10 @@ async fn an_alias_has_to_be_of_an_object_kind_and_name_its_values() {
 #[tokio::test]
 async fn an_alias_leaves_the_application_what_it_does_not_serve() {
     let federation = builder()
-        .object_alias("note", "/@{handle}/{post_id}")
+        .object_alias(
+            ojak::federation::ObjectKind::new("note"),
+            "/@{handle}/{post_id}",
+        )
         .build()
         .unwrap();
     let handled = |method: &'static str, path: &'static str| {
@@ -1332,7 +1490,10 @@ async fn an_alias_leaves_the_application_what_it_does_not_serve() {
 #[tokio::test]
 async fn a_collection_is_served_at_its_alias_and_named_by_its_template() {
     let federation = builder()
-        .collection_alias("followers", "/@{handle}/followers")
+        .collection_alias(
+            ojak::federation::CollectionKind::new("followers"),
+            "/@{handle}/followers",
+        )
         .build()
         .unwrap();
     let collection = get(&federation, "/@1/followers").await.json();
@@ -1348,7 +1509,7 @@ async fn a_collection_is_served_at_its_alias_and_named_by_its_template() {
     assert_eq!(
         ctx.parse_uri("https://oeee.test/@1/followers"),
         Some(Route::Collection {
-            kind: "followers".into(),
+            kind: ojak::federation::CollectionKind::new("followers"),
             identifier: "1".into()
         })
     );
@@ -1371,12 +1532,18 @@ async fn a_collection_alias_has_to_be_of_a_collection_kind_and_name_its_owner() 
     let error =
         |builder: ojak::federation::Builder<App>| builder.build().err().unwrap().to_string();
     assert!(
-        error(builder().collection_alias("note", "/@{handle}/notes"))
-            .contains("no collection kind")
+        error(builder().collection_alias(
+            ojak::federation::CollectionKind::new("note"),
+            "/@{handle}/notes"
+        ))
+        .contains("no collection kind")
     );
     assert!(
-        error(builder().collection_alias("followers", "/followers"))
-            .contains("has to name its owner")
+        error(builder().collection_alias(
+            ojak::federation::CollectionKind::new("followers"),
+            "/followers"
+        ))
+        .contains("has to name its owner")
     );
 }
 
@@ -1385,8 +1552,14 @@ async fn a_path_goes_to_the_most_specific_template_it_matches() {
     // Mastodon's shapes: a status at /@{username}/{id}, and the account's
     // followers at /@{username}/followers, which the first also matches.
     let federation = builder()
-        .object_alias("note", "/@{handle}/{post_id}")
-        .collection_alias("followers", "/@{handle}/followers")
+        .object_alias(
+            ojak::federation::ObjectKind::new("note"),
+            "/@{handle}/{post_id}",
+        )
+        .collection_alias(
+            ojak::federation::CollectionKind::new("followers"),
+            "/@{handle}/followers",
+        )
         .build()
         .unwrap();
     assert_eq!(
@@ -1407,4 +1580,9 @@ async fn a_path_goes_to_the_most_specific_template_it_matches() {
         ctx.parse_uri("https://oeee.test/@alice/10"),
         Some(Route::Object { .. })
     ));
+}
+
+/// Whether `f` panics: what building the URI of a kind never registered does.
+fn panics<T>(f: impl FnOnce() -> T) -> bool {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err()
 }

@@ -43,60 +43,44 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
         }
     }
 
-    /// The URI of the actor of `kind` with `identifier`.
-    ///
-    /// # Errors
-    ///
-    /// When no actor dispatcher is of `kind`, or `identifier` is empty for a
-    /// template that needs one.
-    pub fn actor_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
+    /// The URI of the actor of `kind` with `identifier`; see
+    /// [`Uris::actor_uri`], whose panics it shares.
+    #[must_use]
+    pub fn actor_uri(&self, kind: ActorKind, identifier: &str) -> Url {
         self.uris().actor_uri(kind, identifier)
     }
 
     /// The ID of the key the actor of `kind` with `identifier` signs with;
     /// see [`Uris::key_id`].
-    ///
-    /// # Errors
-    ///
-    /// As [`Context::actor_uri`].
-    pub fn key_id(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
+    #[must_use]
+    pub fn key_id(&self, kind: ActorKind, identifier: &str) -> Url {
         self.uris().key_id(kind, identifier)
     }
 
-    /// The URI of the object of `kind` with `values`.
-    ///
-    /// # Errors
-    ///
-    /// When no object dispatcher is of `kind`, or `values` do not fill its
-    /// template.
-    pub fn object_uri(&self, kind: &str, values: &[(&str, &str)]) -> Result<Url, UriError> {
+    /// The URI of the object of `kind` with `values`; see
+    /// [`Uris::object_uri`].
+    #[must_use]
+    pub fn object_uri(&self, kind: ObjectKind, values: &[(&str, &str)]) -> Url {
         self.uris().object_uri(kind, values)
     }
 
-    /// The URI of the collection `kind` of what `identifier` names.
-    ///
-    /// # Errors
-    ///
-    /// As [`Context::actor_uri`], for collections.
-    pub fn collection_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
+    /// The URI of the collection `kind` of what `identifier` names; see
+    /// [`Uris::collection_uri`].
+    #[must_use]
+    pub fn collection_uri(&self, kind: CollectionKind, identifier: &str) -> Url {
         self.uris().collection_uri(kind, identifier)
     }
 
-    /// The URI of the inbox of the actor of `kind` with `identifier`.
-    ///
-    /// # Errors
-    ///
-    /// As [`Context::actor_uri`], for inboxes.
-    pub fn inbox_uri(&self, kind: &str, identifier: &str) -> Result<Url, UriError> {
+    /// The URI of the inbox of the actor of `kind` with `identifier`; see
+    /// [`Uris::inbox_uri`].
+    #[must_use]
+    pub fn inbox_uri(&self, kind: ActorKind, identifier: &str) -> Url {
         self.uris().inbox_uri(kind, identifier)
     }
 
-    /// The URI of the shared inbox.
-    ///
-    /// # Errors
-    ///
-    /// When no shared inbox is registered.
-    pub fn shared_inbox_uri(&self) -> Result<Url, UriError> {
+    /// The URI of the shared inbox; see [`Uris::shared_inbox_uri`].
+    #[must_use]
+    pub fn shared_inbox_uri(&self) -> Url {
         self.uris().shared_inbox_uri()
     }
 
@@ -125,15 +109,15 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
         let entry = &self.inner.federation.entries[index];
         Some(match entry.dispatcher {
             Dispatcher::Actor(_) => Route::Actor(ActorRef::new(
-                entry.kind.clone(),
+                ActorKind::new(entry.kind),
                 values.single().unwrap_or_default(),
             )),
             Dispatcher::Object(_) => Route::Object {
-                kind: entry.kind.clone(),
+                kind: ObjectKind::new(entry.kind),
                 values,
             },
             Dispatcher::Collection(_) => Route::Collection {
-                kind: entry.kind.clone(),
+                kind: CollectionKind::new(entry.kind),
                 identifier: values.single().unwrap_or_default().to_owned(),
             },
         })
@@ -142,7 +126,7 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
     /// The identifier of the actor of `kind` that `iri` is, if it is one of
     /// ours: what a listener checks a `Follow`'s object against.
     #[must_use]
-    pub fn parse_actor(&self, kind: &str, iri: &str) -> Option<String> {
+    pub fn parse_actor(&self, kind: ActorKind, iri: &str) -> Option<String> {
         match self.parse_uri(iri)? {
             Route::Actor(actor) if actor.kind == kind => Some(actor.identifier),
             _ => None,
@@ -153,7 +137,7 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
     /// ours: what a listener checks an `inReplyTo` or a `Like`'s object
     /// against.
     #[must_use]
-    pub fn parse_object(&self, kind: &str, iri: &str) -> Option<Values> {
+    pub fn parse_object(&self, kind: ObjectKind, iri: &str) -> Option<Values> {
         match self.parse_uri(iri)? {
             Route::Object {
                 kind: found,
@@ -207,7 +191,7 @@ impl<D: Clone + Send + Sync + 'static> Context<D> {
             .federation
             .entries
             .iter()
-            .find(|entry| entry.kind == actor.kind && entry.noun() == "actor")
+            .find(|entry| actor.kind == entry.kind && entry.noun() == ActorKind::NOUN)
         else {
             return Ok(Found::NotFound);
         };

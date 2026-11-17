@@ -14,6 +14,7 @@ mod builder;
 mod collection;
 mod context;
 mod inbox;
+mod kinds;
 mod negotiate;
 mod nodeinfo;
 mod serve;
@@ -27,13 +28,14 @@ pub use inbox::{
     CollectionRef, Forward, ForwardTo, GatewayInbox, InboxDisposition, InboxReport, InboxWorker,
     InboxWorkerConfig, MAX_BODY as MAX_INBOX_BODY, Received, VouchedBy,
 };
+pub use kinds::{ActorKind, CollectionKind, Kind, ObjectKind};
 pub use nodeinfo::{NodeInfo, Software, Usage};
 pub use signer::{KnownKey, Signing};
 
 use crate::fetch::Fetcher;
 use crate::kv::{KvError, KvStore};
 use crate::portable::{ApUri, Hashlink, Media};
-use crate::template::{Template, TemplateError};
+use crate::template::Template;
 use chrono::{DateTime, SecondsFormat, Utc};
 use http::{HeaderName, HeaderValue, Method, StatusCode, header};
 use serde_json::{Value, json};
@@ -95,15 +97,15 @@ pub enum Found<T> {
 /// An actor, as the application names it: its kind and its identifier.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ActorRef {
-    pub kind: String,
+    pub kind: ActorKind,
     pub identifier: String,
 }
 
 impl ActorRef {
     #[must_use]
-    pub fn new(kind: impl Into<String>, identifier: impl Into<String>) -> Self {
+    pub fn new(kind: ActorKind, identifier: impl Into<String>) -> Self {
         Self {
-            kind: kind.into(),
+            kind,
             identifier: identifier.into(),
         }
     }
@@ -113,8 +115,14 @@ impl ActorRef {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Route {
     Actor(ActorRef),
-    Object { kind: String, values: Values },
-    Collection { kind: String, identifier: String },
+    Object {
+        kind: ObjectKind,
+        values: Values,
+    },
+    Collection {
+        kind: CollectionKind,
+        identifier: String,
+    },
 }
 
 /// A public key an actor publishes.
@@ -176,26 +184,6 @@ pub enum Handled {
     NotFound,
 }
 
-/// Why a URI could not be built.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UriError {
-    /// No dispatcher of this kind is registered.
-    UnknownKind(String),
-    /// The values do not fill the template.
-    Template(TemplateError),
-}
-
-impl fmt::Display for UriError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownKind(kind) => write!(f, "no dispatcher of kind {kind:?}"),
-            Self::Template(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for UriError {}
-
 /// Why a federation could not be built.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BuildError(pub Vec<String>);
@@ -245,7 +233,7 @@ enum Dispatcher<D> {
 }
 
 struct Entry<D> {
-    kind: String,
+    kind: &'static str,
     template: Template,
     dispatcher: Dispatcher<D>,
     authorize: Option<AuthorizeFn<D>>,
@@ -256,9 +244,9 @@ struct Entry<D> {
 impl<D> Entry<D> {
     fn noun(&self) -> &'static str {
         match self.dispatcher {
-            Dispatcher::Actor(_) => "actor",
-            Dispatcher::Object(_) => "object",
-            Dispatcher::Collection(_) => "collection",
+            Dispatcher::Actor(_) => ActorKind::NOUN,
+            Dispatcher::Object(_) => ObjectKind::NOUN,
+            Dispatcher::Collection(_) => CollectionKind::NOUN,
         }
     }
 }
@@ -280,7 +268,7 @@ struct Inner<D> {
     nodeinfo: Option<NodeInfoFn<D>>,
     signed_fetch: Option<signer::SignedFetch<D>>,
     on_error: Option<ErrorFn>,
-    inboxes: Vec<(String, Template)>,
+    inboxes: Vec<(ActorKind, Template)>,
     shared_inbox: Option<Template>,
     listeners: std::collections::HashMap<&'static str, inbox::ListenerFn<D>>,
     fallback_listener: Option<inbox::ListenerFn<D>>,
@@ -310,6 +298,15 @@ type LoadContextFn<D> =
     Arc<dyn Fn(Context<D>, String) -> BoxFuture<'static, Result<String, Error>> + Send + Sync>;
 
 impl<D> Inner<D> {
+    /// The registered actor kind called `name`: how one read back from a
+    /// queued payload is named again.
+    fn actor_kind(&self, name: &str) -> Option<ActorKind> {
+        self.entries
+            .iter()
+            .find(|entry| entry.kind == name && entry.noun() == ActorKind::NOUN)
+            .map(|entry| ActorKind::new(entry.kind))
+    }
+
     /// The entry `path` is routed to, with its values: of every template it
     /// matches, the most specific, as `build` made sure there is one.
     fn route(&self, path: &str) -> Option<(usize, Values)> {
@@ -357,7 +354,7 @@ where
 pub struct Builder<D> {
     origin: Option<OriginRule<D>>,
     entries: Vec<Entry<D>>,
-    authorize: Vec<(String, AuthorizeFn<D>)>,
+    authorize: Vec<(&'static str, &'static str, AuthorizeFn<D>)>,
     key_pairs: Option<KeysFn<D>>,
     handle: Option<LookupFn<D, String>>,
     map_alias: Option<LookupFn<D, Url>>,
@@ -366,9 +363,9 @@ pub struct Builder<D> {
     nodeinfo: Option<NodeInfoFn<D>>,
     signed_fetch: Option<signer::SignedFetch<D>>,
     on_error: Option<ErrorFn>,
-    inboxes: Vec<(String, String)>,
+    inboxes: Vec<(ActorKind, String)>,
     shared_inbox: Option<String>,
-    aliases: Vec<(String, &'static str, String)>,
+    aliases: Vec<(&'static str, &'static str, String)>,
     listeners: std::collections::HashMap<&'static str, inbox::ListenerFn<D>>,
     fallback_listener: Option<inbox::ListenerFn<D>>,
     blocked: Option<inbox::BlockedFn<D>>,
@@ -445,8 +442,8 @@ struct ContextInner<D> {
 #[derive(Debug)]
 struct Templates {
     /// Each kind's template, by kind and noun; aliases are not built.
-    routes: Vec<(String, &'static str, Template)>,
-    inboxes: Vec<(String, Template)>,
+    routes: Vec<(&'static str, &'static str, Template)>,
+    inboxes: Vec<(ActorKind, Template)>,
     shared_inbox: Option<Template>,
 }
 

@@ -145,7 +145,7 @@ fn federation(
     let builder = Federation::builder()
         .origin(Url::parse(&format!("https://{HOST}")).unwrap())
         .actor(
-            "person",
+            ojak::federation::ActorKind::new("person"),
             "/ap/users/{user_id}",
             |_, id: String| async move {
                 Ok::<_, String>(Found::Found(
@@ -153,7 +153,10 @@ fn federation(
                 ))
             },
         )
-        .inbox("person", "/ap/users/{user_id}/inbox")
+        .inbox(
+            ojak::federation::ActorKind::new("person"),
+            "/ap/users/{user_id}/inbox",
+        )
         .shared_inbox("/ap/inbox")
         .signed_fetch(
             Arc::new(Fetcher::new(client, Scheme::DraftCavage)),
@@ -261,7 +264,13 @@ async fn an_authenticated_activity_reaches_its_listener_typed() {
     assert_eq!(seen[0].sender, bob);
     assert_eq!(seen[0].forwarder, None, "delivered by its own server");
     assert_eq!(seen[0].vouched_by, ojak::federation::VouchedBy::Signature);
-    assert_eq!(seen[0].recipient, Some(ActorRef::new("person", "1")));
+    assert_eq!(
+        seen[0].recipient,
+        Some(ActorRef::new(
+            ojak::federation::ActorKind::new("person"),
+            "1"
+        ))
+    );
     assert_eq!(
         seen[1].recipient, None,
         "the shared inbox names no recipient"
@@ -766,12 +775,20 @@ async fn an_inbox_that_could_not_authenticate_is_not_built() {
     let base = || {
         Federation::<App>::builder()
             .origin(Url::parse("https://oeee.test").unwrap())
-            .actor("person", "/ap/users/{id}", |_, _: String| async {
-                Ok::<_, String>(Found::NotFound)
-            })
+            .actor(
+                ojak::federation::ActorKind::new("person"),
+                "/ap/users/{id}",
+                |_, _: String| async { Ok::<_, String>(Found::NotFound) },
+            )
     };
     assert!(error(base().shared_inbox("/ap/inbox")).contains("needs signed_fetch"));
-    assert!(error(base().inbox("robot", "/robots/{id}/inbox")).contains("no actor kind"));
+    assert!(
+        error(base().inbox(
+            ojak::federation::ActorKind::new("robot"),
+            "/robots/{id}/inbox"
+        ))
+        .contains("no actor kind")
+    );
     assert!(
         error(
             base()
@@ -912,11 +929,13 @@ async fn a_reply_to_our_post_is_forwarded_to_its_authors_followers() {
     let bob = serve_remote(Remote::default()).await;
     let key_id = format!("{bob}#main-key");
     let federation = federation(|b| {
-        b.object("post", "/ap/posts/{post_id}", |_, _| async {
-            Ok::<_, String>(Found::NotFound)
-        })
+        b.object(
+            ojak::federation::ObjectKind::new("post"),
+            "/ap/posts/{post_id}",
+            |_, _| async { Ok::<_, String>(Found::NotFound) },
+        )
         .collection(
-            "followers",
+            ojak::federation::CollectionKind::new("followers"),
             "/ap/users/{user_id}/followers",
             Collection::new(|_, _, _| async { Ok::<_, String>(None::<Page>) }),
         )
@@ -989,7 +1008,7 @@ async fn a_reply_to_our_post_is_forwarded_to_its_authors_followers() {
     assert_eq!(
         collections,
         &[CollectionRef {
-            kind: "followers".into(),
+            kind: ojak::federation::CollectionKind::new("followers"),
             identifier: "1".into()
         }]
     );

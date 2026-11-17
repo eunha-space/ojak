@@ -101,18 +101,19 @@ is not registered.
 The context builds URIs from templates and parses them back:
 
 ~~~~ rust
-ctx.actor_uri("person", &user_id)?            // https://example.com/ap/users/{user_id}
-ctx.object_uri("note", &[("post_id", &id)])?  // https://example.com/ap/posts/{post_id}
-ctx.collection_uri("followers", &user_id)?
-ctx.inbox_uri("person", &user_id)?            // the inbox registered for the kind
-ctx.shared_inbox_uri()?
+ctx.actor_uri(PERSON, &user_id)            // https://example.com/ap/users/{user_id}
+ctx.object_uri(NOTE, &[("post_id", &id)])  // https://example.com/ap/posts/{post_id}
+ctx.collection_uri(FOLLOWERS, &user_id)
+ctx.inbox_uri(PERSON, &user_id)            // the inbox registered for the kind
+ctx.shared_inbox_uri()
 ctx.parse_uri(&iri) // Some(Route::Object { kind, values }) when it is ours
-ctx.parse_object("note", &iri) // Some(values) when it is one of our notes
-ctx.parse_actor("person", &iri) // Some(identifier) when it is one of our people
+ctx.parse_object(NOTE, &iri) // Some(values) when it is one of our notes
+ctx.parse_actor(PERSON, &iri) // Some(identifier) when it is one of our people
 ~~~~
 
-Each builder returns `Result<Url, UriError>`, an unknown kind or a template
-that did not expand.  `federation.uris(origin)` builds the same URIs with
+Each returns a `Url`.  A kind that was never registered, or an identifier
+left empty where the template needs one, is a mistake in the application,
+and panics.  `federation.uris(origin)` builds the same URIs with
 no request and no data, as a `Uris` your application can keep in its own
 state.  `key_id(kind, identifier)` names an actor's key, `#main-key` on the
 actor's IRI.
@@ -124,9 +125,13 @@ Actors, by kind
 ---------------
 
 ~~~~ rust
-.actor("person", "/ap/users/{user_id}", |ctx, id| async move { … })
-.actor("group", "/ap/communities/{community_id}", load_group)
-.actor("instance", "/actor", load_instance_actor)
+const PERSON: ActorKind = ActorKind::new("person");
+const GROUP: ActorKind = ActorKind::new("group");
+const INSTANCE: ActorKind = ActorKind::new("instance");
+
+.actor(PERSON, "/ap/users/{user_id}", |ctx, id| async move { … })
+.actor(GROUP, "/ap/communities/{community_id}", load_group)
+.actor(INSTANCE, "/actor", load_instance_actor)
 ~~~~
 
 An actor is a *kind* and an identifier, so an application can have several
@@ -168,8 +173,8 @@ Objects, by kind
 ----------------
 
 ~~~~ rust
-.object("note", "/ap/posts/{post_id}", |ctx, values| async move { … })
-.object("create", "/users/{username}/statuses/{id}/activity", load_create)
+.object(NOTE, "/ap/posts/{post_id}", |ctx, values| async move { … })
+.object(CREATE, "/users/{username}/statuses/{id}/activity", load_create)
 ~~~~
 
 An object template may have any number of expressions, and the dispatcher
@@ -179,7 +184,7 @@ An object known by more than one path, such as Mastodon's `/@{username}/{id}`
 beside `/users/{username}/statuses/{id}`, takes the others as aliases:
 
 ~~~~ rust
-.object_alias("note", "/@{username}/{post_id}")
+.object_alias(NOTE, "/@{username}/{post_id}")
 ~~~~
 
 An alias is served by the same dispatcher, authorised as its kind, and
@@ -192,7 +197,7 @@ A collection takes aliases the same way, such as Mastodon's
 `/@{username}/followers`:
 
 ~~~~ rust
-.collection_alias("followers", "/@{username}/followers")
+.collection_alias(FOLLOWERS, "/@{username}/followers")
 ~~~~
 
 It is still named by its own template, in its `id` and its pages' links,
@@ -229,7 +234,7 @@ Collections, paged by cursor
 ----------------------------
 
 ~~~~ rust
-.collection("followers", "/ap/users/{user_id}/followers",
+.collection(FOLLOWERS, "/ap/users/{user_id}/followers",
     Collection::new(|ctx, id, cursor| async move { … }) // -> Option<Page>
         .count(|ctx, id| async move { … })             // -> Option<u64>
         .first_cursor(|_, _| async { Ok(Some(First::At(String::new()))) }))
@@ -297,7 +302,7 @@ A GET may be signed. Ojak verifies it only when asked, because verifying
 may mean fetching the signer's key:
 
 ~~~~ rust
-.object("note", "/ap/posts/{post_id}", |ctx, values| async move {
+.object(NOTE, "/ap/posts/{post_id}", |ctx, values| async move {
     let post = ctx.data().post(&values["post_id"]).await?;
     if post.followers_only() {
         match ctx.signer().await {
@@ -331,7 +336,7 @@ is the one the inbox uses.
 For the common case, a kind takes an `authorize` predicate instead:
 
 ~~~~ rust
-.authorize("note", |ctx, values, signer| async move { … }) // -> bool
+.authorize(NOTE, |ctx, values, signer| async move { … }) // -> bool
 ~~~~
 
 which is how an application runs in secure mode: refuse every unsigned GET
@@ -344,7 +349,7 @@ A predicate is handed the signer, so every signed GET of its kind is
 verified before it is asked. A `guard` asks for itself, when it needs to:
 
 ~~~~ rust
-.guard("person", |ctx, values| async move {
+.guard(PERSON, |ctx, values| async move {
     if !ctx.data().secure_mode() {
         return Ok(Access::Allow); // nothing verified
     }
@@ -451,7 +456,8 @@ and anything but `POST` on an inbox is 405 with `Allow: POST`.
 Errors
 ------
 
-A dispatcher returns `Result<_, E>` for any `E: Into<ojak::federation::Error>`,
-a boxed error. An error is a 500 with no body, and `.on_error(|error| …)` sees
-it for the log. The body never carries the error, since it is whatever the
-database said.
+A dispatcher returns `Result<_, E>` for any `E: Into<ojak::Error>`: any
+error, or the application's own with a `From` impl (see
+[Concepts](./concepts.md)). An error is a 500 with no body, and
+`.on_error(|error| …)` sees it for the log. The body never carries the error,
+since it is whatever the database said.

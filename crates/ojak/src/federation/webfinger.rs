@@ -85,7 +85,7 @@ async fn answer<D: Clone + Send + Sync + 'static>(
     let id = match actor.get("id").and_then(Value::as_str) {
         Some(id) => id.to_owned(),
         None => context
-            .actor_uri(&actor_ref.kind, &actor_ref.identifier)?
+            .actor_uri(actor_ref.kind, &actor_ref.identifier)
             .to_string(),
     };
     let host = context
