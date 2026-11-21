@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -44 400 388" role="img" aria-label="Ojak">
+  <!--
+    Ojak's mark: Altair and Vega on either side of the Milky Way, and the
+    bridge of birds that spans it.  logo.svg is for dark grounds and
+    logo-light.svg for light ones; the viewBox leaves room for the haze and
+    the glows, which reach past the drawing.
+  -->
+  <defs>
+    <filter id="haze" x="-1" y="-1" width="3" height="3">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#b197ed" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#b197ed" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- The Milky Way. -->
+  <ellipse cx="236" cy="150" rx="26" ry="150" transform="rotate(25 236 150)" fill="#b197ed" opacity=".45" filter="url(#haze)"/>
+  <g fill="#00102a" opacity=".7">
+    <circle cx="196" cy="210" r="1.6"/><circle cx="222" cy="168" r="1.2"/>
+    <circle cx="248" cy="96" r="1.8"/><circle cx="270" cy="58" r="1.1"/>
+    <circle cx="178" cy="262" r="1.2"/><circle cx="292" cy="30" r="1.5"/>
+    <circle cx="236" cy="132" r="1"/><circle cx="210" cy="238" r="1"/>
+  </g>
+  <!-- The bridge of birds. -->
+  <g fill="none" stroke="#1f9e8a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M70 200 l9 -7 l9 7"/>
+    <path d="M100 160 l9 -7 l9 7"/>
+    <path d="M136 130 l9 -7 l9 7"/>
+    <path d="M176 112 l9 -7 l9 7"/>
+    <path d="M218 106 l9 -7 l9 7"/>
+    <path d="M260 114 l9 -7 l9 7"/>
+    <path d="M296 136 l9 -7 l9 7"/>
+    <path d="M324 168 l9 -7 l9 7"/>
+  </g>
+  <!-- Altair and Vega. -->
+  <circle cx="40" cy="236" r="40" fill="url(#glow)"/>
+  <circle cx="40" cy="236" r="12" fill="#00102a"/>
+  <circle cx="352" cy="214" r="40" fill="url(#glow)"/>
+  <circle cx="352" cy="214" r="12" fill="#8f6fdc"/>
+</svg>

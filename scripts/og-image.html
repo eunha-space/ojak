@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+  The source of docs/public/og.png, the social-preview card for ojak.dev:
+
+    mise run docs:og-image
+
+  It is docs/public/logo.svg beside the tagline, in eunha's colours, so the
+  two projects' cards read as one family.
+-->
+<html lang="en">
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; }
+  body {
+    width: 1200px; height: 630px; background: #00102a; color: #f8f4eb;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; align-items: center; gap: 64px;
+    padding: 0 88px; box-sizing: border-box;
+  }
+  img { width: 400px; height: auto; flex: none; margin: 0 -10px; }
+  h1 { font-size: 104px; letter-spacing: -.04em; font-weight: 600; margin: 0 0 18px; line-height: 1; }
+  p  { font-size: 31px; line-height: 1.4; color: #a9b4c6; margin: 0; max-width: 15em; }
+  .u { color: #7ae2d1; white-space: nowrap; }
+</style>
+<img src="../docs/public/logo.svg" alt="">
+<div>
+  <h1>Ojak</h1>
+  <p>A bridge between your application and the fediverse: <span class="u">ActivityPub for Rust</span>.</p>
+</div>
+</html>

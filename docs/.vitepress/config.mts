@@ -1,10 +1,35 @@
 import { defineConfig } from "vitepress";
 
 const repository = "https://github.com/eunha-space/ojak";
+const description = "A bridge between your application and the fediverse.";
 
 export default defineConfig({
   title: "Ojak",
-  description: "A bridge between your application and the fediverse.",
+  description,
+  // docs/public/og.png is rendered from scripts/og-image.html by
+  // `mise run docs:og-image`.
+  head: [
+    ["meta", { property: "og:type", content: "website" }],
+    ["meta", { property: "og:site_name", content: "Ojak" }],
+    ["meta", { property: "og:description", content: description }],
+    ["meta", { property: "og:image", content: "https://ojak.dev/og.png" }],
+    ["meta", { property: "og:image:width", content: "1200" }],
+    ["meta", { property: "og:image:height", content: "630" }],
+    [
+      "meta",
+      {
+        property: "og:image:alt",
+        content: "Ojak: a bridge of birds across the Milky Way, between Altair and Vega.",
+      },
+    ],
+    ["meta", { name: "twitter:card", content: "summary_large_image" }],
+  ],
+  // Each page's own title, which the defaults above leave out.
+  transformPageData(page) {
+    const title = page.frontmatter.layout === "home" ? "Ojak" : `${page.title} | Ojak`;
+    page.frontmatter.head ??= [];
+    page.frontmatter.head.push(["meta", { property: "og:title", content: title }]);
+  },
   lang: "en",
   cleanUrls: true,
   lastUpdated: true,

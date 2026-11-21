@@ -48,3 +48,7 @@ description = "Build the documentation website"
 dir = "docs"
 depends = ["docs:install"]
 run = "npm run build"
+
+[tasks."docs:og-image"]
+description = "Render docs/public/og.png, the social-preview card, from scripts/og-image.html"
+run = "npx --yes playwright@1.61.1 screenshot --viewport-size=1200,630 \"file://$PWD/scripts/og-image.html\" docs/public/og.png"

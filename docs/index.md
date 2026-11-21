@@ -7,6 +7,10 @@ hero:
   tagline: >-
     A Rust framework for ActivityPub applications, named for Ojakgyo
     (오작교, 烏鵲橋), the bridge of crows and magpies across the Milky Way.
+  image:
+    light: /logo-light.svg
+    dark: /logo.svg
+    alt: A bridge of birds across the Milky Way, between Altair and Vega.
   actions:
     - theme: brand
       text: Get started
