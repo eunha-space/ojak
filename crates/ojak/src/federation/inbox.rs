@@ -168,6 +168,11 @@ pub struct CollectionRef {
     pub identifier: String,
 }
 
+/// How many collections of ours an activity is forwarded to at most, unless
+/// the application says otherwise: one addressed to more is forwarded to
+/// none ([`super::Builder::max_forwarded_collections`]).
+pub const MAX_FORWARDED_COLLECTIONS: usize = 2;
+
 /// How long an activity's forwarding is remembered: once is the rule.
 const FORWARDED_FOR: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
@@ -461,6 +466,43 @@ fn status(code: StatusCode, why: &str) -> http::Response<Vec<u8>> {
     response
 }
 
+/// The refusal of an activity `checked` shows over the inbox's payload
+/// limits, counted and reported, naming the activity as `document` does:
+/// `None` when it is within them.
+fn over_limits<D: Clone + Send + Sync + 'static>(
+    context: &Context<D>,
+    checked: &Value,
+    document: &Value,
+) -> Option<http::Response<Vec<u8>>> {
+    let exceeded = refused(context, checked, document)?;
+    Some(status(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        &format!("refused: {exceeded}"),
+    ))
+}
+
+/// Why `checked` is over the inbox's payload limits, if it is, counted and
+/// reported to the application.
+fn refused<D: Clone + Send + Sync + 'static>(
+    context: &Context<D>,
+    checked: &Value,
+    document: &Value,
+) -> Option<crate::limits::LimitExceeded> {
+    let exceeded = context
+        .inner
+        .federation
+        .payload_limits
+        .check(checked)
+        .err()?;
+    crate::limits::count_refusal("inbox", &exceeded);
+    let id = document.get("id").and_then(Value::as_str).unwrap_or("?");
+    let actor = actor_of(document).unwrap_or("?");
+    context.report(&Error::msg(format!(
+        "inbox refused {id} by {actor}: {exceeded}"
+    )));
+    Some(exceeded)
+}
+
 fn accepted() -> http::Response<Vec<u8>> {
     empty(StatusCode::ACCEPTED)
 }
@@ -554,6 +596,12 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
     let Some(actor) = actor_of(&document).map(str::to_owned) else {
         return status(StatusCode::BAD_REQUEST, "no actor");
     };
+    // What a sender can inflate is bounded before anything is looked up,
+    // fetched or verified for it, as it is written; and again below, once
+    // it is read, since a context can spell `tag` another way.
+    if let Some(refusal) = over_limits(&context, &document, &document) {
+        return refusal;
+    }
 
     if gateway.is_none()
         && let Some(recipient) = &recipient
@@ -818,6 +866,13 @@ async fn receive_at<D: Clone + Send + Sync + 'static>(
             Ok(readings) => readings,
             Err(error) => return status(StatusCode::BAD_REQUEST, &error),
         };
+    // The document may have been fetched again from its origin, and what it
+    // reads as may differ from what it says; both are held to the limits.
+    for checked in [&document, &normalized] {
+        if let Some(refusal) = over_limits(&context, checked, &document) {
+            return refusal;
+        }
+    }
 
     // Forwarded before anything else is decided, whether or not a listener
     // wants it: the other gateways keep the actor's data too.
@@ -1056,11 +1111,19 @@ fn forwarded_to<D: Clone + Send + Sync + 'static>(
         Some(item @ Value::Object(_)) => concerning(item),
         _ => false,
     };
-    if concerning(activity) || embedded {
-        collections
-    } else {
-        Vec::new()
+    if !(concerning(activity) || embedded) {
+        return Vec::new();
     }
+    let max = context.inner.federation.max_forwarded_collections;
+    if collections.len() > max {
+        context.report(&Error::msg(format!(
+            "not forwarding {}: addressed to {} collections of ours, more than {max}",
+            activity.get("id").and_then(Value::as_str).unwrap_or("?"),
+            collections.len(),
+        )));
+        return Vec::new();
+    }
+    collections
 }
 
 /// How an [`InboxWorker`] runs.
@@ -1235,6 +1298,12 @@ impl<D: Clone + Send + Sync + 'static> InboxWorker<D> {
             origin,
             None::<RequestInfo>,
         );
+        // Queued before the limits were what they are now, perhaps.
+        for checked in [&document, &normalized] {
+            if let Some(exceeded) = refused(&context, checked, &document) {
+                return Err(Error::msg(format!("refused: {exceeded}")).permanent());
+            }
+        }
         let outcome = listener(
             context.clone(),
             Incoming {

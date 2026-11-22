@@ -39,6 +39,7 @@ pub use walk::{Walk, WalkLimits};
 
 use crate::client::{Client, RequestError, Response};
 use crate::federation::NodeInfo;
+use crate::limits::{LimitExceeded, PayloadLimits};
 use crate::origin::Origin;
 use crate::portable::{self, DidResolver};
 use crate::portable::{ApUri, Hashlink, Media};
@@ -91,6 +92,9 @@ pub enum FetchError {
     /// No gateway served a portable object whose proof holds; why, for each
     /// gateway tried.
     Portable(Vec<(String, String)>),
+    /// The document has an object over one of the fetcher's
+    /// [`PayloadLimits`]: refused, as an inbox refuses it.
+    Oversized(LimitExceeded),
 }
 
 impl FetchError {
@@ -124,6 +128,7 @@ impl fmt::Display for FetchError {
                 write!(f, "{id} claims to be by {author}, on another origin")
             }
             Self::Read(error) => error.fmt(f),
+            Self::Oversized(exceeded) => write!(f, "refused: {exceeded}"),
             Self::Portable(tried) if tried.is_empty() => {
                 f.write_str("portable object with no gateway to ask")
             }
@@ -210,6 +215,8 @@ pub struct Fetcher {
     resolver: Option<Arc<dyn DidResolver>>,
     /// Whether WebFinger is asked over plain `http`.
     plain_http_webfinger: bool,
+    /// What a document fetched may hold.
+    limits: PayloadLimits,
 }
 
 impl fmt::Debug for Fetcher {
@@ -231,7 +238,33 @@ impl Fetcher {
             schemes: Mutex::new(HashMap::new()),
             resolver: None,
             plain_http_webfinger: false,
+            limits: PayloadLimits::default(),
         }
+    }
+
+    /// Hold every ActivityPub document fetched to `limits` rather than to
+    /// [`PayloadLimits::default`]: one with an object over any of them is
+    /// [`FetchError::Oversized`]. [`PayloadLimits::UNLIMITED`] turns the
+    /// checks off. The size of the response itself is bounded by the
+    /// client's [`ClientConfig::max_response_bytes`](crate::client::ClientConfig::max_response_bytes).
+    #[must_use]
+    pub fn with_payload_limits(mut self, limits: PayloadLimits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// What a document fetched may hold.
+    #[must_use]
+    pub fn payload_limits(&self) -> &PayloadLimits {
+        &self.limits
+    }
+
+    /// `json`, unless it is over the fetcher's limits.
+    fn within_limits(&self, json: &Value) -> Result<(), FetchError> {
+        self.limits.check(json).map_err(|exceeded| {
+            crate::limits::count_refusal("fetch", &exceeded);
+            FetchError::Oversized(exceeded)
+        })
     }
 
     /// Ask every WebFinger query over plain `http` rather than `https`, for
@@ -405,14 +438,18 @@ impl Fetcher {
     ///
     /// As [`Fetcher::get`], and when the document is not established; a
     /// document whose `id` is elsewhere is [`FetchError::CrossOrigin`], and
-    /// one by an author elsewhere [`FetchError::ForeignAuthor`].
+    /// one by an author elsewhere [`FetchError::ForeignAuthor`]. One with an
+    /// object over the fetcher's [`PayloadLimits`] is
+    /// [`FetchError::Oversized`].
     pub async fn document(
         &self,
         url: &Url,
         key: Option<&SenderKey>,
     ) -> Result<Document, FetchError> {
         let response = self.get(url, ACTIVITY_ACCEPT, key).await?;
-        establish(response)
+        let document = establish(response)?;
+        self.within_limits(&document.json)?;
+        Ok(document)
     }
 
     /// [`Fetcher::document`] for a caller that knows the document's `id`:
@@ -431,6 +468,7 @@ impl Fetcher {
     ) -> Result<Document, FetchError> {
         let response = self.get_exact(url, ACTIVITY_ACCEPT, key).await?;
         let document = establish(response)?;
+        self.within_limits(&document.json)?;
         if document.id != url.as_str() {
             return Err(FetchError::CrossOrigin {
                 id: document.id,
@@ -463,7 +501,7 @@ impl Fetcher {
         let response = self
             .get(url, "application/activity+json, application/ld+json", key)
             .await?;
-        unverified(&response)
+        self.unverified(&response)
     }
 
     /// [`Fetcher::unverified_json`] without following a redirect, which is
@@ -481,7 +519,7 @@ impl Fetcher {
         let response = self
             .get_exact(url, "application/activity+json, application/ld+json", key)
             .await?;
-        unverified(&response)
+        self.unverified(&response)
     }
 
     /// [`Fetcher::document`], and when the document's `id` is on another
@@ -600,6 +638,8 @@ impl Fetcher {
         }
         let json: Value =
             serde_json::from_slice(&response.body).map_err(|error| error.to_string())?;
+        self.within_limits(&json)
+            .map_err(|error| error.to_string())?;
         let id = json.get("id").and_then(Value::as_str).unwrap_or_default();
         match ApUri::parse(id) {
             Some(served) if served == *uri => {}
@@ -906,8 +946,18 @@ fn establish(response: Response) -> Result<Document, FetchError> {
     })
 }
 
-/// What [`Fetcher::unverified_json`] and [`Fetcher::unverified_json_at`] take
-/// of a response.
+impl Fetcher {
+    /// What [`Fetcher::unverified_json`] and [`Fetcher::unverified_json_at`]
+    /// take of a response.
+    fn unverified(&self, response: &Response) -> Result<Option<Value>, FetchError> {
+        let json = unverified(response)?;
+        if let Some(json) = &json {
+            self.within_limits(json)?;
+        }
+        Ok(json)
+    }
+}
+
 fn unverified(response: &Response) -> Result<Option<Value>, FetchError> {
     if !(200..300).contains(&response.status) {
         return Err(FetchError::Status(response.status));

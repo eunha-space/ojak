@@ -116,6 +116,21 @@ async fn an_inbox_post_is_read_and_received() {
         .await
         .unwrap();
     assert_eq!(huge.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
+    // Within the size, but mentioning thousands: refused before its
+    // signature is so much as looked at, let alone its key fetched.
+    let tag: Vec<Value> = (0..2_000)
+        .map(|i| json!({"type": "Mention", "href": format!("https://s{i}.test/u/{i}")}))
+        .collect();
+    let flood = json!({
+        "type": "Create",
+        "actor": "https://a.test/users/a",
+        "object": {"type": "Note", "tag": tag},
+    });
+    let refused = post(serde_json::to_vec(&flood).unwrap()).await.unwrap();
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body = to_bytes(refused.into_body(), 1 << 10).await.unwrap();
+    assert_eq!(&body[..], b"refused: 2000 tags, more than 1000");
 }
 
 #[tokio::test]
