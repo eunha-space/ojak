@@ -7,7 +7,8 @@
 //! provides ([`deliverer`]), fetching documents from other servers
 //! ([`fetch`]), the JSON-LD contexts a Linked Data Signature is checked
 //! over when ojak does not ship them ([`contexts`]), the key-value store
-//! Ojak keeps its caches in ([`kv`]),
+//! Ojak keeps its caches in ([`kv`]), the bounds on what a sender can
+//! inflate in an activity or object ([`limits`]),
 //! serving actors, objects, collections, WebFinger and NodeInfo and
 //! receiving activities ([`federation`]), portable objects (FEP-ef61) at
 //! gateways ([`portable`]), and finding an actor by its handle
@@ -23,6 +24,7 @@ pub use error::Error;
 pub mod federation;
 pub mod fetch;
 pub mod kv;
+pub mod limits;
 pub mod origin;
 pub mod portable;
 pub mod queue;

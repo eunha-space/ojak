@@ -26,7 +26,7 @@ pub use crate::template::Values;
 pub use collection::{Collection, CollectionDocument, First, Page};
 pub use inbox::{
     CollectionRef, Forward, ForwardTo, GatewayInbox, InboxDisposition, InboxReport, InboxWorker,
-    InboxWorkerConfig, MAX_BODY as MAX_INBOX_BODY, Received, VouchedBy,
+    InboxWorkerConfig, MAX_BODY as MAX_INBOX_BODY, MAX_FORWARDED_COLLECTIONS, Received, VouchedBy,
 };
 pub use kinds::{ActorKind, CollectionKind, Kind, ObjectKind};
 pub use nodeinfo::{NodeInfo, Software, Usage};
@@ -34,6 +34,7 @@ pub use signer::{KnownKey, Signing};
 
 use crate::fetch::Fetcher;
 use crate::kv::{KvError, KvStore};
+use crate::limits::PayloadLimits;
 use crate::portable::{ApUri, Hashlink, Media};
 use crate::template::Template;
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -283,6 +284,8 @@ struct Inner<D> {
     forward: Option<inbox::ForwardFn<D>>,
     read_as_written: bool,
     linked_data_first: bool,
+    payload_limits: crate::limits::PayloadLimits,
+    max_forwarded_collections: usize,
     remote_contexts: Option<RemoteContexts<D>>,
 }
 
@@ -379,6 +382,8 @@ pub struct Builder<D> {
     forward: Option<inbox::ForwardFn<D>>,
     read_as_written: bool,
     linked_data_first: bool,
+    payload_limits: crate::limits::PayloadLimits,
+    max_forwarded_collections: usize,
     remote_contexts: Option<RemoteContexts<D>>,
     errors: Vec<String>,
 }

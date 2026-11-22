@@ -34,6 +34,8 @@ impl<D: Clone + Send + Sync + 'static> Federation<D> {
             forward: None,
             read_as_written: false,
             linked_data_first: false,
+            payload_limits: crate::limits::PayloadLimits::default(),
+            max_forwarded_collections: inbox::MAX_FORWARDED_COLLECTIONS,
             remote_contexts: None,
             errors: Vec::new(),
         }

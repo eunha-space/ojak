@@ -171,6 +171,16 @@ vocabulary type, establish what they fetch the same way the inbox does:
 
 A fetched document comes back with the URL it was finally served from.
 
+A fetched document is held to the same [payload
+limits](./inbox.md#what-a-sender-can-inflate-is-bounded) an inbox holds an
+activity to, `PayloadLimits::default()` unless the fetcher is given others
+with `Fetcher::with_payload_limits`: one with an object over them is
+`FetchError::Oversized`, whether it was fetched with `document`,
+`document_at`, `lookup`, `unverified_json` or from a portable object's
+gateway. The client bounds the response itself, at 1 MiB, before it is read
+as JSON at all. With the `metrics` feature each refusal is counted in
+`ojak_payloads_refused_total`, labelled `source="fetch"`.
+
 A URL someone pastes is more often a web page than a document.  A server
 that serves its pages and its objects at different paths names the object
 from the page with a `rel="alternate"` link of an ActivityStreams type, and

@@ -45,7 +45,9 @@ HTTP signature can be verified, and every request but a portable actor's is
 unauthenticated.
 
 1.  The body is bounded, at 1 MiB (`MAX_INBOX_BODY`), and must be a JSON
-    object with an `actor`.
+    object with an `actor`. It is held to the [payload
+    limits](#what-a-sender-can-inflate-is-bounded) as it is written, before
+    anything is looked up, fetched or verified for it.
 2.  A `blocked` hook is asked first about the host of the HTTP signature's
     key, before the key is looked for: a request signed with a key on a
     blocked server is refused 403, with the body Mastodon's
@@ -130,6 +132,56 @@ see it. The forwarder's own signature verified, so a retry would change
 nothing, and a 401 would only make the forwarder resend it. Mastodon
 answers the same way. The reason it was dropped is the response body, for
 the application to log.
+
+
+What a sender can inflate is bounded
+------------------------------------
+
+A megabyte of JSON holds about 2,500 `Mention`s of distinct actors, all of
+them in `to` as well, and an application that resolves each mention it does
+not know, as Mastodon does, fetches every one of those actors. Ojak holds
+each object an activity holds, the activity itself, the object it embeds and
+every object inside those, to `PayloadLimits` (`ojak::limits`):
+
+| Field               | Default | Bounds                                          |
+| ------------------- | ------: | ----------------------------------------------- |
+| `max_tags`          |   1,000 | `tag` entries of any type                       |
+| `max_mentions`      |     500 | `tag` entries that are `Mention`s               |
+| `max_recipients`    |   1,000 | `to`, `cc`, `bto`, `bcc` and `audience`, summed |
+| `max_content_bytes` | 512 KiB | `content`, and each value of `contentMap`       |
+| `max_summary_bytes` |  64 KiB | `summary`, and each value of `summaryMap`       |
+| `max_name_bytes`    |  16 KiB | `name`, and each value of `nameMap`             |
+
+Nothing Mastodon, Misskey or Pleroma sends comes near them: a Mastodon post
+is 500 characters, a Misskey note 3,000 characters with 20 mentions at most
+by default, and a long-form article tens of kilobytes of HTML.
+
+An activity over any of them is answered 422, with what it was over in the
+body (`refused: 2502 recipients, more than 1000`), and nothing else is done
+for it: it is checked as it is written before its signature is so much as
+looked at, so no key is fetched for it, and again once it is read, since a
+context can name `tag` something else, before it is forwarded, queued or
+seen by a listener. An `InboxWorker` checks what it claims too, failing the
+job for good, in case it was queued under looser limits. A sender treats a
+422 as a failure not worth retrying. Each refusal is reported to `on_error`,
+naming the activity and its actor, and counted, with the `metrics` feature,
+in `ojak_payloads_refused_total`, labelled `source="inbox"` and the `limit`
+it was over (`tags`, `mentions`, `recipients`, `content`, `summary` or
+`name`).
+
+`Builder::payload_limits` sets other limits, and `PayloadLimits::UNLIMITED`
+turns them off. Documents fetched are held to the fetcher's own limits (see
+[Fetching documents](./sending.md#fetching-documents)).
+
+Ojak itself does nothing for each recipient or mention of an activity it
+accepts. Authenticating an activity fetches at most its signer's key, again
+once if the key has rotated, the actor's document for a proof, the activity
+from its origin when it was forwarded, and at most `contexts::Limits`'s
+contexts for a Linked Data signature; verifying the portable objects it
+embeds stops at 32. It is queued as one job, and forwarded at most once to
+a bounded number of collections (see [Forwarding](#forwarding)). Resolving
+the actors it mentions, if the application does, is the application's, and
+the limits bound how many there can be.
 
 
 Nothing embedded is trusted that the sender cannot vouch for
@@ -251,6 +303,14 @@ collection's owner, as Mastodon does. That it was forwarded is kept in the
 key-value store for a week, so it is forwarded once. An activity with no `id`
 is not forwarded, and a hook that fails is reported without changing the
 answer.
+
+Each collection forwarded to is a fan-out to its members, and anyone may
+reply to a post of ours and address every followers collection here. An
+activity addressed to more than two collections of ours
+(`MAX_FORWARDED_COLLECTIONS`, or `Builder::max_forwarded_collections`) is
+forwarded to none of them, and that is reported to `on_error`; it is still
+processed. Mastodon forwards a reply to one collection, the followers of the
+author of the post it replies to.
 
 What is forwarded is the activity as it was authenticated here, whose proof,
 if it has one, still holds; a server receiving it without one fetches it

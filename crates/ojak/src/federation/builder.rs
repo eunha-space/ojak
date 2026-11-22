@@ -430,6 +430,29 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
         self
     }
 
+    /// Hold what arrives at an inbox to `limits` rather than to
+    /// [`PayloadLimits::default`]: an activity with an object over any of
+    /// them is refused, 422, before anything is fetched for it or any
+    /// listener sees it. [`PayloadLimits::UNLIMITED`] turns the checks off.
+    ///
+    /// Documents fetched are held to the [`crate::fetch::Fetcher`]'s own
+    /// limits, [`crate::fetch::Fetcher::with_payload_limits`].
+    #[must_use]
+    pub fn payload_limits(mut self, limits: PayloadLimits) -> Self {
+        self.payload_limits = limits;
+        self
+    }
+
+    /// Forward an activity to at most `max` collections of ours, rather than
+    /// [`MAX_FORWARDED_COLLECTIONS`]:
+    /// one addressed to more is forwarded to none of them (see
+    /// [`Builder::forward`]).
+    #[must_use]
+    pub fn max_forwarded_collections(mut self, max: usize) -> Self {
+        self.max_forwarded_collections = max;
+        self
+    }
+
     /// Check a forwarded activity's Linked Data signature before its
     /// FEP-8b32 proof, rather than after.
     ///
@@ -613,6 +636,13 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
     /// ActivityPub asks (§7.1.2). `forward` is called once for each activity
     /// and kind of forward, however many times it arrives, and sends it.
     /// Without it, nothing is forwarded.
+    ///
+    /// Each collection forwarded to is a fan-out to its members, and anyone
+    /// replying to a post of ours can address every followers collection
+    /// here, so an activity addressed to more than
+    /// [`Builder::max_forwarded_collections`] of them is forwarded to none.
+    /// Mastodon forwards a reply to one collection, the followers of the
+    /// author of the post it replies to.
     #[must_use]
     pub fn forward<F, Fut, E>(mut self, forward: F) -> Self
     where
@@ -869,6 +899,8 @@ impl<D: Clone + Send + Sync + 'static> Builder<D> {
                     forward: self.forward,
                     read_as_written: self.read_as_written,
                     linked_data_first: self.linked_data_first,
+                    payload_limits: self.payload_limits,
+                    max_forwarded_collections: self.max_forwarded_collections,
                     remote_contexts: self.remote_contexts,
                 }),
             }),
